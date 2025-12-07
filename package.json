@@ -9,14 +9,20 @@
     "preview": "vite preview",
     "test.e2e": "cypress run",
     "test.unit": "vitest",
-    "lint": "eslint"
+    "lint": "eslint",
+    "android:live-preview": "npx ionic cap run android -l --external",
+    "build:android": "npx ionic build && npx cap copy android && npx cap sync android",
+    "build:android:release": "npx ionic build && npx cap copy android && npx cap sync android && cd android && ./gradlew assembleRelease",
+    "build:android:debug": "npx ionic build && npx cap copy android && npx cap sync android && cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
+    "@capacitor/android": "7.4.4",
     "@capacitor/app": "7.1.0",
     "@capacitor/core": "7.4.4",
+    "@capacitor/filesystem": "^7.1.5",
     "@capacitor/haptics": "7.0.2",
     "@capacitor/keyboard": "7.0.3",
-    "@capacitor/status-bar": "7.0.3",
+    "@capacitor/status-bar": "^7.0.3",
     "@ionic/react": "^8.5.0",
     "@ionic/react-router": "^8.5.0",
     "@types/react-router": "^5.1.20",
