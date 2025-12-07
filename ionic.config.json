@@ -1,0 +1,7 @@
+{
+  "name": "roadTrip",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "react-vite"
+}
