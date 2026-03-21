@@ -4,6 +4,7 @@ import Tab1 from '../features/home/Tab1';
 import Tab2 from '../features/home/Tab2';
 import Tab3 from '../features/home/Tab3';
 import Login from '../features/auth/Login';
+import Signup from '../features/auth/Signup';
 
 export default function AppRoutes() {
   return (
@@ -19,6 +20,9 @@ export default function AppRoutes() {
       </Route>
       <Route exact path="/login">
         <Login />
+      </Route>
+      <Route exact path="/signup">
+        <Signup />
       </Route>
       <Route exact path="/">
         <Redirect to="/tab1" />

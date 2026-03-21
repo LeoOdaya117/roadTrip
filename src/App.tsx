@@ -1,8 +1,8 @@
  
-import { IonApp, IonLabel, IonRouterOutlet, IonTabs, setupIonicReact } from '@ionic/react';
+import { IonApp, IonRouterOutlet, IonTabs, setupIonicReact } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
 import AppRoutes from './routes';
-import { TabBar, FloatingFab } from './shared/components';
+import { TabBar, FloatingFab, AuthProvider } from './shared/components';
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
@@ -102,15 +102,17 @@ const App: React.FC = () => {
   return (
     <IonApp>
       <IonReactRouter>
-        <IonTabs>
-          <IonRouterOutlet>
-            <AppRoutes />
-          </IonRouterOutlet>
-          <TabBar />
-        </IonTabs>
-      {/* Floating FAB placed outside the tabs so it won't be clipped by tab bar */}
-      <FloatingFab />
-    </IonReactRouter>
+        <AuthProvider>
+          <IonTabs>
+            <IonRouterOutlet>
+              <AppRoutes />
+            </IonRouterOutlet>
+            <TabBar />
+          </IonTabs>
+          {/* Floating FAB placed outside the tabs so it won't be clipped by tab bar */}
+          <FloatingFab />
+        </AuthProvider>
+      </IonReactRouter>
   </IonApp>
   );
 };

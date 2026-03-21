@@ -1,0 +1,109 @@
+
+.login-page {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg,#fff7ed 0%, #fff1f2 100%);
+  padding: 0; /* zero out outer padding so card centers exactly */
+  box-sizing: border-box;
+  position: relative; /* allow absolute-centering fallback for precise alignment */
+}
+
+.login-card.modern {
+  width: 100%;
+  max-width: 420px;
+  background: white;
+  border-radius: 18px;
+  padding: 28px 20px;
+  box-shadow: 0 18px 40px rgba(16,24,40,0.08);
+  text-align: center;
+  margin: auto; /* vertically center inside the parent flex container */
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+
+/* Use absolute centering when there's enough vertical space — keeps the card exactly centered
+   while smaller viewports still scroll naturally. */
+@media (min-height: 640px) {
+  .login-card.modern {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    margin: 0;
+  }
+}
+
+.hero-illustration {
+  height: 140px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background: linear-gradient(135deg,#ff9a3c, #ff5e62);
+  border-radius: 12px;
+  color: white;
+  margin-bottom: 14px;
+}
+
+.hero-bike { font-size:48px; }
+
+.onboarding { display:flex; flex-direction:column; align-items:center; gap:10px }
+.onboarding-visual { display:flex; align-items:center; justify-content:center; }
+.onboarding-text h3{ margin:4px 0 2px; font-size:16px; color:#08122a }
+.onboarding-text p{ margin:0; font-size:13px; color:#475569 }
+.onboarding-controls{ width:100%; display:flex; align-items:center; justify-content:space-between; margin-top:6px }
+.onboarding-controls .dots{ display:flex; gap:6px; align-items:center }
+.dot{ width:8px; height:8px; border-radius:50%; background:#e6eef7; opacity:0.8 }
+.dot.active{ background:linear-gradient(90deg,#ff9a3c,#ff5e62); transform:scale(1.25) }
+.onboarding-controls .buttons{ display:flex; gap:8px; align-items:center }
+.btn-link{ background:transparent; border:none; color:#6b7280 }
+.btn-primary{ background:linear-gradient(90deg,#ff9a3c,#ff5e62); color:white; border:none; padding:8px 12px; border-radius:10px }
+
+/* compact mode tweaks */
+.onboarding.compact { width: 100%; display:flex; flex-direction:column; align-items:center }
+.onboarding.compact .onboarding-visual svg { width: 100%; max-width: 240px; height: auto }
+.onboarding.compact .dots { margin-top: 6px }
+
+.title {
+  margin: 6px 0 2px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.subtitle {
+  color: #475569;
+  margin: 6px 0 18px;
+  font-size: 14px;
+}
+
+.login-form ion-item {
+  --background: #fbfdff;
+  --border-radius: 12px;
+  margin-bottom: 12px;
+  --box-shadow: none;
+}
+
+.login-form ion-input {
+  padding: 10px 6px;
+}
+
+.primary-button {
+  --background: linear-gradient(90deg,#ff9a3c,#ff5e62);
+  --border-radius: 12px;
+  color: #fff;
+  margin-top: 12px;
+  height:44px;
+}
+
+.divider { margin: 18px 0; text-align:center; color:#cbd5e1; }
+.divider span{ background: white; padding:0 10px; }
+
+.social-buttons{ display:flex; gap:16px; justify-content:center; align-items:center }
+.social-icon{ width:44px; height:44px; border-radius:12px; background:white; display:inline-flex; align-items:center; justify-content:center; border:1px solid #eef2f6; padding:6px }
+.social-icon img{ width:28px; height:28px; display:block }
+
+.footer-actions{ display:flex; justify-content:center; gap:8px; align-items:center; margin-top:14px; margin-bottom:0 }
+
+@media (min-width:640px){ .login-card.modern{ padding:34px 28px } }

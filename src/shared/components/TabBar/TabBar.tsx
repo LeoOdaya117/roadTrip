@@ -8,7 +8,7 @@ interface TabBarProps {
   excludedPaths?: string[];
 }
 
-const TabBar: React.FC<TabBarProps> = ({ hidden, excludedPaths = ['/login'] }) => {
+const TabBar: React.FC<TabBarProps> = ({ hidden, excludedPaths = ['/login', '/signup'] }) => {
   const location = useLocation();
 
   const isExcluded = excludedPaths.includes(location.pathname);

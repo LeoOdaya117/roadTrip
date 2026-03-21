@@ -7,7 +7,7 @@ interface FloatingFabProps {
   excludedPaths?: string[];
 }
 
-const FloatingFab: React.FC<FloatingFabProps> = ({ excludedPaths = ['/login'] }) => {
+const FloatingFab: React.FC<FloatingFabProps> = ({ excludedPaths = ['/login', '/signup'] }) => {
   const location = useLocation();
 
   if (excludedPaths.includes(location.pathname)) return null;
