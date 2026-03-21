@@ -4,7 +4,7 @@ interface Slide {
   title: string;
   subtitle: string;
   // svgContent or anything renderable
-  render: () => JSX.Element;
+  render: () => React.ReactElement;
 }
 
 export default function Onboarding({ compact }: { compact?: boolean } = {}) {

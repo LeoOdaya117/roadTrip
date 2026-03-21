@@ -5,19 +5,17 @@ import Tab2 from '../features/home/Tab2';
 import Tab3 from '../features/home/Tab3';
 import Login from '../features/auth/Login';
 import Signup from '../features/auth/Signup';
+import { useAuth } from '../shared/auth/AuthProvider';
 
 export default function AppRoutes() {
+  const auth = useAuth();
+  const isAuth = !!auth?.token;
+
   return (
     <>
-      <Route exact path="/tab1">
-        <Tab1 />
-      </Route>
-      <Route exact path="/tab2">
-        <Tab2 />
-      </Route>
-      <Route path="/tab3">
-        <Tab3 />
-      </Route>
+      <Route exact path="/tab1" render={() => (isAuth ? <Tab1 /> : <Redirect to="/login" />)} />
+      <Route exact path="/tab2" render={() => (isAuth ? <Tab2 /> : <Redirect to="/login" />)} />
+      <Route path="/tab3" render={() => (isAuth ? <Tab3 /> : <Redirect to="/login" />)} />
       <Route exact path="/login">
         <Login />
       </Route>
@@ -25,7 +23,7 @@ export default function AppRoutes() {
         <Signup />
       </Route>
       <Route exact path="/">
-        <Redirect to="/tab1" />
+        {isAuth ? <Redirect to="/tab1" /> : <Redirect to="/login" />}
       </Route>
     </>
   );

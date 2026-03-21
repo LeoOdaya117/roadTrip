@@ -30,20 +30,32 @@ const Signup: React.FC = () => {
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     setLoading(true);
-    const ok = await auth.register(email, password, name || undefined);
-    setLoading(false);
-    if (ok) {
-      history.replace('/tab1');
-    } else {
-      setToast('Sign up failed — try a different email');
+    try {
+      const res = await auth.register(email, password, name || undefined);
+      if (res && (res as any).success) {
+        history.replace('/tab1');
+      } else {
+        setToast((res as any).message || 'Sign up failed — try a different email');
+      }
+    } catch (err) {
+      console.error('Signup error', err);
+      setToast('Sign up failed — unexpected error');
+    } finally {
+      setLoading(false);
     }
   };
 
   const social = async (provider: 'google' | 'facebook') => {
     setLoading(true);
-    await auth.socialLogin(provider);
-    setLoading(false);
-    history.replace('/tab1');
+    try {
+      await auth.socialLogin(provider);
+      history.replace('/tab1');
+    } catch (err) {
+      console.error('Social signup error', err);
+      setToast('Social sign up failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

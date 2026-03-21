@@ -19,7 +19,7 @@ import facebookIcon from '../../assets/icons/facebook.svg.png';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('test@local');
-  const [password, setPassword] = useState('pass123');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   
@@ -30,20 +30,32 @@ const Login: React.FC = () => {
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     setLoading(true);
-    const ok = await auth.login(email, password);
-    setLoading(false);
-    if (ok) {
-      history.replace('/tab1');
-    } else {
-      setToast('Sign in failed — check credentials');
+    try {
+      const res = await auth.login(email, password);
+      if (res && (res as any).success) {
+        history.replace('/tab1');
+      } else {
+        setToast((res as any).message || 'Sign in failed — check credentials');
+      }
+    } catch (err) {
+      console.error('Login error', err);
+      setToast('Sign in failed — unexpected error');
+    } finally {
+      setLoading(false);
     }
   };
 
   const social = async (provider: 'google' | 'facebook') => {
     setLoading(true);
-    await auth.socialLogin(provider);
-    setLoading(false);
-    history.replace('/tab1');
+    try {
+      await auth.socialLogin(provider);
+      history.replace('/tab1');
+    } catch (err) {
+      console.error('Social login error', err);
+      setToast('Social sign in failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -60,7 +72,7 @@ const Login: React.FC = () => {
 
             <IonItem>
               <IonLabel position="stacked">Email</IonLabel>
-              <IonInput value={email} onIonChange={e => setEmail(e.detail.value || '')} type="email" />
+              <IonInput value={email} onIonChange={e => setEmail(e.detail.value || '')} type="text" />
             </IonItem>
 
             <IonItem>

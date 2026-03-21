@@ -1,13 +1,17 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { User } from '../types';
+import userApi from '../../api/userApi';
 
 interface AuthContextValue {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
-  register: (email: string, password: string, name?: string) => Promise<boolean>;
+  login: (username: string, password: string) => Promise<{ success: boolean; message?: string }>;
+  register: (email: string, password: string, name?: string) => Promise<{ success: boolean; message?: string }>;
   socialLogin: (provider: 'google' | 'facebook') => Promise<boolean>;
+  // New: methods now return structured result with optional message
+  // (backwards-compatible callers should check the `success` field)
+  // NOTE: login/register now return { success: boolean; message?: string }
   logout: () => void;
 }
 
@@ -70,12 +74,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {}
   };
 
-  const login = async (email: string, password: string) => {
+  const extractMessage = (maybeBody: any) => {
+    // Walk common shapes: { response: { data: { message: { field: ["msg"] } } } }
+    try {
+      const msgObj = maybeBody?.response?.data?.message || maybeBody?.message || maybeBody?.response?.data || maybeBody?.response || maybeBody;
+      if (!msgObj) return undefined;
+      if (typeof msgObj === 'string') return msgObj;
+      if (typeof msgObj === 'object') {
+        // flatten arrays / strings
+        const parts: string[] = [];
+        const collect = (v: any) => {
+          if (!v && v !== 0) return;
+          if (Array.isArray(v)) v.forEach(collect);
+          else if (typeof v === 'object') Object.values(v).forEach(collect);
+          else parts.push(String(v));
+        };
+        collect(msgObj);
+        return parts.join('; ');
+      }
+      return String(msgObj);
+    } catch {
+      return undefined;
+    }
+  };
+
+  const login = async (email: string, password: string): Promise<{ success: boolean; message?: string }> => {
     // Check local test account and any registered local accounts first
     if (email === LOCAL_TEST_CREDENTIALS.email && password === LOCAL_TEST_CREDENTIALS.password) {
       setToken(LOCAL_TEST_CREDENTIALS.token);
       setUser(LOCAL_TEST_CREDENTIALS.user as User);
-      return true;
+      return { success: true };
     }
 
     const accounts = readLocalAccounts();
@@ -83,41 +111,84 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (match) {
       setToken(match.token);
       setUser(match.user);
-      return true;
+      return { success: true };
     }
-
-    // Otherwise attempt real API call
+    // Attempt server login
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
-      if (!res.ok) return false;
-      const data = await res.json();
-      if (data?.token) {
-        setToken(data.token);
-        setUser(data.user || { id: data.id || 'unknown', email } as User);
-        return true;
+      // backend expects `username` in the payload
+      const resp = await userApi.login({ username: email, password });
+      const body = resp?.data;
+      if (body) {
+        // If backend reports success: true and no payload error
+        if (body.success === true) {
+          const payload = body.response?.data || body.response || body;
+          const serverHasError = payload?.error === true;
+          const serverMessage = extractMessage(body);
+          if (!serverHasError) {
+            const serverToken = payload?.token || payload?.accessToken || payload?.access_token;
+            const serverUser = payload?.user || payload;
+            if (serverToken) {
+              setToken(serverToken);
+              try { localStorage.setItem('token', serverToken); } catch {}
+              try { localStorage.setItem(LOCAL_TOKEN_KEY, serverToken); } catch {}
+              setUser(serverUser as User);
+              return { success: true };
+            }
+            // success but no token — treat as failure but surface message
+            return { success: false, message: serverMessage || 'Authentication failed' };
+          }
+          return { success: false, message: serverMessage || 'Authentication failed' };
+        }
+        // not success===true -> try to extract message
+        return { success: false, message: extractMessage(body) || 'Authentication failed' };
       }
-      return false;
-    } catch (e) {
-      console.error('Login error', e);
-      return false;
+    } catch (err: any) {
+      console.error('[Auth] remote login error', err);
+      const maybe = err?.response?.data || err?.response || err;
+      return { success: false, message: extractMessage(maybe) || String(err) };
     }
+
+    return { success: false, message: 'Authentication failed' };
   };
 
-  const register = async (email: string, password: string, name?: string) => {
+  const register = async (email: string, password: string, name?: string): Promise<{ success: boolean; message?: string }> => {
     const accounts = readLocalAccounts();
-    if (accounts.find(a => a.email === email)) return false; // already exists
+    if (accounts.find(a => a.email === email)) return { success: false, message: 'Account already exists' }; // already exists
+    // Attempt server-side createUser if available
+    try {
+      // backend expects `username` rather than `email` for registration
+      const resp = await (userApi.createUser ? userApi.createUser({ username: email, email, password, name }) : Promise.resolve(null));
+      // if API returned, attempt to use its shape
+      if (resp) {
+        // resp may be the created user or wrapped response
+        const msg = extractMessage(resp);
+        // if resp contains token, set it
+        const tokenFromResp = resp?.token || resp?.accessToken || resp?.access_token || resp?.response?.data?.token;
+        const userFromResp = resp?.user || resp?.response?.data || resp;
+        if (tokenFromResp) {
+          setToken(tokenFromResp);
+          try { localStorage.setItem('token', tokenFromResp); } catch {}
+          try { localStorage.setItem(LOCAL_TOKEN_KEY, tokenFromResp); } catch {}
+          setUser(userFromResp as User);
+          return { success: true };
+        }
+        // API responded but didn't provide token — surface message or success
+        return { success: true, message: msg };
+      }
+    } catch (err: any) {
+      console.error('[Auth] register error', err);
+      const maybe = err?.response?.data || err?.response || err;
+      return { success: false, message: extractMessage(maybe) || String(err) };
+    }
+
+    // fallback to local account creation
     const token = `local-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
     const user = { id: `local-${Date.now()}`, email, name: name || email.split('@')[0] } as User;
     accounts.push({ email, password, token, user });
     writeLocalAccounts(accounts);
     setToken(token);
     setUser(user);
-    return true;
+    return { success: true };
   };
 
   const socialLogin = async (provider: 'google' | 'facebook') => {

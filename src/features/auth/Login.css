@@ -4,7 +4,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg,#fff7ed 0%, #fff1f2 100%);
+  /* Force a light background even in system dark mode and set the IonContent background var */
+  --background: #fff;
+  background: var(--background);
+  color-scheme: light;
   padding: 0; /* zero out outer padding so card centers exactly */
   box-sizing: border-box;
   position: relative; /* allow absolute-centering fallback for precise alignment */
@@ -14,9 +17,13 @@
   width: 100%;
   max-width: 420px;
   background: white;
+  /* Force light-themed variables inside the card so text stays readable in dark system themes */
+  --ion-background-color: white;
+  --ion-text-color: #0f172a;
+  color: #0f172a;
   border-radius: 18px;
   padding: 28px 20px;
-  box-shadow: 0 18px 40px rgba(16,24,40,0.08);
+  /* box-shadow: 0 18px 40px rgba(16,24,40,0.08); */
   text-align: center;
   margin: auto; /* vertically center inside the parent flex container */
   max-height: calc(100vh - 48px);
@@ -87,6 +94,25 @@
 
 .login-form ion-input {
   padding: 10px 6px;
+}
+
+/* Ensure IonInput native input and placeholders are visible even in dark mode */
+/* IonInput exposes a ::part(native) for styling the inner input in modern Ionic */
+ion-input::part(native),
+.login-card.modern input,
+.login-card.modern textarea {
+  color: #0f172a !important;
+}
+
+ion-input::part(native)::placeholder,
+.login-card.modern input::placeholder,
+.login-card.modern textarea::placeholder {
+  color: #9aa6b2 !important;
+  opacity: 1;
+}
+
+.login-card.modern ion-label {
+  color: #475569;
 }
 
 .primary-button {
