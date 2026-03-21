@@ -1,19 +1,8 @@
  
-import {
-  IonApp,
-  IonIcon,
-  IonLabel,
-  IonFab,
-  IonFabButton,
-  IonRouterOutlet,
-  IonTabBar,
-  IonTabButton,
-  IonTabs,
-  setupIonicReact
-} from '@ionic/react';
+import { IonApp, IonLabel, IonRouterOutlet, IonTabs, setupIonicReact } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
-import { ellipse, home, person, square, triangle, add, settings } from 'ionicons/icons';
 import AppRoutes from './routes';
+import { TabBar, FloatingFab } from './shared/components';
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
@@ -117,28 +106,10 @@ const App: React.FC = () => {
           <IonRouterOutlet>
             <AppRoutes />
           </IonRouterOutlet>
-          <IonTabBar slot="bottom" className="floating-tab-bar">
-          <IonTabButton tab="tab1" href="/tab1">
-            <IonIcon aria-hidden="true" icon={home} />
-            <IonLabel>Home</IonLabel>
-          </IonTabButton>
-
-          <IonTabButton tab="tab2" href="/tab2">
-            <IonLabel>Create Trip</IonLabel>
-          </IonTabButton>
-          <IonTabButton tab="tab3" href="/tab3">
-            <IonIcon aria-hidden="true" icon={settings} />
-            <IonLabel>Settings</IonLabel>
-          </IonTabButton>
-
-        </IonTabBar>
-      </IonTabs>
+          <TabBar />
+        </IonTabs>
       {/* Floating FAB placed outside the tabs so it won't be clipped by tab bar */}
-      <IonFab className="create-fab">
-        <IonFabButton routerLink="/tab2" className="create-fab-button">
-          <IonIcon icon={add} />
-        </IonFabButton>
-      </IonFab>
+      <FloatingFab />
     </IonReactRouter>
   </IonApp>
   );
