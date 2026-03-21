@@ -7,7 +7,6 @@ import {
   IonLabel,
   IonPage,
   IonLoading,
-  IonToast,
   IonText,
 } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
@@ -16,12 +15,14 @@ import './Login.css';
 import HeroIllustration from './HeroIllustration';
 import googleIcon from '../../assets/icons/Google.svg.png';
 import facebookIcon from '../../assets/icons/facebook.svg.png';
+import { useGlobalUI } from '../../shared/ui/GlobalUIProvider';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('test@local');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const { showToast } = useGlobalUI();
+  const [fieldErrors, setFieldErrors] = useState<Record<string,string>>({});
   
 
   const auth = useAuth();
@@ -30,16 +31,27 @@ const Login: React.FC = () => {
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     setLoading(true);
-    try {
+      try {
       const res = await auth.login(email, password);
       if (res && (res as any).success) {
         history.replace('/tab1');
       } else {
-        setToast((res as any).message || 'Sign in failed — check credentials');
+        // map server field errors to inputs
+        const errs = (res as any).errors as Record<string,string[]> | undefined;
+        if (errs) {
+          const mapped: Record<string,string> = {};
+          // backend uses 'username' for the login field -> map to 'email'
+          Object.entries(errs).forEach(([k, v]) => {
+            const key = k === 'username' ? 'email' : k;
+            mapped[key] = v.join('; ');
+          });
+          setFieldErrors(mapped);
+        }
+        showToast({ message: (res as any).message || 'Sign in failed — check credentials', duration: 3000 });
       }
     } catch (err) {
       console.error('Login error', err);
-      setToast('Sign in failed — unexpected error');
+      showToast({ message: 'Sign in failed — unexpected error', duration: 3000 });
     } finally {
       setLoading(false);
     }
@@ -52,7 +64,7 @@ const Login: React.FC = () => {
       history.replace('/tab1');
     } catch (err) {
       console.error('Social login error', err);
-      setToast('Social sign in failed');
+      showToast({ message: 'Social sign in failed', duration: 3000 });
     } finally {
       setLoading(false);
     }
@@ -72,12 +84,14 @@ const Login: React.FC = () => {
 
             <IonItem>
               <IonLabel position="stacked">Email</IonLabel>
-              <IonInput value={email} onIonChange={e => setEmail(e.detail.value || '')} type="text" />
+              <IonInput value={email} onIonChange={e => { setEmail(e.detail.value || ''); setFieldErrors(f => ({ ...f, email: '' })); }} type="text" />
+              {fieldErrors.email ? <div className="field-error">{fieldErrors.email}</div> : null}
             </IonItem>
 
             <IonItem>
               <IonLabel position="stacked">Password</IonLabel>
-              <IonInput value={password} onIonChange={e => setPassword(e.detail.value || '')} type="password" />
+              <IonInput value={password} onIonChange={e => { setPassword(e.detail.value || ''); setFieldErrors(f => ({ ...f, password: '' })); }} type="password" />
+              {fieldErrors.password ? <div className="field-error">{fieldErrors.password}</div> : null}
             </IonItem>
 
             <IonButton expand="block" type="submit" className="primary-button">Sign in</IonButton>
@@ -101,7 +115,6 @@ const Login: React.FC = () => {
         </div>
 
         <IonLoading isOpen={loading} message={'Signing in...'} />
-        <IonToast isOpen={!!toast} message={toast || ''} duration={2000} onDidDismiss={() => setToast(null)} />
       </IonContent>
     </IonPage>
   );

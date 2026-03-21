@@ -2,16 +2,21 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { User } from '../types';
 import userApi from '../../api/userApi';
 
+interface AuthResult {
+  success: boolean;
+  message?: string;
+  errors?: Record<string, string[]>;
+}
+
 interface AuthContextValue {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
-  login: (username: string, password: string) => Promise<{ success: boolean; message?: string }>;
-  register: (email: string, password: string, name?: string) => Promise<{ success: boolean; message?: string }>;
+  login: (username: string, password: string) => Promise<AuthResult>;
+  register: (email: string, password: string, name?: string) => Promise<AuthResult>;
   socialLogin: (provider: 'google' | 'facebook') => Promise<boolean>;
   // New: methods now return structured result with optional message
   // (backwards-compatible callers should check the `success` field)
-  // NOTE: login/register now return { success: boolean; message?: string }
   logout: () => void;
 }
 
@@ -98,6 +103,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const extractErrors = (maybeBody: any): Record<string, string[]> | undefined => {
+    try {
+      const msgObj = maybeBody?.response?.data?.message || maybeBody?.message || maybeBody?.response?.data || maybeBody?.response || maybeBody;
+      if (!msgObj) return undefined;
+      if (typeof msgObj === 'object') {
+        const result: Record<string, string[]> = {};
+        const candidate = msgObj;
+        if (candidate && typeof candidate === 'object') {
+          Object.entries(candidate).forEach(([k, v]) => {
+            if (Array.isArray(v)) result[k] = v.map(String);
+            else if (typeof v === 'string') result[k] = [v];
+            else result[k] = [String(v)];
+          });
+          return result;
+        }
+      }
+      return undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
   const login = async (email: string, password: string): Promise<{ success: boolean; message?: string }> => {
     // Check local test account and any registered local accounts first
     if (email === LOCAL_TEST_CREDENTIALS.email && password === LOCAL_TEST_CREDENTIALS.password) {
@@ -124,6 +151,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const payload = body.response?.data || body.response || body;
           const serverHasError = payload?.error === true;
           const serverMessage = extractMessage(body);
+          const serverErrors = extractErrors(body);
           if (!serverHasError) {
             const serverToken = payload?.token || payload?.accessToken || payload?.access_token;
             const serverUser = payload?.user || payload;
@@ -134,18 +162,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setUser(serverUser as User);
               return { success: true };
             }
-            // success but no token — treat as failure but surface message
-            return { success: false, message: serverMessage || 'Authentication failed' };
+            // success but no token — treat as failure but surface message/errors
+            return { success: false, message: serverMessage || 'Authentication failed', errors: serverErrors };
           }
-          return { success: false, message: serverMessage || 'Authentication failed' };
+          return { success: false, message: serverMessage || 'Authentication failed', errors: serverErrors };
         }
-        // not success===true -> try to extract message
-        return { success: false, message: extractMessage(body) || 'Authentication failed' };
+        // not success===true -> try to extract message/errors
+        return { success: false, message: extractMessage(body) || 'Authentication failed', errors: extractErrors(body) };
       }
     } catch (err: any) {
       console.error('[Auth] remote login error', err);
       const maybe = err?.response?.data || err?.response || err;
-      return { success: false, message: extractMessage(maybe) || String(err) };
+      return { success: false, message: extractMessage(maybe) || String(err), errors: extractErrors(maybe) };
     }
 
     return { success: false, message: 'Authentication failed' };
@@ -178,7 +206,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err: any) {
       console.error('[Auth] register error', err);
       const maybe = err?.response?.data || err?.response || err;
-      return { success: false, message: extractMessage(maybe) || String(err) };
+      return { success: false, message: extractMessage(maybe) || String(err), errors: extractErrors(maybe) };
     }
 
     // fallback to local account creation

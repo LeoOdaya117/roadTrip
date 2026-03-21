@@ -96,6 +96,13 @@
   padding: 10px 6px;
 }
 
+.field-error {
+  color: #e11d48;
+  font-size: 12px;
+  margin-top: 6px;
+  text-align: left;
+}
+
 /* Ensure IonInput native input and placeholders are visible even in dark mode */
 /* IonInput exposes a ::part(native) for styling the inner input in modern Ionic */
 ion-input::part(native),

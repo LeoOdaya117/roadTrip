@@ -2,7 +2,7 @@
 import { IonApp, IonRouterOutlet, IonTabs, setupIonicReact } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
 import AppRoutes from './routes';
-import { TabBar, FloatingFab, AuthProvider } from './shared/components';
+import { TabBar, FloatingFab, AuthProvider, GlobalUIProvider } from './shared/components';
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
@@ -102,7 +102,8 @@ const App: React.FC = () => {
   return (
     <IonApp>
       <IonReactRouter>
-        <AuthProvider>
+        <GlobalUIProvider>
+          <AuthProvider>
           <IonTabs>
             <IonRouterOutlet>
               <AppRoutes />
@@ -111,7 +112,8 @@ const App: React.FC = () => {
           </IonTabs>
           {/* Floating FAB placed outside the tabs so it won't be clipped by tab bar */}
           <FloatingFab />
-        </AuthProvider>
+          </AuthProvider>
+        </GlobalUIProvider>
       </IonReactRouter>
   </IonApp>
   );

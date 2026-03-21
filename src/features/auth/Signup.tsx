@@ -7,7 +7,6 @@ import {
   IonLabel,
   IonPage,
   IonLoading,
-  IonToast,
   IonText,
 } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
@@ -16,13 +15,15 @@ import './Login.css';
 import HeroIllustration from './HeroIllustration';
 import googleIcon from '../../assets/icons/Google.svg.png';
 import facebookIcon from '../../assets/icons/facebook.svg.png';
+import { useGlobalUI } from '../../shared/ui/GlobalUIProvider';
 
 const Signup: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const { showToast } = useGlobalUI();
+  const [fieldErrors, setFieldErrors] = useState<Record<string,string>>({});
 
   const auth = useAuth();
   const history = useHistory();
@@ -30,16 +31,25 @@ const Signup: React.FC = () => {
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     setLoading(true);
-    try {
+      try {
       const res = await auth.register(email, password, name || undefined);
       if (res && (res as any).success) {
         history.replace('/tab1');
       } else {
-        setToast((res as any).message || 'Sign up failed — try a different email');
+        const errs = (res as any).errors as Record<string,string[]> | undefined;
+        if (errs) {
+          const mapped: Record<string,string> = {};
+          Object.entries(errs).forEach(([k, v]) => {
+            const key = k === 'username' ? 'email' : k;
+            mapped[key] = v.join('; ');
+          });
+          setFieldErrors(mapped);
+        }
+        showToast({ message: (res as any).message || 'Sign up failed — try a different email', duration: 3000 });
       }
     } catch (err) {
       console.error('Signup error', err);
-      setToast('Sign up failed — unexpected error');
+      showToast({ message: 'Sign up failed — unexpected error', duration: 3000 });
     } finally {
       setLoading(false);
     }
@@ -52,7 +62,7 @@ const Signup: React.FC = () => {
       history.replace('/tab1');
     } catch (err) {
       console.error('Social signup error', err);
-      setToast('Social sign up failed');
+      showToast({ message: 'Social sign up failed', duration: 3000 });
     } finally {
       setLoading(false);
     }
@@ -71,17 +81,20 @@ const Signup: React.FC = () => {
           <form onSubmit={submit} className="login-form">
             <IonItem>
               <IonLabel position="stacked">Full name</IonLabel>
-              <IonInput value={name} onIonChange={e => setName(e.detail.value || '')} type="text" />
+              <IonInput value={name} onIonChange={e => { setName(e.detail.value || ''); setFieldErrors(f => ({ ...f, name: '' })); }} type="text" />
+              {fieldErrors.name ? <div className="field-error">{fieldErrors.name}</div> : null}
             </IonItem>
 
             <IonItem>
               <IonLabel position="stacked">Email</IonLabel>
-              <IonInput value={email} onIonChange={e => setEmail(e.detail.value || '')} type="email" />
+              <IonInput value={email} onIonChange={e => { setEmail(e.detail.value || ''); setFieldErrors(f => ({ ...f, email: '' })); }} type="email" />
+              {fieldErrors.email ? <div className="field-error">{fieldErrors.email}</div> : null}
             </IonItem>
 
             <IonItem>
               <IonLabel position="stacked">Password</IonLabel>
-              <IonInput value={password} onIonChange={e => setPassword(e.detail.value || '')} type="password" />
+              <IonInput value={password} onIonChange={e => { setPassword(e.detail.value || ''); setFieldErrors(f => ({ ...f, password: '' })); }} type="password" />
+              {fieldErrors.password ? <div className="field-error">{fieldErrors.password}</div> : null}
             </IonItem>
 
             <IonButton expand="block" type="submit" className="primary-button">Create account</IonButton>
@@ -105,7 +118,6 @@ const Signup: React.FC = () => {
         </div>
 
         <IonLoading isOpen={loading} message={'Creating account...'} />
-        <IonToast isOpen={!!toast} message={toast || ''} duration={2000} onDidDismiss={() => setToast(null)} />
       </IonContent>
     </IonPage>
   );
