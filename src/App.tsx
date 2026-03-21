@@ -1,4 +1,4 @@
-import { Redirect, Route } from 'react-router-dom';
+ 
 import {
   IonApp,
   IonIcon,
@@ -13,9 +13,6 @@ import {
 } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
 import { ellipse, home, person, square, triangle, add, settings } from 'ionicons/icons';
-import Tab1 from './features/home/Tab1';
-import Tab2 from './features/home/Tab2';
-import Tab3 from './features/home/Tab3';
 import AppRoutes from './routes';
 
 /* Core CSS required for Ionic components to work properly */
@@ -115,10 +112,12 @@ const App: React.FC = () => {
 
   return (
     <IonApp>
-    <IonReactRouter>
-      <IonTabs>
-        <AppRoutes />
-        <IonTabBar slot="bottom" className="floating-tab-bar">
+      <IonReactRouter>
+        <IonTabs>
+          <IonRouterOutlet>
+            <AppRoutes />
+          </IonRouterOutlet>
+          <IonTabBar slot="bottom" className="floating-tab-bar">
           <IonTabButton tab="tab1" href="/tab1">
             <IonIcon aria-hidden="true" icon={home} />
             <IonLabel>Home</IonLabel>
