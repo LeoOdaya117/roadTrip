@@ -45,7 +45,7 @@ const Login: React.FC = () => {
             const key = k === 'username' ? 'email' : k;
             mapped[key] = v.join('; ');
           });
-          setFieldErrors(mapped);
+          // setFieldErrors(mapped);
         }
         showToast({ message: (res as any).message || 'Sign in failed — check credentials', duration: 3000 });
       }
