@@ -11,7 +11,8 @@ type SyncParams = {
   location: LocationPoint | null;
 };
 
-const SYNC_INTERVAL = 4000;
+// 4s interval balances timely updates with battery/network usage.
+const SYNC_INTERVAL_MS = 4000;
 
 export const useRideLocationSync = ({
   rideId,
@@ -65,7 +66,7 @@ export const useRideLocationSync = ({
       }
     };
 
-    const interval = window.setInterval(syncLocation, SYNC_INTERVAL);
+    const interval = window.setInterval(syncLocation, SYNC_INTERVAL_MS);
     syncLocation();
 
     return () => window.clearInterval(interval);

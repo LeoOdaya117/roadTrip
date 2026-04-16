@@ -1,5 +1,7 @@
 import { CurrentUser } from '../types/ride';
 
+const ID_DISPLAY_LENGTH = 6;
+
 const createId = () => {
   if (globalThis.crypto?.randomUUID) {
     return globalThis.crypto.randomUUID();
@@ -16,7 +18,7 @@ const createId = () => {
 
 export const createLocalUser = (isHost: boolean, name?: string): CurrentUser => {
   const id = createId();
-  const displayName = name ?? `Rider ${id.slice(0, 6)}`;
+  const displayName = name ?? `Rider ${id.slice(0, ID_DISPLAY_LENGTH)}`;
 
   return {
     id,

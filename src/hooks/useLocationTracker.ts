@@ -15,7 +15,8 @@ type TrackerState = {
   stopTracking: () => void;
 };
 
-const MIN_UPDATE_INTERVAL = 3000;
+// Filter GPS jitter while keeping near real-time updates.
+const MIN_UPDATE_INTERVAL_MS = 3000;
 const MIN_DISTANCE_METERS = 6;
 const GEOLOCATION_OPTIONS = {
   enableHighAccuracy: true,
@@ -60,7 +61,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
         new Date(previous.timestamp).getTime();
       const distance = distanceMeters(previous, nextLocation);
 
-      if (timeDiff < MIN_UPDATE_INTERVAL && distance < MIN_DISTANCE_METERS) {
+      if (timeDiff < MIN_UPDATE_INTERVAL_MS && distance < MIN_DISTANCE_METERS) {
         return;
       }
     }
@@ -162,7 +163,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
 
   useEffect(() => {
     let listener: PluginListenerHandle | null = null;
-    let cancelled = false;
+    let isCancelled = false;
 
     App.addListener('appStateChange', (state) => {
       if (!state.isActive && isTracking) {
@@ -175,7 +176,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
         startTracking();
       }
     }).then((handle) => {
-      if (cancelled) {
+      if (isCancelled) {
         handle.remove();
         return;
       }
@@ -183,7 +184,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
     });
 
     return () => {
-      cancelled = true;
+      isCancelled = true;
       listener?.remove();
     };
   }, [isTracking, startTracking, stopTracking]);

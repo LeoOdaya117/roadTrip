@@ -7,7 +7,8 @@ type MockRidersParams = {
   origin: { lat: number; lng: number };
 };
 
-const MOVE_INTERVAL = 3000;
+// 3s cadence keeps mock movement smooth without overwhelming renders.
+const MOCK_MOVE_INTERVAL_MS = 3000;
 
 export const useMockRiders = ({ enabled, origin }: MockRidersParams) => {
   const updateRiders = useRideStore((state) => state.updateRiders);
@@ -61,7 +62,7 @@ export const useMockRiders = ({ enabled, origin }: MockRidersParams) => {
       }));
 
       updateRiders(mockRidersRef.current);
-    }, MOVE_INTERVAL);
+    }, MOCK_MOVE_INTERVAL_MS);
 
     return () => window.clearInterval(interval);
   }, [baseRiders, enabled, updateRiders]);
