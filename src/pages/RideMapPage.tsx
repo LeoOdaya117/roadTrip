@@ -123,7 +123,7 @@ const RideMapPage: React.FC = () => {
 
   useRideChannel(rideId);
 
-  const { syncError } = useRideLocationSync({
+  const { syncStatus } = useRideLocationSync({
     rideId,
     riderId: currentUser?.id,
     isTracking,
@@ -194,7 +194,7 @@ const RideMapPage: React.FC = () => {
             {permission !== 'granted' && (
               <IonText color="warning">Location permission required.</IonText>
             )}
-            {syncError && <IonText color="warning">{syncError}</IonText>}
+            {syncStatus && <IonText color="warning">{syncStatus}</IonText>}
           </div>
         </div>
       </IonContent>

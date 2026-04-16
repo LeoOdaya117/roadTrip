@@ -17,6 +17,11 @@ type TrackerState = {
 
 const MIN_UPDATE_INTERVAL = 3000;
 const MIN_DISTANCE_METERS = 6;
+const GEOLOCATION_OPTIONS = {
+  enableHighAccuracy: true,
+  timeout: 10000,
+  maximumAge: 2000
+};
 
 const toRadians = (value: number) => (value * Math.PI) / 180;
 
@@ -104,11 +109,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
       }
 
       try {
-        const current = await Geolocation.getCurrentPosition({
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 2000
-        });
+        const current = await Geolocation.getCurrentPosition(GEOLOCATION_OPTIONS);
 
         updateLocation({
           lat: current.coords.latitude,
@@ -125,11 +126,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
       }
 
       watchIdRef.current = await Geolocation.watchPosition(
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 2000
-        },
+        GEOLOCATION_OPTIONS,
         (position, watchError) => {
           if (watchError) {
             setError(watchError.message);

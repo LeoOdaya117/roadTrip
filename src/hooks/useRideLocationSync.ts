@@ -20,7 +20,7 @@ export const useRideLocationSync = ({
   isOnline,
   location
 }: SyncParams) => {
-  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const latestLocationRef = useRef<LocationPoint | null>(location);
   const isSendingRef = useRef(false);
 
@@ -48,16 +48,18 @@ export const useRideLocationSync = ({
       }
 
       if (!isOnline) {
-        setSyncError('Offline: queued location update.');
+        setSyncStatus('Waiting for connection to sync...');
         return;
       }
 
       try {
         isSendingRef.current = true;
         await sendLocation(rideId, riderId, latest.lat, latest.lng, latest.speed);
-        setSyncError(null);
+        setSyncStatus(null);
       } catch (error) {
-        setSyncError(error instanceof Error ? error.message : 'Sync failed.');
+        setSyncStatus(
+          error instanceof Error ? error.message : 'Location sync failed.'
+        );
       } finally {
         isSendingRef.current = false;
       }
@@ -84,5 +86,5 @@ export const useRideLocationSync = ({
       .catch(() => undefined);
   }, [isOnline, rideId, riderId]);
 
-  return { syncError };
+  return { syncStatus };
 };

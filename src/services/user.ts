@@ -16,7 +16,7 @@ const createId = () => {
 
 export const createLocalUser = (isHost: boolean, name?: string): CurrentUser => {
   const id = createId();
-  const displayName = name ?? `Rider ${id.slice(0, 4)}`;
+  const displayName = name ?? `Rider ${id.slice(0, 6)}`;
 
   return {
     id,
