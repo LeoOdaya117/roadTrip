@@ -1,53 +1,110 @@
-/* For information on how to create your own theme, please refer to:
-http://ionicframework.com/docs/theming/ */
-
-/* Road Trip App Color Palette */
+/* RoadTrip Live — Design Tokens */
 :root {
-  /* Primary Colors - Adventure & Energy */
-  --ion-color-primary: #FF6B35;        /* Vibrant Orange - Main action color */
+  /* Brand: Energetic Orange */
+  --ion-color-primary: #FF6B35;
   --ion-color-primary-rgb: 255, 107, 53;
   --ion-color-primary-contrast: #ffffff;
   --ion-color-primary-contrast-rgb: 255, 255, 255;
-  --ion-color-primary-shade: #E55A2B;
-  --ion-color-primary-tint: #FF7A4D;
+  --ion-color-primary-shade: #E05A28;
+  --ion-color-primary-tint: #FF8255;
 
-  /* Secondary Colors - Exploration & Trust */
-  --ion-color-secondary: #004E89;      /* Deep Blue - Trust & reliability */
-  --ion-color-secondary-rgb: 0, 78, 137;
+  /* Accent: Refined Indigo */
+  --ion-color-secondary: #6366F1;
+  --ion-color-secondary-rgb: 99, 102, 241;
   --ion-color-secondary-contrast: #ffffff;
   --ion-color-secondary-contrast-rgb: 255, 255, 255;
-  --ion-color-secondary-shade: #003E6B;
-  --ion-color-secondary-tint: #1A6BA8;
+  --ion-color-secondary-shade: #4F46E5;
+  --ion-color-secondary-tint: #818CF8;
 
-  /* Tertiary Colors - Nature & Journey */
-  --ion-color-tertiary: #2ECC71;       /* Fresh Green - Growth & nature */
-  --ion-color-tertiary-rgb: 46, 204, 113;
+  /* Tertiary: Emerald */
+  --ion-color-tertiary: #10B981;
+  --ion-color-tertiary-rgb: 16, 185, 129;
   --ion-color-tertiary-contrast: #ffffff;
   --ion-color-tertiary-contrast-rgb: 255, 255, 255;
-  --ion-color-tertiary-shade: #27AE60;
-  --ion-color-tertiary-tint: #45D983;
+  --ion-color-tertiary-shade: #059669;
+  --ion-color-tertiary-tint: #34D399;
 
-  /* Accent Colors */
-  --ion-color-success: #27AE60;        /* Green - Success & completion */
-  --ion-color-warning: #F39C12;        /* Golden Yellow - Caution & highlights */
-  --ion-color-danger: #E74C3C;         /* Red - Alerts & errors */
-  --ion-color-light: #ECF0F1;          /* Light Gray - Backgrounds */
-  --ion-color-medium: #95A5A6;         /* Medium Gray - Secondary text */
-  --ion-color-dark: #2C3E50;           /* Dark Gray-Blue - Primary text */
+  --ion-color-success: #10B981;
+  --ion-color-success-rgb: 16, 185, 129;
+  --ion-color-success-contrast: #ffffff;
+  --ion-color-success-contrast-rgb: 255, 255, 255;
+  --ion-color-success-shade: #059669;
+  --ion-color-success-tint: #34D399;
 
-  /* Additional Road Trip Theme Colors */
-  --ion-color-sunset: #FF6B6B;         /* Sunset Red */
-  --ion-color-road: #34495E;           /* Dark asphalt */
-  --ion-color-sky: #3498DB;            /* Sky Blue */
-  --ion-color-sand: #E8D4A2;           /* Desert Sand */
+  --ion-color-warning: #F59E0B;
+  --ion-color-warning-rgb: 245, 158, 11;
+  --ion-color-warning-contrast: #000000;
+  --ion-color-warning-contrast-rgb: 0, 0, 0;
+  --ion-color-warning-shade: #D97706;
+  --ion-color-warning-tint: #FBBF24;
+
+  --ion-color-danger: #EF4444;
+  --ion-color-danger-rgb: 239, 68, 68;
+  --ion-color-danger-contrast: #ffffff;
+  --ion-color-danger-contrast-rgb: 255, 255, 255;
+  --ion-color-danger-shade: #DC2626;
+  --ion-color-danger-tint: #F87171;
+
+  --ion-color-light: #1A1C28;
+  --ion-color-light-rgb: 26, 28, 40;
+  --ion-color-light-contrast: #94A3B8;
+  --ion-color-light-contrast-rgb: 148, 163, 184;
+  --ion-color-light-shade: #13141E;
+  --ion-color-light-tint: #242638;
+
+  --ion-color-medium: #64748B;
+  --ion-color-medium-rgb: 100, 116, 139;
+  --ion-color-medium-contrast: #ffffff;
+  --ion-color-medium-contrast-rgb: 255, 255, 255;
+  --ion-color-medium-shade: #475569;
+  --ion-color-medium-tint: #94A3B8;
+
+  --ion-color-dark: #F1F5F9;
+  --ion-color-dark-rgb: 241, 245, 249;
+  --ion-color-dark-contrast: #080A12;
+  --ion-color-dark-contrast-rgb: 8, 10, 18;
+  --ion-color-dark-shade: #CBD5E1;
+  --ion-color-dark-tint: #ffffff;
+
+  /* ── Global app surface ── */
+  --ion-background-color: #080A12;
+  --ion-background-color-rgb: 8, 10, 18;
+
+  --ion-text-color: #F1F5F9;
+  --ion-text-color-rgb: 241, 245, 249;
+
+  --ion-font-family: -apple-system, 'SF Pro Text', BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+
+  /* Color steps (dark scale) */
+  --ion-color-step-50:  #0D0F1B;
+  --ion-color-step-100: #121424;
+  --ion-color-step-150: #17192D;
+  --ion-color-step-200: #1C1E36;
+  --ion-color-step-250: #21233F;
+  --ion-color-step-300: #262848;
+  --ion-color-step-350: #3A3C5A;
+  --ion-color-step-400: #4E506C;
+  --ion-color-step-450: #62647E;
+  --ion-color-step-500: #767890;
+  --ion-color-step-550: #8A8CA2;
+  --ion-color-step-600: #9EA0B4;
+  --ion-color-step-650: #B2B4C6;
+  --ion-color-step-700: #C6C8D8;
+  --ion-color-step-750: #DADCEA;
+  --ion-color-step-800: #E4E6EF;
+  --ion-color-step-850: #ECEEF5;
+  --ion-color-step-900: #F4F5F9;
+  --ion-color-step-950: #F8F9FC;
+
+  /* Component overrides */
+  --ion-card-background:   rgba(255, 255, 255, 0.04);
+  --ion-item-background:   transparent;
+  --ion-item-color:        #F1F5F9;
+  --ion-list-background:   transparent;
+  --ion-border-color:      rgba(255, 255, 255, 0.08);
+  --ion-placeholder-color: #334155;
+
+  --ion-toolbar-background:    rgba(8, 10, 18, 0.96);
+  --ion-toolbar-color:         #F1F5F9;
+  --ion-toolbar-border-color:  rgba(255, 255, 255, 0.07);
 }
-
-/* Color Usage Notes:
- * Primary (Orange): CTAs, highlights, main navigation
- * Secondary (Deep Blue): Secondary actions, cards, important info
- * Tertiary (Green): Positive actions, achievements
- * Success (Green): Completed trips, checkmarks
- * Warning (Gold): Important info, highlights
- * Danger (Red): Errors, alerts, warnings
- * Light/Medium/Dark: Text hierarchy and backgrounds
- */
