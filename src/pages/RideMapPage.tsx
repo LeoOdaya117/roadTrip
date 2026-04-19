@@ -160,13 +160,13 @@ const RideMapPage: React.FC = () => {
   };
 
   return (
-    <IonPage>
-      <IonHeader>
-        <IonToolbar>
+      <IonPage>
+        <IonHeader>
+        <IonToolbar className="app-toolbar">
           <IonTitle>Live Ride</IonTitle>
         </IonToolbar>
       </IonHeader>
-      <IonContent className="ride-map-content" fullscreen>
+      <IonContent className="ride-map-content app-page map-page" fullscreen>
         <div className="map-wrapper">
           <RideMapView
             center={center}
@@ -186,7 +186,7 @@ const RideMapPage: React.FC = () => {
               {isTracking ? 'Pause Tracking' : 'Resume Tracking'}
             </IonButton>
           </div>
-          <div className="map-status">
+          <div className="map-status app-panel">
             <strong>Status</strong>
             <IonText>
             {isOnline ? 'Online' : 'Offline'} • {isTracking ? 'Tracking' : 'Paused'}

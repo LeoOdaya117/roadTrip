@@ -1,5 +1,7 @@
 :root {
   --ride-padding: 16px;
+  --surface: rgba(255, 255, 255, 0.92);
+  --surface-border: rgba(255, 255, 255, 0.4);
 }
 
 .page-content {
@@ -7,6 +9,61 @@
   --padding-end: var(--ride-padding);
   --padding-top: var(--ride-padding);
   --padding-bottom: var(--ride-padding);
+}
+
+.app-page {
+  --background: radial-gradient(circle at top, #f5f7ff 0%, #eef2ff 45%, #f8fafc 100%);
+}
+
+.app-toolbar {
+  --background: rgba(12, 18, 45, 0.95);
+  --color: #f8fafc;
+}
+
+.page-hero {
+  margin: 4px 0 18px;
+}
+
+.page-hero h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  color: #0f172a;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.page-hero p {
+  margin: 6px 0 0;
+  color: #475569;
+  font-size: 0.95rem;
+}
+
+.page-hero.compact {
+  margin-bottom: 12px;
+}
+
+.app-card,
+.app-panel {
+  background: var(--surface);
+  border: 1px solid var(--surface-border);
+  border-radius: 16px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.app-panel {
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.app-cta {
+  margin-top: 12px;
+}
+
+.ride-code-panel h2 {
+  margin: 6px 0 2px;
+  font-size: 1.6rem;
+  letter-spacing: 0.06em;
+  color: #0f172a;
 }
 
 .ride-map-content {
@@ -41,9 +98,8 @@
   position: absolute;
   left: 16px;
   bottom: 16px;
-  background: rgba(0, 0, 0, 0.65);
-  color: #fff;
-  padding: 8px 12px;
+  color: #0f172a;
+  padding: 10px 12px;
   border-radius: 12px;
   font-size: 12px;
   display: flex;
@@ -55,18 +111,12 @@
 
 .map-status strong {
   font-size: 12px;
+  color: #1e293b;
 }
 
 .rider-badge {
+  display: block;
+  margin-top: 8px;
   font-size: 12px;
-  color: var(--ion-color-medium);
-}
-
-.user-marker {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--ion-color-primary);
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.2);
+  color: #475569;
 }

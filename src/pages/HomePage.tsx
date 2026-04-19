@@ -131,14 +131,18 @@ const HomePage: React.FC = () => {
   };
 
   return (
-    <IonPage>
-      <IonHeader>
-        <IonToolbar>
+      <IonPage>
+        <IonHeader>
+        <IonToolbar className="app-toolbar">
           <IonTitle>RoadTrip Live</IonTitle>
         </IonToolbar>
       </IonHeader>
-      <IonContent className="page-content">
-        <IonCard>
+      <IonContent className="page-content app-page home-page">
+        <div className="page-hero">
+          <h1>Ride together, live.</h1>
+          <p>Create or join a trip and track everyone in one map.</p>
+        </div>
+        <IonCard className="app-card">
           <IonCardHeader>
             <IonCardTitle>Create a ride</IonCardTitle>
           </IonCardHeader>
@@ -160,7 +164,7 @@ const HomePage: React.FC = () => {
           </IonCardContent>
         </IonCard>
 
-        <IonCard>
+        <IonCard className="app-card">
           <IonCardHeader>
             <IonCardTitle>Join a ride</IonCardTitle>
           </IonCardHeader>
@@ -187,7 +191,7 @@ const HomePage: React.FC = () => {
         </IonCard>
 
         {savedSession && (
-          <IonCard>
+          <IonCard className="app-card">
             <IonCardHeader>
               <IonCardTitle>Resume last ride</IonCardTitle>
             </IonCardHeader>

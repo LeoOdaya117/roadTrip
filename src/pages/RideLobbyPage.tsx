@@ -57,33 +57,41 @@ const RideLobbyPage: React.FC = () => {
   };
 
   return (
-    <IonPage>
-      <IonHeader>
-        <IonToolbar>
+      <IonPage>
+        <IonHeader>
+        <IonToolbar className="app-toolbar">
           <IonTitle>Ride Lobby</IonTitle>
         </IonToolbar>
       </IonHeader>
-      <IonContent className="page-content">
-        <IonText color="medium">Ride code</IonText>
-        <h2>{rideId ?? '---'}</h2>
+      <IonContent className="page-content app-page lobby-page">
+        <div className="page-hero compact">
+          <h1>Ready to roll</h1>
+          <p>Share the code and wait for everyone to join before starting.</p>
+        </div>
+        <div className="app-panel ride-code-panel">
+          <IonText color="medium">Ride code</IonText>
+          <h2>{rideId ?? '---'}</h2>
+        </div>
 
-        <IonText color="medium">Participants</IonText>
-        <IonList inset>
-          {riderList.length === 0 && (
-            <IonItem>
-              <IonLabel>Waiting for riders...</IonLabel>
-            </IonItem>
-          )}
-          {riderList.map((rider) => (
-            <IonItem key={rider.id}>
-              <IonLabel>{rider.name}</IonLabel>
-              {rider.isHost && <IonBadge color="primary">Host</IonBadge>}
-            </IonItem>
-          ))}
-        </IonList>
+        <div className="app-panel">
+          <IonText color="medium">Participants</IonText>
+          <IonList inset>
+            {riderList.length === 0 && (
+              <IonItem>
+                <IonLabel>Waiting for riders...</IonLabel>
+              </IonItem>
+            )}
+            {riderList.map((rider) => (
+              <IonItem key={rider.id}>
+                <IonLabel>{rider.name}</IonLabel>
+                {rider.isHost && <IonBadge color="primary">Host</IonBadge>}
+              </IonItem>
+            ))}
+          </IonList>
+        </div>
 
         {currentUser?.isHost ? (
-          <IonButton expand="block" onClick={handleStartRide}>
+          <IonButton expand="block" className="app-cta" onClick={handleStartRide}>
             Start Ride
           </IonButton>
         ) : (

@@ -10,10 +10,17 @@ const authEndpoint =
   import.meta.env.VITE_PUSHER_AUTH_ENDPOINT ??
   `${import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api'}`.replace('/api', '') +
     '/broadcasting/auth';
+const realtimeFlag = import.meta.env.VITE_ENABLE_REALTIME;
+const isRealtimeEnabledByConfig =
+  realtimeFlag !== undefined ? realtimeFlag === 'true' : key.trim().length > 0;
 
 let echoInstance: Echo<'pusher'> | null = null;
 
 export const getEcho = () => {
+  if (!isRealtimeEnabledByConfig || key.trim().length === 0) {
+    return null;
+  }
+
   if (echoInstance) {
     return echoInstance;
   }

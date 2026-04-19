@@ -12,6 +12,9 @@ export const useRideChannel = (rideId?: string) => {
     }
 
     const echo = getEcho();
+    if (!echo) {
+      return;
+    }
     const channel = echo.private(`ride.${rideId}`);
 
     channel.listen('RiderLocationUpdated', (event: RiderLocationEvent) => {

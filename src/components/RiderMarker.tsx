@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { CircleMarker, Marker, Tooltip } from 'react-leaflet';
+import { CircleMarker, Tooltip } from 'react-leaflet';
 import { Rider } from '../types/ride';
 
 type RiderMarkerProps = {
@@ -8,26 +8,19 @@ type RiderMarkerProps = {
 };
 
 const RiderMarker = ({ rider, isCurrentUser }: RiderMarkerProps) => {
-  if (isCurrentUser) {
-    return (
-      <CircleMarker
-        center={[rider.lat, rider.lng]}
-        radius={8}
-        pathOptions={{
-          color: '#3b82f6',
-          fillColor: '#3b82f6',
-          fillOpacity: 0.9
-        }}
-      >
-        <Tooltip direction="top" offset={[0, -6]}>{rider.name}</Tooltip>
-      </CircleMarker>
-    );
-  }
-
   return (
-    <Marker position={[rider.lat, rider.lng]}>
+    <CircleMarker
+      center={[rider.lat, rider.lng]}
+      radius={isCurrentUser ? 9 : 7}
+      pathOptions={{
+        color: isCurrentUser ? '#4f46e5' : '#0f172a',
+        weight: 2,
+        fillColor: isCurrentUser ? '#6366f1' : '#22c55e',
+        fillOpacity: 0.95
+      }}
+    >
       <Tooltip direction="top" offset={[0, -6]}>{rider.name}</Tooltip>
-    </Marker>
+    </CircleMarker>
   );
 };
 
