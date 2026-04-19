@@ -26,6 +26,12 @@ class RideDb extends Dexie {
       locations: 'rideId',
       tracks: '++id, rideId'
     });
+    this.version(4).stores({
+      sessions: 'rideId, createdAt',
+      locations: 'rideId',
+      tracks: '++id, rideId',
+      photos: '++id, rideId, timestamp'
+    });
   }
 }
 
@@ -75,4 +81,30 @@ export const appendTrackPoint = async (rideId: string, location: LocationPoint) 
 /** Get all recorded track points for a ride, oldest first */
 export const getTrackPoints = async (rideId: string): Promise<TrackPoint[]> => {
   return rideDb.tracks.where('rideId').equals(rideId).sortBy('timestamp');
+};
+
+export type PhotoRecord = {
+  id?: number;
+  rideId: string;
+  // full image blob
+  data?: Blob;
+  // thumbnail blob
+  thumb?: Blob;
+  lat?: number;
+  lng?: number;
+  timestamp: string;
+  note?: string;
+};
+
+export const addPhoto = async (photo: PhotoRecord) => {
+  // returns the generated id
+  return rideDb.table('photos').add(photo as any);
+};
+
+export const getPhotos = async (rideId: string): Promise<PhotoRecord[]> => {
+  return rideDb.table('photos').where('rideId').equals(rideId).sortBy('timestamp');
+};
+
+export const deletePhotos = async (rideId: string) => {
+  return rideDb.table('photos').where('rideId').equals(rideId).delete();
 };

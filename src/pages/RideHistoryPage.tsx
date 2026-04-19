@@ -18,7 +18,7 @@ import {
 import { useHistory } from 'react-router-dom';
 import { MapContainer, TileLayer, Polyline, CircleMarker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { getSessionsPage, getTrackPoints, deleteSession, deleteTrackPoints } from '../services/offlineDb';
+import { getSessionsPage, getTrackPoints, deleteSession, deleteTrackPoints, getPhotos } from '../services/offlineDb';
 import { RideSession } from '../types/ride';
 
 const fmtDistance = (m?: number) => {
@@ -40,6 +40,8 @@ const RideHistoryPage: React.FC = () => {
   const [sessions, setSessions] = useState<RideSession[]>([]);
   const [filter, setFilter] = useState<'solo' | 'group'>('solo');
   const [tracksByRide, setTracksByRide] = useState<Record<string, any[]>>({});
+  const [photosByRide, setPhotosByRide] = useState<Record<string, any[]>>({});
+  const [photoUrlsByRide, setPhotoUrlsByRide] = useState<Record<string, string[]>>({});
   const [toast, setToast] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const pageSize = 8;
@@ -50,8 +52,30 @@ const RideHistoryPage: React.FC = () => {
   useEffect(() => {
     // load first page
     loadPage(1);
+    return () => {
+      // revoke any created object URLs when leaving
+      Object.values(photoUrlsByRide).flat().forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) {} });
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // create object URLs for thumbnails when photosByRide changes
+  useEffect(() => {
+    const urls: Record<string, string[]> = {};
+    Object.keys(photosByRide).forEach((rideId) => {
+      const arr = photosByRide[rideId] || [];
+      urls[rideId] = arr.map((ph: any) => {
+        try {
+          return ph.thumb ? URL.createObjectURL(ph.thumb) : (ph.data ? URL.createObjectURL(ph.data) : '');
+        } catch (e) {
+          return '';
+        }
+      });
+    });
+    // revoke previous
+    Object.values(photoUrlsByRide).flat().forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) {} });
+    setPhotoUrlsByRide(urls);
+  }, [photosByRide]);
 
   const loadPage = async (pageToLoad: number) => {
     if (!hasMore && pageToLoad !== 1) return;
@@ -64,10 +88,12 @@ const RideHistoryPage: React.FC = () => {
         return;
       }
       setSessions((prev) => (pageToLoad === 1 ? rows : [...prev, ...rows]));
-      // prefetch tracks for this page
+      // prefetch tracks and photos for this page
       rows.forEach(async (s) => {
         const t = await getTrackPoints(s.rideId);
         setTracksByRide((prev) => ({ ...prev, [s.rideId]: t }));
+        const p = await getPhotos(s.rideId).catch(() => []);
+        setPhotosByRide((prev) => ({ ...prev, [s.rideId]: p }));
       });
       setHasMore(rows.length === pageSize);
       setPage(pageToLoad);
@@ -78,8 +104,9 @@ const RideHistoryPage: React.FC = () => {
 
   const handleLoadTracks = async (rideId: string) => {
     if (tracksByRide[rideId]) return;
-    const t = await getTrackPoints(rideId);
+    const [t, p] = await Promise.all([getTrackPoints(rideId), getPhotos(rideId).catch(() => [])]);
     setTracksByRide((prev) => ({ ...prev, [rideId]: t }));
+    setPhotosByRide((prev) => ({ ...prev, [rideId]: p }));
   };
 
   const handleDelete = async (rideId: string) => {
@@ -162,6 +189,13 @@ const RideHistoryPage: React.FC = () => {
                         <div style={{ color: '#94A3B8', fontSize: 13 }}>{fmtDuration(s.durationSeconds)}</div>
                       </div>
                     </div>
+                    {photosByRide[s.rideId] && photosByRide[s.rideId].length > 0 && (
+                      <div className="history-photo-gallery">
+                        {photosByRide[s.rideId].slice(0, 3).map((ph: any, idx: number) => (
+                          <img key={ph.id} src={photoUrlsByRide[s.rideId]?.[idx] ?? ''} className="history-photo-thumb" alt="photo" />
+                        ))}
+                      </div>
+                    )}
 
                     <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
                       <IonButton size="small" onClick={async () => {

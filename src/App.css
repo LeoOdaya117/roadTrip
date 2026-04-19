@@ -277,6 +277,20 @@
 .leaflet-popup-content-wrapper .rider-popup img { max-width: 160px; border-radius: 8px; }
 .leaflet-popup-content-wrapper .rider-popup { padding: 10px; }
 
+/* Photo thumbnail icon used on map */
+.photo-div-icon { pointer-events: auto; }
+.photo-thumb-icon { width: 44px; height: 30px; border-radius: 6px; overflow: hidden; box-shadow: 0 6px 18px rgba(2,6,23,0.45); border: 2px solid rgba(255,255,255,0.06); background: #111217; }
+.photo-thumb-icon img.photo-thumb-img { width: 44px; height: 30px; object-fit: cover; display: block; }
+
+/* Replay timeline photo row */
+.replay-photo-row { display: flex; gap: 8px; margin-top: 10px; overflow-x: auto; padding-bottom: 6px; }
+.replay-photo-thumb { width: 64px; height: 48px; border-radius: 8px; object-fit: cover; cursor: pointer; opacity: 0.9; border: 2px solid transparent; }
+.replay-photo-thumb.active { border-color: #FF6B35; opacity: 1; }
+
+/* History card photo gallery */
+.history-photo-gallery { display: flex; gap: 6px; margin-top: 8px; }
+.history-photo-thumb { width: 64px; height: 48px; object-fit: cover; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); }
+
 /* ── Input ── */
 .input-group {
   margin-bottom: var(--space-md);
@@ -972,4 +986,179 @@
   pointer-events: none;
 }
 .history-mini-map { position: relative; }
+
+/* Photo sheet modal styling (makes IonModal look like an IonSheet) */
+.photo-sheet .modal-wrapper {
+  align-items: flex-end !important;
+}
+.photo-sheet .modal-content {
+  width: 100% !important;
+  border-top-left-radius: 16px !important;
+  border-top-right-radius: 16px !important;
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  max-height: 48vh !important;
+  background: rgba(10,12,18,0.98) !important;
+  box-shadow: 0 -12px 40px rgba(2,6,23,0.6) !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+.photo-sheet .modal-wrapper::part(backdrop) {
+  backdrop-filter: blur(6px);
+}
+.photo-sheet .sheet-inner {
+  padding: 16px;
+}
+.photo-sheet .sheet-handle {
+  display: block;
+  width: 100%;
+  text-align: center;
+  padding: 10px 0 6px;
+}
+.photo-sheet .sheet-handle::before {
+  content: '';
+  display: inline-block;
+  width: 44px;
+  height: 4px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 4px;
+}
+
+/* Stronger selectors to target Ionic modal shadow structure so it behaves like a sheet */
+ion-modal.photo-sheet .modal-wrapper {
+  align-items: flex-end !important;
+}
+
+ion-modal.photo-sheet .modal-wrapper .modal-content {
+  width: 100% !important;
+  border-top-left-radius: 16px !important;
+  border-top-right-radius: 16px !important;
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  max-height: 48vh !important;
+  background: rgba(10,12,18,0.98) !important;
+  box-shadow: 0 -12px 40px rgba(2,6,23,0.6) !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+ion-modal.photo-sheet::part(backdrop) {
+  backdrop-filter: blur(6px);
+}
+
+/* Inner content layout */
+ion-modal.photo-sheet .modal-content .sheet-inner {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+ion-modal.photo-sheet .modal-content .sheet-inner > div:first-child {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* Buttons row */
+ion-modal.photo-sheet .modal-content .sheet-inner .btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+ion-modal.photo-sheet ion-button {
+  --background: transparent;
+  --background-activated: rgba(255,255,255,0.03);
+  --color: #CBD5E1;
+}
+
+ion-modal.photo-sheet ion-button[fill="solid"] {
+  --background: #FF6B35;
+  --background-activated: #FF6B35;
+  --color: #fff;
+}
+
+/* Make the Cancel/Save buttons match app theme when plain buttons are used */
+.photo-sheet .btn-row button, .photo-sheet .btn-row .ion-button {
+  background: #FF6B35;
+  color: #fff;
+  border-radius: 8px;
+  padding: 10px 14px;
+  border: none;
+}
+
+/* Ensure modal content doesn't push behind status bar on small devices */
+ion-modal.photo-sheet .modal-wrapper {
+  padding-bottom: env(safe-area-inset-bottom, 12px) !important;
+}
+
+/* Custom BottomSheet styles */
+.custom-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2,6,23,0.55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 2200;
+}
+.custom-sheet {
+  width: 100%;
+  max-width: 720px;
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  background: rgba(10,12,18,0.98);
+  box-shadow: 0 -12px 40px rgba(2,6,23,0.6);
+  max-height: 60vh;
+  margin: 0 12px 12px;
+  overflow: hidden;
+}
+
+/* centered modal variant */
+.centered-backdrop {
+  align-items: center !important;
+}
+.centered-backdrop .custom-sheet {
+  width: 92%;
+  max-width: 540px;
+  border-radius: 12px;
+  margin: 0;
+  transform: translateY(0) !important;
+  max-height: 80vh;
+}
+.centered-backdrop .custom-sheet .sheet-handle { display: none; }
+.custom-sheet .sheet-inner { padding: 16px; }
+.custom-sheet .sheet-handle { display: flex; justify-content: center; padding: 10px 0 6px; }
+.custom-sheet .sheet-handle::before { content: ''; width: 44px; height: 4px; background: rgba(255,255,255,0.06); border-radius: 4px; display: inline-block; }
+.custom-sheet .btn-row { display:flex; gap:8px; margin-top:8px; }
+.custom-sheet ion-button[fill="clear"] { --color: #CBD5E1; }
+.custom-sheet ion-button { --background: #FF6B35; --color: #fff; border-radius:8px; }
+
+/* Animation + dragging state */
+.custom-sheet {
+  transform: translateY(24px);
+  opacity: 0;
+  transition: transform 280ms cubic-bezier(0.22,0.9,0.36,1), opacity 220ms ease;
+}
+.custom-sheet.dragging {
+  transition: none !important;
+}
+.custom-sheet-backdrop .custom-sheet {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+/* Slight elevation while dragging */
+.custom-sheet.dragging { box-shadow: 0 -4px 18px rgba(2,6,23,0.6); }
+
+/* Button variants */
+.custom-sheet .btn-row .cancel {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.06);
+  color: #CBD5E1;
+}
+.custom-sheet .btn-row .save {
+  background: #FF6B35;
+  color: #fff;
+}
 

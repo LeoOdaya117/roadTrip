@@ -64,6 +64,7 @@ export const useRideLocationSync = ({
 
       try {
         isSendingRef.current = true;
+        console.debug('[useRideLocationSync] sending location', { rideId, riderId, lat: latest.lat, lng: latest.lng });
         await sendLocation(rideId, riderId, latest.lat, latest.lng, latest.speed);
         setSyncStatus(null);
       } catch (error) {
@@ -76,7 +77,6 @@ export const useRideLocationSync = ({
     };
 
     const interval = window.setInterval(syncLocation, SYNC_INTERVAL_MS);
-    syncLocation();
 
     return () => window.clearInterval(interval);
   }, [isOnline, isSoloMode, isTracking, rideId, riderId]);
@@ -92,6 +92,7 @@ export const useRideLocationSync = ({
         if (!stored) {
           return;
         }
+        console.debug('[useRideLocationSync] flushing stored location to API', { rideId, riderId, stored });
         return sendLocation(rideId, riderId, stored.lat, stored.lng, stored.speed);
       })
       .catch(() => undefined);

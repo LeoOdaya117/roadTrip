@@ -44,6 +44,19 @@ export type RideSession = {
   durationSeconds?: number;
 };
 
+export type PhotoRecord = {
+  id?: number;
+  rideId: string;
+  // full-size image blob
+  data?: Blob;
+  // thumbnail image blob
+  thumb?: Blob;
+  lat?: number;
+  lng?: number;
+  timestamp: string;
+  note?: string;
+};
+
 export type RiderLocationEvent = {
   rider: Rider;
 };

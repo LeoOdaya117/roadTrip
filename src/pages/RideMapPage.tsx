@@ -2,9 +2,11 @@ import {
   IonContent,
   IonIcon,
   IonPage,
-  IonToast
+  IonToast,
+  IonInput,
+  IonButton
 } from '@ionic/react';
-import { locate, pause, play, send, close, stopCircle, cafeOutline } from 'ionicons/icons';
+import { locate, pause, play, send, close, stopCircle, cafeOutline, camera } from 'ionicons/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useHistory, useParams } from 'react-router-dom';
 import type L from 'leaflet';
@@ -15,9 +17,10 @@ import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useRideChannel } from '../hooks/useRideChannel';
 import { useRideLocationSync } from '../hooks/useRideLocationSync';
 import { useRideTimer } from '../hooks/useRideTimer';
-import { getLastLocation } from '../services/offlineDb';
+import { getLastLocation, addPhoto } from '../services/offlineDb';
 import { useRideStore } from '../store/rideStore';
 import maleAvatar from '../assets/images/default/user_male.png';
+import BottomSheet from '../components/BottomSheet';
 
 const FALLBACK_CENTER = { lat: 37.7749, lng: -122.4194 };
 
@@ -68,6 +71,26 @@ const RideMapPage: React.FC = () => {
 
   const [fallbackCenter, setFallbackCenter] = useState(FALLBACK_CENTER);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [photoToast, setPhotoToast] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
+  const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [photoNote, setPhotoNote] = useState<string>('');
+  const captionInputRef = useRef<any | null>(null);
+  const handleCaptionChange = (e: any) => {
+    try {
+      const v = (e?.detail?.value ?? '');
+      console.debug('[RideMap] caption change ->', v);
+      setPhotoNote(v);
+    } catch (err) {
+      setPhotoNote('');
+    }
+  };
+  const cameraIcon = camera;
+
+  useEffect(() => {
+    console.debug('[RideMapPage] rideId:', rideId, 'showPhotoModal:', showPhotoModal);
+  }, [rideId, showPhotoModal]);
 
   const mapRef = useRef<L.Map | null>(null);
   const hasCenteredRef = useRef(false);
@@ -293,6 +316,89 @@ const RideMapPage: React.FC = () => {
     }
   };
 
+  const handlePhotoClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setPreviewDataUrl(reader.result as string);
+        setShowPhotoModal(true);
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      setPhotoToast('Failed to read image');
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const readImageAndResize = (dataUrl: string, maxWidth: number, quality = 0.8): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const ratio = img.width / img.height || 1;
+        const width = Math.min(maxWidth, img.width);
+        const height = Math.round(width / ratio);
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return reject(new Error('Canvas not supported'));
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => {
+          if (!blob) return reject(new Error('Failed to create blob'));
+          resolve(blob);
+        }, 'image/jpeg', quality);
+      };
+      img.onerror = (err) => reject(err);
+      img.src = dataUrl;
+    });
+  };
+
+  const handleSavePhoto = async () => {
+    if (!previewDataUrl) return;
+    try {
+      // generate full and thumbnail blobs
+      const full = await readImageAndResize(previewDataUrl, 1200, 0.85);
+      const thumb = await readImageAndResize(previewDataUrl, 320, 0.7);
+      const photo = {
+        rideId: rideId ?? `unsynced-${Date.now()}`,
+        data: full,
+        thumb,
+        lat: location?.lat,
+        lng: location?.lng,
+        timestamp: new Date().toISOString(),
+        note: photoNote || undefined
+      } as any;
+      await addPhoto(photo);
+      setPhotoToast('Photo saved to this ride');
+    } catch (err) {
+      setPhotoToast('Failed to save photo');
+    } finally {
+      setShowPhotoModal(false);
+      setPreviewDataUrl(null);
+      setPhotoNote('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  useEffect(() => {
+    if (showPhotoModal) {
+      // focus the caption input after sheet opens
+      setTimeout(() => {
+        try {
+          (captionInputRef.current as any)?.setFocus?.();
+        } catch (e) {
+          // ignore
+        }
+      }, 220);
+    }
+  }, [showPhotoModal]);
+
   const handleToggleTracking = async () => {
     if (isTracking) {
       stopTracking();
@@ -341,6 +447,9 @@ const RideMapPage: React.FC = () => {
             <button className="map-fab" onClick={handleCenterMap} title="Center map">
               <IonIcon icon={locate} />
             </button>
+            <button className="map-fab" onClick={handlePhotoClick} title="Add photo">
+              <IonIcon icon={cameraIcon} />
+            </button>
             <button
               className={`map-fab${!isTracking ? ' fab-stopover' : ''}`}
               onClick={handleToggleTracking}
@@ -348,6 +457,7 @@ const RideMapPage: React.FC = () => {
             >
               <IonIcon icon={isTracking ? cafeOutline : play} />
             </button>
+            <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleFileChange} />
           </div>
 
           {/* ── Bottom sheet ── */}
@@ -462,6 +572,29 @@ const RideMapPage: React.FC = () => {
         duration={2500}
         onDidDismiss={() => setErrorMessage(null)}
       />
+      <IonToast
+        isOpen={photoToast !== null}
+        message={photoToast ?? ''}
+        color="primary"
+        duration={1800}
+        onDidDismiss={() => setPhotoToast(null)}
+      />
+      <BottomSheet isOpen={showPhotoModal} centered={true} onDidDismiss={() => { console.debug('[RideMapPage] BottomSheet onDidDismiss'); setShowPhotoModal(false); }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <div style={{ width: 120, height: 90, overflow: 'hidden', borderRadius: 8 }}>
+            {previewDataUrl && <img src={previewDataUrl} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+          </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Save photo</div>
+              <IonInput ref={captionInputRef} placeholder="Add a note or caption" value={photoNote ?? ''} onIonChange={handleCaptionChange} />
+            </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }} className="btn-row">
+          <IonButton className="cancel" fill="clear" onClick={() => { setShowPhotoModal(false); setPreviewDataUrl(null); setPhotoNote(''); }}>Cancel</IonButton>
+          <IonButton className="save" onClick={handleSavePhoto}>Save</IonButton>
+        </div>
+      </BottomSheet>
     </IonPage>
   );
 };
