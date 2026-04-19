@@ -17,7 +17,7 @@ import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useRideChannel } from '../hooks/useRideChannel';
 import { useRideLocationSync } from '../hooks/useRideLocationSync';
 import { useRideTimer } from '../hooks/useRideTimer';
-import { getLastLocation, addPhoto } from '../services/offlineDb';
+import { getLastLocation, addPhoto, getSession, saveRideSession } from '../services/offlineDb';
 import { useRideStore } from '../store/rideStore';
 import maleAvatar from '../assets/images/default/user_male.png';
 import BottomSheet from '../components/BottomSheet';
@@ -31,6 +31,7 @@ const RideMapPage: React.FC = () => {
   const setRide = useRideStore((state) => state.setRide);
   const currentUser = useRideStore((state) => state.currentUser);
   const setUser = useRideStore((state) => state.setUser);
+  const clearRide = useRideStore((state) => state.clearRide);
   const ridersMap = useRideStore((state) => state.riders);
   const updateSingleRider = useRideStore((state) => state.updateSingleRider);
   const addMessage = useRideStore((state) => state.addMessage);
@@ -413,10 +414,38 @@ const RideMapPage: React.FC = () => {
   };
 
   const handleEndRide = () => {
-    stopTracking();
-    setTracking(false);
-    rideTimer.reset();
-    history.push('/home');
+    (async () => {
+      try {
+        stopTracking();
+        setTracking(false);
+        // mark session ended in db so home won't show resume
+        if (rideId) {
+          try {
+            const existing = await getSession(rideId);
+            if (existing) {
+              const updated = {
+                ...existing,
+                endedAt: new Date().toISOString(),
+                distanceMeters: Math.round(distanceMetersTotal),
+                durationSeconds: Math.round(rideTimer.elapsedSeconds)
+              };
+              await saveRideSession(updated);
+            }
+          } catch (e) {
+            // ignore db errors
+          }
+        }
+      } finally {
+        try {
+          // clear in-memory ride state so Home reflects no active ride
+          clearRide();
+        } catch (e) {
+          // ignore
+        }
+        rideTimer.reset();
+        history.push('/home');
+      }
+    })();
   };
 
   return (
