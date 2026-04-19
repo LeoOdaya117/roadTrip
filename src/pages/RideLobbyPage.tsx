@@ -1,13 +1,8 @@
 import {
-  IonBadge,
-  IonButton,
   IonContent,
   IonHeader,
-  IonItem,
-  IonLabel,
-  IonList,
   IonPage,
-  IonText,
+  IonSpinner,
   IonTitle,
   IonToolbar
 } from '@ionic/react';
@@ -50,55 +45,65 @@ const RideLobbyPage: React.FC = () => {
   }, [currentUser, riders]);
 
   const handleStartRide = () => {
-    if (!rideId) {
-      return;
-    }
+    if (!rideId) return;
     history.push(`/ride-map/${rideId}`);
   };
 
   return (
-      <IonPage>
-        <IonHeader>
+    <IonPage>
+      <IonHeader>
         <IonToolbar className="app-toolbar">
-          <IonTitle>Ride Lobby</IonTitle>
+          <IonTitle>Lobby</IonTitle>
         </IonToolbar>
       </IonHeader>
-      <IonContent className="page-content app-page lobby-page">
-        <div className="page-hero compact">
-          <h1>Ready to roll</h1>
-          <p>Share the code and wait for everyone to join before starting.</p>
-        </div>
-        <div className="app-panel ride-code-panel">
-          <IonText color="medium">Ride code</IonText>
-          <h2>{rideId ?? '---'}</h2>
+      <IonContent className="app-page page-content">
+
+        <div className="page-hero">
+          <p className="hero-eyebrow">Ready to roll</p>
+          <h1>Your ride<br /><span>is waiting.</span></h1>
+          <p>Share the code below with your group.</p>
         </div>
 
-        <div className="app-panel">
-          <IonText color="medium">Participants</IonText>
-          <IonList inset>
+        {/* Ride code */}
+        <div className="ride-code-display">
+          <p className="ride-code-label">Ride code</p>
+          <span className="ride-code-value">{rideId ?? '---'}</span>
+        </div>
+
+        {/* Participants */}
+        <div className="glass-card">
+          <span className="card-label">
+            Participants{riderList.length > 0 ? ` · ${riderList.length}` : ''}
+          </span>
+          <div className="rider-list">
             {riderList.length === 0 && (
-              <IonItem>
-                <IonLabel>Waiting for riders...</IonLabel>
-              </IonItem>
+              <div className="waiting-text">
+                <IonSpinner name="dots" style={{ width: 16, height: 16, marginBottom: 6 }} />
+                <p style={{ margin: '4px 0 0' }}>Waiting for riders…</p>
+              </div>
             )}
             {riderList.map((rider) => (
-              <IonItem key={rider.id}>
-                <IonLabel>{rider.name}</IonLabel>
-                {rider.isHost && <IonBadge color="primary">Host</IonBadge>}
-              </IonItem>
+              <div className="rider-item" key={rider.id}>
+                <div className="rider-avatar">{rider.name.charAt(0)}</div>
+                <span className="rider-name">{rider.name}</span>
+                {rider.isHost && <span className="host-badge">Host</span>}
+              </div>
             ))}
-          </IonList>
+          </div>
         </div>
 
         {currentUser?.isHost ? (
-          <IonButton expand="block" className="app-cta" onClick={handleStartRide}>
+          <button
+            className="btn-primary"
+            style={{ marginTop: 8 }}
+            onClick={handleStartRide}
+          >
             Start Ride
-          </IonButton>
+          </button>
         ) : (
-          <IonText className="rider-badge">
-            Waiting for the host to start the ride.
-          </IonText>
+          <p className="waiting-text">Waiting for the host to start the ride.</p>
         )}
+
       </IonContent>
     </IonPage>
   );

@@ -5,9 +5,14 @@ import {
   setupIonicReact
 } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
+import { StatusBar, Style } from '@capacitor/status-bar';
+import { Capacitor } from '@capacitor/core';
 import HomePage from './pages/HomePage';
 import RideLobbyPage from './pages/RideLobbyPage';
 import RideMapPage from './pages/RideMapPage';
+import AccountPage from './pages/AccountPage';
+import RideHistoryPage from './pages/RideHistoryPage';
+import RideReplayPage from './pages/RideReplayPage';
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
@@ -34,6 +39,11 @@ import './App.css';
 
 setupIonicReact();
 
+if (Capacitor.isNativePlatform()) {
+  StatusBar.setOverlaysWebView({ overlay: true });
+  StatusBar.setStyle({ style: Style.Dark });
+}
+
 const App: React.FC = () => (
   <IonApp>
     <IonReactRouter>
@@ -46,6 +56,15 @@ const App: React.FC = () => (
         </Route>
         <Route exact path="/ride-map/:rideId">
           <RideMapPage />
+        </Route>
+        <Route exact path="/account">
+          <AccountPage />
+        </Route>
+        <Route exact path="/ride-history">
+          <RideHistoryPage />
+        </Route>
+        <Route exact path="/ride-replay/:rideId">
+          <RideReplayPage />
         </Route>
         <Route exact path="/">
           <Redirect to="/home" />

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useRideStore } from '../store/rideStore';
 import { Rider } from '../types/ride';
+import maleAvatar from '../assets/images/default/user_male.png';
+import femaleAvatar from '../assets/images/default/user_female.png';
 
 type MockRidersParams = {
   enabled: boolean;
@@ -19,6 +21,7 @@ export const useMockRiders = ({ enabled, origin }: MockRidersParams) => {
       {
         id: 'mock-1',
         name: 'Ava',
+        avatarUrl: femaleAvatar,
         lat: origin.lat + 0.002,
         lng: origin.lng + 0.001,
         speed: 12,
@@ -27,6 +30,7 @@ export const useMockRiders = ({ enabled, origin }: MockRidersParams) => {
       {
         id: 'mock-2',
         name: 'Noah',
+        avatarUrl: maleAvatar,
         lat: origin.lat - 0.0015,
         lng: origin.lng + 0.0012,
         speed: 9,
@@ -35,6 +39,7 @@ export const useMockRiders = ({ enabled, origin }: MockRidersParams) => {
       {
         id: 'mock-3',
         name: 'Luna',
+        avatarUrl: femaleAvatar,
         lat: origin.lat + 0.0012,
         lng: origin.lng - 0.0018,
         speed: 10,

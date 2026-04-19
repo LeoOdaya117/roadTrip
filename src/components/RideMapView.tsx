@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, useMap, Polyline } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import '../services/leafletConfig';
 import RiderMarker from './RiderMarker';
@@ -9,8 +9,11 @@ import type L from 'leaflet';
 type RideMapViewProps = {
   center: { lat: number; lng: number };
   riders: Rider[];
+  trackPoints?: { lat: number; lng: number }[];
   currentUserId?: string;
   onMapReady?: (map: L.Map) => void;
+  tileUrl?: string;
+  attribution?: string;
 };
 
 const MapReadyHandler = ({ onReady }: { onReady?: (map: L.Map) => void }) => {
@@ -20,12 +23,39 @@ const MapReadyHandler = ({ onReady }: { onReady?: (map: L.Map) => void }) => {
     if (onReady) {
       onReady(map);
     }
+
+    // Sometimes Leaflet needs an explicit invalidateSize when the container
+    // becomes visible or its layout changes (Ionic containers, overlays).
+    const t1 = setTimeout(() => {
+      try { map.invalidateSize(); } catch (e) { /* ignore */ }
+    }, 120);
+
+    // Second pass for cases where Ionic finishes layout after a longer delay
+    const t2 = setTimeout(() => {
+      try { map.invalidateSize(); } catch (e) { /* ignore */ }
+    }, 600);
+
+    const onResize = () => {
+      try {
+        map.invalidateSize();
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    window.addEventListener('resize', onResize);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      window.removeEventListener('resize', onResize);
+    };
   }, [map, onReady]);
 
   return null;
 };
 
-const RideMapView = ({ center, riders, currentUserId, onMapReady }: RideMapViewProps) => {
+const RideMapView = ({ center, riders, trackPoints, currentUserId, onMapReady, tileUrl, attribution }: RideMapViewProps) => {
   const markers = useMemo(
     () =>
       riders.map((rider) => (
@@ -43,14 +73,22 @@ const RideMapView = ({ center, riders, currentUserId, onMapReady }: RideMapViewP
       center={[center.lat, center.lng]}
       zoom={15}
       className="map-container"
+      style={{ width: '100%', height: '100%' }}
       zoomControl={false}
     >
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        key={tileUrl ?? 'default'}
+        attribution={attribution ?? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; CARTO'}
+        url={tileUrl ?? 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'}
       />
       <MapReadyHandler onReady={onMapReady} />
       {markers}
+      {trackPoints && trackPoints.length > 1 && (
+        <Polyline
+          positions={trackPoints.map((p) => [p.lat, p.lng] as [number, number])}
+          pathOptions={{ color: '#FF6B35', weight: 3, opacity: 0.9 }}
+        />
+      )}
     </MapContainer>
   );
 };

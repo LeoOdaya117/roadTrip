@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { sendLocation } from '../services/api';
-import { getLastLocation, saveLastLocation } from '../services/offlineDb';
+import { appendTrackPoint, getLastLocation, saveLastLocation } from '../services/offlineDb';
 import { LocationPoint } from '../types/ride';
 
 type SyncParams = {
@@ -8,6 +8,7 @@ type SyncParams = {
   riderId?: string;
   isTracking: boolean;
   isOnline: boolean;
+  isSoloMode?: boolean;
   location: LocationPoint | null;
 };
 
@@ -19,6 +20,7 @@ export const useRideLocationSync = ({
   riderId,
   isTracking,
   isOnline,
+  isSoloMode = false,
   location
 }: SyncParams) => {
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
@@ -34,11 +36,18 @@ export const useRideLocationSync = ({
       return;
     }
 
+    // Always save the last known position locally
     saveLastLocation(rideId, location).catch(() => undefined);
-  }, [location, rideId, riderId]);
+
+    // In solo mode, also append every point to the full track log
+    if (isSoloMode) {
+      appendTrackPoint(rideId, location).catch(() => undefined);
+    }
+  }, [location, rideId, riderId, isSoloMode]);
 
   useEffect(() => {
-    if (!rideId || !riderId || !isTracking) {
+    // Solo mode: no API calls needed
+    if (isSoloMode || !rideId || !riderId || !isTracking) {
       return;
     }
 
@@ -70,10 +79,11 @@ export const useRideLocationSync = ({
     syncLocation();
 
     return () => window.clearInterval(interval);
-  }, [isOnline, isTracking, rideId, riderId]);
+  }, [isOnline, isSoloMode, isTracking, rideId, riderId]);
 
   useEffect(() => {
-    if (!isOnline || !rideId || !riderId) {
+    // Solo mode: skip reconnect flush to API
+    if (isSoloMode || !isOnline || !rideId || !riderId) {
       return;
     }
 
@@ -85,7 +95,7 @@ export const useRideLocationSync = ({
         return sendLocation(rideId, riderId, stored.lat, stored.lng, stored.speed);
       })
       .catch(() => undefined);
-  }, [isOnline, rideId, riderId]);
+  }, [isOnline, isSoloMode, rideId, riderId]);
 
   return { syncStatus };
 };

@@ -1,17 +1,12 @@
 import {
-  IonButton,
   IonContent,
-  IonHeader,
   IonIcon,
   IonPage,
-  IonText,
-  IonTitle,
-  IonToolbar,
   IonToast
 } from '@ionic/react';
-import { locate, pause, play } from 'ionicons/icons';
+import { locate, pause, play, send, close, stopCircle, cafeOutline } from 'ionicons/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useHistory, useParams } from 'react-router-dom';
 import type L from 'leaflet';
 import RideMapView from '../components/RideMapView';
 import { useLocationTracker } from '../hooks/useLocationTracker';
@@ -19,20 +14,57 @@ import { useMockRiders } from '../hooks/useMockRiders';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useRideChannel } from '../hooks/useRideChannel';
 import { useRideLocationSync } from '../hooks/useRideLocationSync';
+import { useRideTimer } from '../hooks/useRideTimer';
 import { getLastLocation } from '../services/offlineDb';
 import { useRideStore } from '../store/rideStore';
+import maleAvatar from '../assets/images/default/user_male.png';
 
 const FALLBACK_CENTER = { lat: 37.7749, lng: -122.4194 };
 
 const RideMapPage: React.FC = () => {
+  const history = useHistory();
   const { rideId: routeRideId } = useParams<{ rideId: string }>();
   const rideId = useRideStore((state) => state.rideId) ?? routeRideId;
   const setRide = useRideStore((state) => state.setRide);
   const currentUser = useRideStore((state) => state.currentUser);
+  const setUser = useRideStore((state) => state.setUser);
   const ridersMap = useRideStore((state) => state.riders);
   const updateSingleRider = useRideStore((state) => state.updateSingleRider);
+  const addMessage = useRideStore((state) => state.addMessage);
+  const setCurrentTopic = useRideStore((state) => state.setCurrentTopic);
+  const setRiderTopic = useRideStore((state) => state.setRiderTopic);
+  const currentTopic = useRideStore((state) => state.currentTopic);
+
+  const QUICK_TOPICS = [
+    { id: 'fuel', label: '⛽ Fuel Stop' },
+    { id: 'help', label: '🆘 Help' },
+    { id: 'eta',  label: '🕐 ETA' },
+  ];
+
+  const [composeText, setComposeText] = useState('');
+
+  const handleTopicChip = (topicId: string) => {
+    setCurrentTopic(currentTopic === topicId ? null : topicId);
+    setComposeText('');
+  };
+
+  const handleSendMessage = () => {
+    const user = currentUser ?? { id: 'local-user', name: 'Me', isHost: false };
+    if (!currentTopic || !composeText.trim()) return;
+    addMessage({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      topic: currentTopic,
+      text: composeText.trim(),
+      senderId: user.id,
+      timestamp: new Date().toISOString(),
+    });
+    setRiderTopic(user.id, currentTopic, true);
+    setComposeText('');
+    setCurrentTopic(null);
+  };
   const isTracking = useRideStore((state) => state.isTracking);
   const setTracking = useRideStore((state) => state.setTracking);
+  const isSoloMode = useRideStore((state) => state.isSoloMode);
 
   const [fallbackCenter, setFallbackCenter] = useState(FALLBACK_CENTER);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -59,6 +91,28 @@ const RideMapPage: React.FC = () => {
   useEffect(() => {
     setTracking(true);
   }, [setTracking]);
+
+  // Ensure we request location when the page mounts so the map can show current location
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        await startTracking();
+      } catch (e) {
+        // ignore errors here; hook sets error state
+      }
+    })();
+
+    return () => {
+      mounted = false;
+      try {
+        stopTracking();
+      } catch (e) {
+        // ignore
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!isTracking) {
@@ -96,20 +150,27 @@ const RideMapPage: React.FC = () => {
   }, [rideId]);
 
   useEffect(() => {
-    if (!location || !currentUser) {
+    if (!location) {
       return;
     }
 
+    // Auto-create a local user if one was never set (e.g. direct navigation in dev)
+    const user = currentUser ?? { id: 'local-user', name: 'Me', isHost: false };
+    if (!currentUser) {
+      setUser(user);
+    }
+
     updateSingleRider({
-      id: currentUser.id,
-      name: currentUser.name,
-      isHost: currentUser.isHost,
+      id: user.id,
+      name: user.name,
+      isHost: user.isHost,
+      avatarUrl: (user as typeof user & { avatarUrl?: string }).avatarUrl ?? maleAvatar,
       lat: location.lat,
       lng: location.lng,
       speed: location.speed,
       timestamp: location.timestamp
     });
-  }, [currentUser, location, updateSingleRider]);
+  }, [currentUser, location, updateSingleRider, setUser]);
 
   useEffect(() => {
     if (location && mapRef.current && !hasCenteredRef.current) {
@@ -128,6 +189,7 @@ const RideMapPage: React.FC = () => {
     riderId: currentUser?.id,
     isTracking,
     isOnline,
+    isSoloMode,
     location
   });
 
@@ -137,8 +199,91 @@ const RideMapPage: React.FC = () => {
     ? { lat: location.lat, lng: location.lng }
     : fallbackCenter;
 
+  // Track total distance traveled in meters for the current session (local only)
+  const lastLocationRef = useRef<{ lat: number; lng: number; timestamp?: string } | null>(null);
+  const [distanceMetersTotal, setDistanceMetersTotal] = useState<number>(0);
+
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const distanceBetween = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+    const earthRadius = 6371000;
+    const deltaLat = toRadians(b.lat - a.lat);
+    const deltaLng = toRadians(b.lng - a.lng);
+    const lat1 = toRadians(a.lat);
+    const lat2 = toRadians(b.lat);
+
+    const sinLat = Math.sin(deltaLat / 2);
+    const sinLng = Math.sin(deltaLng / 2);
+
+    const h = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng;
+    return 2 * earthRadius * Math.asin(Math.sqrt(h));
+  };
+
+  useEffect(() => {
+    if (!location) return;
+    const last = lastLocationRef.current;
+    const current = { lat: location.lat, lng: location.lng };
+    if (last) {
+      try {
+        const d = distanceBetween(last, current);
+        if (d > 0.5) {
+          setDistanceMetersTotal((m) => m + d);
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    lastLocationRef.current = current;
+  }, [location]);
+
+  const MAP_LAYERS = [
+    {
+      id: 'carto-light',
+      label: 'Street',
+      url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+    },
+    {
+      id: 'osm',
+      label: 'OSM',
+      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      attribution: '&copy; OpenStreetMap contributors'
+    },
+    {
+      id: 'satellite',
+      label: 'Satellite',
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      attribution: 'Tiles &copy; Esri'
+    },
+    {
+      id: 'carto-dark',
+      label: 'Dark',
+      url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      attribution: '&copy; CARTO'
+    }
+  ];
+
+  const [activeLayer, setActiveLayer] = useState(MAP_LAYERS[0]);
+
+  const rideTimer = useRideTimer();
+
+  // Auto-start timer when tracking begins, pause on stopover
+  useEffect(() => {
+    if (isTracking) {
+      if (!rideTimer.isRunning && rideTimer.elapsedSeconds === 0) {
+        rideTimer.start();
+      } else if (!rideTimer.isRunning) {
+        rideTimer.resume();
+      }
+    } else {
+      if (rideTimer.isRunning) {
+        rideTimer.pause();
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTracking]);
+
   useMockRiders({
-    enabled: import.meta.env.VITE_ENABLE_MOCK_RIDERS !== 'false',
+    enabled: false,
     origin: center
   });
 
@@ -152,21 +297,25 @@ const RideMapPage: React.FC = () => {
     if (isTracking) {
       stopTracking();
       setTracking(false);
+      rideTimer.pause();
       return;
     }
 
     await startTracking();
     setTracking(true);
+    rideTimer.resume();
+  };
+
+  const handleEndRide = () => {
+    stopTracking();
+    setTracking(false);
+    rideTimer.reset();
+    history.push('/home');
   };
 
   return (
-      <IonPage>
-        <IonHeader>
-        <IonToolbar className="app-toolbar">
-          <IonTitle>Live Ride</IonTitle>
-        </IonToolbar>
-      </IonHeader>
-      <IonContent className="ride-map-content app-page map-page" fullscreen>
+    <IonPage>
+      <IonContent className="ride-map-content app-page" fullscreen scrollY={false}>
         <div className="map-wrapper">
           <RideMapView
             center={center}
@@ -175,27 +324,135 @@ const RideMapPage: React.FC = () => {
             onMapReady={(map) => {
               mapRef.current = map;
             }}
+            tileUrl={activeLayer.url}
+            attribution={activeLayer.attribution}
           />
-          <div className="map-controls">
-            <IonButton size="small" onClick={handleCenterMap}>
-              <IonIcon icon={locate} slot="start" />
-              Center
-            </IonButton>
-            <IonButton size="small" color={isTracking ? 'warning' : 'success'} onClick={handleToggleTracking}>
-              <IonIcon icon={isTracking ? pause : play} slot="start" />
-              {isTracking ? 'Pause Tracking' : 'Resume Tracking'}
-            </IonButton>
+
+          {/* ── Top bar: title + live badge only ── */}
+          <div className="map-top-bar">
+            <span className="map-title">Live Ride</span>
+            <div style={{ marginLeft: 'auto' }}>
+              <span className="live-badge">Live</span>
+            </div>
           </div>
-          <div className="map-status app-panel">
-            <strong>Status</strong>
-            <IonText>
-            {isOnline ? 'Online' : 'Offline'} • {isTracking ? 'Tracking' : 'Paused'}
-            </IonText>
-            {permission !== 'granted' && (
-              <IonText color="warning">Location permission required.</IonText>
-            )}
-            {syncStatus && <IonText color="warning">{syncStatus}</IonText>}
+
+          {/* ── Floating action buttons top-right ── */}
+          <div className="map-fabs">
+            <button className="map-fab" onClick={handleCenterMap} title="Center map">
+              <IonIcon icon={locate} />
+            </button>
+            <button
+              className={`map-fab${!isTracking ? ' fab-stopover' : ''}`}
+              onClick={handleToggleTracking}
+              title={isTracking ? 'Stopover — pause tracking' : 'Resume ride'}
+            >
+              <IonIcon icon={isTracking ? cafeOutline : play} />
+            </button>
           </div>
+
+          {/* ── Bottom sheet ── */}
+          <div className="bottom-sheet">
+            <div className="sheet-handle" />
+            <div className="sheet-content">
+
+              {/* Stats row */}
+              <div className="sheet-stats-row">
+                <div className="sheet-stat">
+                  <span className="s-label">Time</span>
+                  <span className={`s-value timer-value${!rideTimer.isRunning && rideTimer.elapsedSeconds > 0 ? ' timer-paused' : ''}`}>
+                    {rideTimer.formatted}
+                  </span>
+                  {!rideTimer.isRunning && rideTimer.elapsedSeconds > 0 && (
+                    <span className="s-stopover-pill">Stopover</span>
+                  )}
+                </div>
+                <div className="sheet-stat-sep" />
+                <div className="sheet-stat">
+                  <span className="s-label">Speed</span>
+                  <span className="s-value">
+                    {location?.speed != null ? `${Math.round((location.speed ?? 0) * 3.6)}` : '—'}
+                    {location?.speed != null && <span className="s-unit"> km/h</span>}
+                  </span>
+                </div>
+                <div className="sheet-stat-sep" />
+                <div className="sheet-stat">
+                  <span className="s-label">Distance</span>
+                  <span className="s-value">
+                    {(distanceMetersTotal / 1000).toFixed(2)}
+                    <span className="s-unit"> km</span>
+                  </span>
+                </div>
+                <div className="sheet-stat-sep" />
+                <div className="sheet-stat">
+                  <span className="s-label">Status</span>
+                  <span className="s-value" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span className={`status-dot ${isOnline ? 'online' : 'offline'}`} />
+                    {isOnline ? 'Online' : 'Offline'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Layer selector row */}
+              <div className="sheet-section-label">Map Style</div>
+              <div className="sheet-chips-row">
+                {MAP_LAYERS.map((l) => (
+                  <button
+                    key={l.id}
+                    onClick={() => setActiveLayer(l)}
+                    className={activeLayer.id === l.id ? 'chip chip-active' : 'chip'}
+                  >
+                    {l.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Topics row */}
+              <div className="sheet-section-label">Quick Message</div>
+              <div className="sheet-chips-row">
+                {QUICK_TOPICS.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => handleTopicChip(t.id)}
+                    className={`chip chip-topic${currentTopic === t.id ? ' chip-topic-active' : ''}`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Inline compose panel */}
+              {currentTopic && (
+                <div className="sheet-compose">
+                  <div className="sheet-compose-label">
+                    {QUICK_TOPICS.find(t => t.id === currentTopic)?.label}
+                  </div>
+                  <div className="sheet-compose-row">
+                    <input
+                      className="sheet-compose-input"
+                      placeholder="Type a message…"
+                      value={composeText}
+                      onChange={(e) => setComposeText(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                    />
+                    <button className="sheet-compose-send" onClick={handleSendMessage}>
+                      <IonIcon icon={send} />
+                    </button>
+                    <button className="sheet-compose-close" onClick={() => { setCurrentTopic(null); setComposeText(''); }}>
+                      <IonIcon icon={close} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* End ride */}
+              <button className="btn-end-ride" onClick={handleEndRide}>
+                <IonIcon icon={stopCircle} />
+                End Ride
+              </button>
+
+            </div>
+          </div>
+          
         </div>
       </IonContent>
       <IonToast
