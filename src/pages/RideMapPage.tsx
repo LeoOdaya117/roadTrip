@@ -17,11 +17,26 @@ import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useRideChannel } from '../hooks/useRideChannel';
 import { useRideLocationSync } from '../hooks/useRideLocationSync';
 import { useRideTimer } from '../hooks/useRideTimer';
-import { getLastLocation, addPhoto, getSession, saveRideSession } from '../services/offlineDb';
+import { getLastLocation, addPhoto, getSession, saveRideSession, getTrackPoints } from '../services/offlineDb';
 import { useRideStore } from '../store/rideStore';
 import maleAvatar from '../assets/images/default/user_male.png';
 import BottomSheet from '../components/BottomSheet';
 
+    // distance helpers (available for restoring track distance)
+    const toRadians = (value: number) => (value * Math.PI) / 180;
+    const distanceBetween = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+      const earthRadius = 6371000;
+      const deltaLat = toRadians(b.lat - a.lat);
+      const deltaLng = toRadians(b.lng - a.lng);
+      const lat1 = toRadians(a.lat);
+      const lat2 = toRadians(b.lat);
+
+      const sinLat = Math.sin(deltaLat / 2);
+      const sinLng = Math.sin(deltaLng / 2);
+
+      const h = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng;
+      return 2 * earthRadius * Math.asin(Math.sqrt(h));
+    };
 const FALLBACK_CENTER = { lat: 37.7749, lng: -122.4194 };
 
 const RideMapPage: React.FC = () => {
@@ -68,6 +83,7 @@ const RideMapPage: React.FC = () => {
   };
   const isTracking = useRideStore((state) => state.isTracking);
   const setTracking = useRideStore((state) => state.setTracking);
+  const setSoloMode = useRideStore((state) => state.setSoloMode);
   const isSoloMode = useRideStore((state) => state.isSoloMode);
 
   const [fallbackCenter, setFallbackCenter] = useState(FALLBACK_CENTER);
@@ -77,6 +93,7 @@ const RideMapPage: React.FC = () => {
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [photoNote, setPhotoNote] = useState<string>('');
+  const [trackPoints, setTrackPoints] = useState<{ lat: number; lng: number }[]>([]);
   const captionInputRef = useRef<any | null>(null);
   const handleCaptionChange = (e: any) => {
     try {
@@ -104,11 +121,15 @@ const RideMapPage: React.FC = () => {
     error,
     startTracking,
     stopTracking
-  } = useLocationTracker(false);
+  } = useLocationTracker(Boolean(rideId));
 
   useEffect(() => {
     if (routeRideId) {
       setRide(routeRideId);
+      // If the route ride id indicates a solo session, ensure solo mode is enabled early
+      if (routeRideId.startsWith('solo-')) {
+        setSoloMode(true);
+      }
     }
   }, [routeRideId, setRide]);
 
@@ -164,6 +185,8 @@ const RideMapPage: React.FC = () => {
       return;
     }
 
+    
+
     getLastLocation(rideId)
       .then((stored) => {
         if (stored) {
@@ -171,7 +194,116 @@ const RideMapPage: React.FC = () => {
         }
       })
       .catch(() => undefined);
+
+    // Load existing track points for solo rides so polyline shows previous path
+    (async () => {
+      try {
+        if (isSoloMode) {
+          const pts = await getTrackPoints(rideId);
+          if (pts && pts.length) {
+            const mapped = pts.map((p) => ({ lat: p.lat, lng: p.lng }));
+            setTrackPoints(mapped);
+            // compute distance from the loaded track points to restore total distance
+            try {
+              let dist = 0;
+              for (let i = 1; i < mapped.length; i++) {
+                const a = mapped[i - 1];
+                const b = mapped[i];
+                const d = distanceBetween(a, b);
+                if (d > 0.5) dist += d;
+              }
+              if (dist > 0) setDistanceMetersTotal((_) => Math.round(dist));
+            } catch (e) {
+              // ignore
+            }
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    })();
+
+    // Restore timer and tracking state from saved session when resuming
+    (async () => {
+      try {
+        const session = await getSession(rideId);
+        if (session) {
+          // compute elapsed: prefer stored durationSeconds, otherwise derive from createdAt
+          let elapsed = 0;
+          if (typeof session.durationSeconds === 'number' && session.durationSeconds > 0) {
+            elapsed = session.durationSeconds;
+          } else if (session.createdAt) {
+            const created = new Date(session.createdAt).getTime();
+            if (!Number.isNaN(created)) {
+              elapsed = Math.max(0, Math.floor((Date.now() - created) / 1000));
+            }
+          }
+
+          try {
+            (rideTimer as any).setElapsed?.(elapsed);
+          } catch (e) {
+            // ignore
+          }
+
+          // If session is not ended, enable tracking and start timer
+          if (!session.endedAt) {
+            try {
+              setTracking(true);
+              (rideTimer as any).setRunning?.(true);
+            } catch (e) {
+              // ignore
+            }
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    })();
   }, [rideId]);
+
+  // Persist running session progress (duration + distance) periodically so resume restores correctly
+  useEffect(() => {
+    if (!rideId) return;
+
+    let stopped = false;
+
+    const saveNow = async () => {
+      if (stopped) return;
+      try {
+        const existing = await getSession(rideId).catch(() => undefined);
+        const base = existing ?? {
+          rideId,
+          userId: currentUser?.id ?? 'local-user',
+          userName: currentUser?.name ?? 'Me',
+          isHost: currentUser?.isHost ?? false,
+          isSolo: isSoloMode,
+          createdAt: existing?.createdAt ?? new Date().toISOString()
+        };
+        const updated = {
+          ...base,
+          durationSeconds: elapsedRef.current,
+          distanceMeters: Math.round(distanceRef.current)
+        };
+        await saveRideSession(updated).catch(() => undefined);
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    if (isTracking) {
+      saveNow();
+      const id = window.setInterval(saveNow, 5000);
+      return () => {
+        stopped = true;
+        window.clearInterval(id);
+        saveNow();
+      };
+    }
+
+    // if not tracking, save once
+    saveNow();
+    return () => { stopped = true; };
+  }, [rideId, isTracking, currentUser, isSoloMode]);
 
   useEffect(() => {
     if (!location) {
@@ -194,6 +326,21 @@ const RideMapPage: React.FC = () => {
       speed: location.speed,
       timestamp: location.timestamp
     });
+
+    // Append to local trackPoints for live polyline when in solo mode
+    try {
+      if (isSoloMode && location) {
+        setTrackPoints((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && Math.abs(last.lat - location.lat) < 0.000001 && Math.abs(last.lng - location.lng) < 0.000001) {
+            return prev;
+          }
+          return [...prev, { lat: location.lat, lng: location.lng }];
+        });
+      }
+    } catch (e) {
+      // ignore
+    }
   }, [currentUser, location, updateSingleRider, setUser]);
 
   useEffect(() => {
@@ -227,20 +374,7 @@ const RideMapPage: React.FC = () => {
   const lastLocationRef = useRef<{ lat: number; lng: number; timestamp?: string } | null>(null);
   const [distanceMetersTotal, setDistanceMetersTotal] = useState<number>(0);
 
-  const toRadians = (value: number) => (value * Math.PI) / 180;
-  const distanceBetween = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
-    const earthRadius = 6371000;
-    const deltaLat = toRadians(b.lat - a.lat);
-    const deltaLng = toRadians(b.lng - a.lng);
-    const lat1 = toRadians(a.lat);
-    const lat2 = toRadians(b.lat);
-
-    const sinLat = Math.sin(deltaLat / 2);
-    const sinLng = Math.sin(deltaLng / 2);
-
-    const h = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng;
-    return 2 * earthRadius * Math.asin(Math.sqrt(h));
-  };
+  
 
   useEffect(() => {
     if (!location) return;
@@ -289,6 +423,16 @@ const RideMapPage: React.FC = () => {
   const [activeLayer, setActiveLayer] = useState(MAP_LAYERS[0]);
 
   const rideTimer = useRideTimer();
+
+  const elapsedRef = useRef<number>(rideTimer.elapsedSeconds);
+  useEffect(() => {
+    elapsedRef.current = rideTimer.elapsedSeconds;
+  }, [rideTimer.elapsedSeconds]);
+
+  const distanceRef = useRef<number>(0);
+  useEffect(() => {
+    distanceRef.current = distanceMetersTotal;
+  }, [distanceMetersTotal]);
 
   // Auto-start timer when tracking begins, pause on stopover
   useEffect(() => {
@@ -414,33 +558,66 @@ const RideMapPage: React.FC = () => {
   };
 
   const handleEndRide = () => {
+    console.log('[RideMapPage] handleEndRide invoked', { rideId });
     (async () => {
       try {
         stopTracking();
         setTracking(false);
+
         // mark session ended in db so home won't show resume
         if (rideId) {
           try {
+            console.log('[RideMapPage] fetching session before ending', { rideId });
             const existing = await getSession(rideId);
+            console.log('[RideMapPage] existing session', existing);
             if (existing) {
               const updated = {
                 ...existing,
                 endedAt: new Date().toISOString(),
+                status: 'ended',
                 distanceMeters: Math.round(distanceMetersTotal),
                 durationSeconds: Math.round(rideTimer.elapsedSeconds)
               };
+              console.log('[RideMapPage] ending ride, saving session:', updated);
               await saveRideSession(updated);
+              console.log('[RideMapPage] session saved');
+              try {
+                const verify = await getSession(rideId);
+                console.log('[RideMapPage] verify saved session', verify);
+              } catch (e) {
+                console.error('[RideMapPage] verify read failed', e);
+              }
+              try {
+                // mark this ride as hidden for resume (keeps record in DB for history)
+                if (rideId) {
+                  localStorage.setItem(`ride:hidden:${rideId}`, '1');
+                  console.log('[RideMapPage] marked ride hidden from resume', { rideId });
+                }
+              } catch (e) {
+                /* ignore */
+              }
+              try {
+                window.dispatchEvent(new CustomEvent('ride:ended', { detail: { rideId } }));
+              } catch (e) {
+                /* ignore */
+              }
+            } else {
+              console.warn('[RideMapPage] no existing session found to update', { rideId });
             }
           } catch (e) {
-            // ignore db errors
+            console.error('[RideMapPage] error saving ended session', e);
           }
+        } else {
+          console.warn('[RideMapPage] no rideId present when ending ride');
         }
+      } catch (err) {
+        console.error('[RideMapPage] unexpected error in handleEndRide', err);
       } finally {
         try {
           // clear in-memory ride state so Home reflects no active ride
           clearRide();
         } catch (e) {
-          // ignore
+          console.error('[RideMapPage] error clearing ride state', e);
         }
         rideTimer.reset();
         history.push('/home');
@@ -455,6 +632,7 @@ const RideMapPage: React.FC = () => {
           <RideMapView
             center={center}
             riders={riders}
+            trackPoints={trackPoints}
             currentUserId={currentUser?.id}
             onMapReady={(map) => {
               mapRef.current = map;

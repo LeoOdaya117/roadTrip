@@ -46,8 +46,10 @@ export const useRideLocationSync = ({
   }, [location, rideId, riderId, isSoloMode]);
 
   useEffect(() => {
+    // Treat ride IDs prefixed with "solo-" as solo sessions as a fallback
+    const inferredSolo = (rideId ?? '').startsWith('solo-');
     // Solo mode: no API calls needed
-    if (isSoloMode || !rideId || !riderId || !isTracking) {
+    if (isSoloMode || inferredSolo || !rideId || !riderId || !isTracking) {
       return;
     }
 
@@ -82,8 +84,10 @@ export const useRideLocationSync = ({
   }, [isOnline, isSoloMode, isTracking, rideId, riderId]);
 
   useEffect(() => {
+    // Treat ride IDs prefixed with "solo-" as solo sessions as a fallback
+    const inferredSolo = (rideId ?? '').startsWith('solo-');
     // Solo mode: skip reconnect flush to API
-    if (isSoloMode || !isOnline || !rideId || !riderId) {
+    if (isSoloMode || inferredSolo || !isOnline || !rideId || !riderId) {
       return;
     }
 

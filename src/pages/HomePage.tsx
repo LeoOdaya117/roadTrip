@@ -16,7 +16,7 @@ import { useEffect, useState } from 'react';
 import { useIonViewWillEnter } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import { createRide, joinRide } from '../services/api';
-import { createLocalUser } from '../services/user';
+import { createLocalUser, loadUserProfile } from '../services/user';
 import { getRideSession, getAllSessions, saveRideSession, deleteSession } from '../services/offlineDb';
 import { useRideStore } from '../store/rideStore';
 import { RideSession } from '../types/ride';
@@ -43,11 +43,25 @@ const HomePage: React.FC = () => {
   const refreshSavedSession = async () => {
     try {
       const sessions = await getAllSessions();
-      const active = sessions.find((s) => !s.endedAt);
+      console.log('[HomePage] refreshSavedSession -> sessions (raw):', JSON.parse(JSON.stringify(sessions)));
+      console.log('[HomePage] refreshSavedSession -> sessions summary:', sessions.map(s => ({ rideId: s.rideId, endedAt: s.endedAt })));
+      // prefer explicit status if present; treat missing status as legacy active
+      const active = sessions.find((s) => {
+        // skip sessions the user explicitly hid after ending (keep for history)
+        try {
+          if (localStorage.getItem(`ride:hidden:${s.rideId}`) === '1') return false;
+        } catch (e) {
+          // ignore
+        }
+        return s.status ? s.status !== 'ended' : !s.endedAt;
+      });
+      console.log('[HomePage] active session after filter:', active);
       setSavedSession(active ?? null);
+      console.log('[HomePage] savedSession set to:', JSON.parse(JSON.stringify(active ?? null)));
     } catch (e) {
       try {
         const session = await getRideSession();
+        console.log('[HomePage] fallback getRideSession ->', session);
         setSavedSession(session ?? null);
       } catch (err) {
         setSavedSession(null);
@@ -62,6 +76,26 @@ const HomePage: React.FC = () => {
   useIonViewWillEnter(() => {
     refreshSavedSession();
   });
+
+  // Also refresh when navigation occurs so Home reflects session changes
+  useEffect(() => {
+    const unlisten = history.listen(() => {
+      refreshSavedSession();
+    });
+    return () => unlisten();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Listen for explicit events when a ride ends in another page
+  useEffect(() => {
+    const handler = (e: Event) => {
+      console.log('[HomePage] received ride:ended event', (e as CustomEvent).detail);
+      refreshSavedSession();
+    };
+    window.addEventListener('ride:ended', handler as EventListener);
+    return () => window.removeEventListener('ride:ended', handler as EventListener);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleCreateRide = async () => {
     try {
@@ -87,7 +121,8 @@ const HomePage: React.FC = () => {
         userId: user.id,
         userName: user.name,
         isHost: true,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        status: 'active'
       };
       await saveRideSession(session);
       setSavedSession(session);
@@ -129,7 +164,8 @@ const HomePage: React.FC = () => {
         userId: user.id,
         userName: user.name,
         isHost: false,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        status: 'active'
       };
       await saveRideSession(session);
       setSavedSession(session);
@@ -147,10 +183,13 @@ const HomePage: React.FC = () => {
       return;
     }
 
+    // restore user profile (avatar) if available
+    const profile = loadUserProfile();
     setUser({
       id: savedSession.userId,
       name: savedSession.userName,
-      isHost: savedSession.isHost
+      isHost: savedSession.isHost,
+      avatarUrl: profile.avatarUrl
     });
     // clear prior ride state before resuming
     clearRide();
@@ -181,7 +220,8 @@ const HomePage: React.FC = () => {
         userName: user.name,
         isHost: true,
         isSolo: true,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        status: 'active'
       };
       await saveRideSession(session);
       setSavedSession(session);

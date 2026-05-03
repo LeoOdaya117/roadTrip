@@ -42,6 +42,8 @@ export type RideSession = {
   endedAt?: string;
   distanceMeters?: number;
   durationSeconds?: number;
+  /** session lifecycle status — e.g. 'active' | 'ended' */
+  status?: 'active' | 'ended' | 'paused';
 };
 
 export type PhotoRecord = {
