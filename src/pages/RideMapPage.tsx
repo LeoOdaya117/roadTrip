@@ -134,12 +134,13 @@ const RideMapPage: React.FC = () => {
   }, [routeRideId, setRide]);
 
   useEffect(() => {
-    setTracking(true);
-  }, [setTracking]);
+    if (rideId) {
+      setTracking(true);
+    }
+  }, [rideId, setTracking]);
 
   // Ensure we request location when the page mounts so the map can show current location
   useEffect(() => {
-    let mounted = true;
     (async () => {
       try {
         await startTracking();
@@ -149,7 +150,6 @@ const RideMapPage: React.FC = () => {
     })();
 
     return () => {
-      mounted = false;
       try {
         stopTracking();
       } catch (e) {
@@ -169,10 +169,27 @@ const RideMapPage: React.FC = () => {
   }, [isTracking, startTracking, stopTracking]);
 
   useEffect(() => {
-    if (trackerIsTracking !== isTracking) {
-      setTracking(trackerIsTracking);
+    if (trackerIsTracking && !isTracking) {
+      setTracking(true);
     }
   }, [trackerIsTracking, isTracking, setTracking]);
+
+  // Keep trying while tracking is desired but GPS watch is not active yet
+  // (for example when location services are turned on shortly after ride start).
+  useEffect(() => {
+    if (!isTracking || trackerIsTracking) {
+      return;
+    }
+
+    startTracking().catch(() => undefined);
+    const retryId = window.setInterval(() => {
+      startTracking().catch(() => undefined);
+    }, 3500);
+
+    return () => {
+      window.clearInterval(retryId);
+    };
+  }, [isTracking, trackerIsTracking, startTracking]);
 
   useEffect(() => {
     if (error) {
@@ -277,7 +294,7 @@ const RideMapPage: React.FC = () => {
           userName: currentUser?.name ?? 'Me',
           isHost: currentUser?.isHost ?? false,
           isSolo: isSoloMode,
-          createdAt: existing?.createdAt ?? new Date().toISOString()
+          createdAt: new Date().toISOString()
         };
         const updated = {
           ...base,
@@ -574,7 +591,7 @@ const RideMapPage: React.FC = () => {
               const updated = {
                 ...existing,
                 endedAt: new Date().toISOString(),
-                status: 'ended',
+                status: 'ended' as const,
                 distanceMeters: Math.round(distanceMetersTotal),
                 durationSeconds: Math.round(rideTimer.elapsedSeconds)
               };
