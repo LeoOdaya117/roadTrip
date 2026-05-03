@@ -50,6 +50,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
   const [error, setError] = useState<string | null>(null);
 
   const watchIdRef = useRef<string | null>(null);
+  const isStartingRef = useRef(false);
   const lastUpdateRef = useRef<LocationPoint | null>(null);
   const shouldResumeRef = useRef(false);
 
@@ -73,12 +74,23 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
   const stopTracking = useCallback(() => {
     if (watchIdRef.current) {
       Geolocation.clearWatch({ id: watchIdRef.current });
+      console.debug('[useLocationTracker] cleared watch', { id: watchIdRef.current });
       watchIdRef.current = null;
     }
     setIsTracking(false);
   }, []);
 
   const startTracking = useCallback(async () => {
+    if (isStartingRef.current) {
+      console.debug('[useLocationTracker] startTracking already running, skipping');
+      return;
+    }
+    if (watchIdRef.current) {
+      console.debug('[useLocationTracker] watch already exists, skipping new watch', { id: watchIdRef.current });
+      setIsTracking(true);
+      return;
+    }
+    isStartingRef.current = true;
     try {
       const permissionStatus = await Geolocation.checkPermissions();
       const nextPermission =
@@ -126,27 +138,36 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
         );
       }
 
-      watchIdRef.current = await Geolocation.watchPosition(
-        GEOLOCATION_OPTIONS,
-        (position, watchError) => {
-          if (watchError) {
-            setError(watchError.message);
-            return;
-          }
+      try {
+        const id = await Geolocation.watchPosition(
+          GEOLOCATION_OPTIONS,
+          (position, watchError) => {
+            if (watchError) {
+              setError(watchError.message);
+              return;
+            }
 
-          if (!position) {
-            setError('Location unavailable.');
-            return;
-          }
+            if (!position) {
+              setError('Location unavailable.');
+              return;
+            }
 
-          updateLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-            speed: position.coords.speed ?? null,
-            timestamp: new Date(position.timestamp).toISOString()
-          });
-        }
-      );
+            updateLocation({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+              speed: position.coords.speed ?? null,
+              timestamp: new Date(position.timestamp).toISOString()
+            });
+          }
+        );
+
+        watchIdRef.current = id as string;
+        console.debug('[useLocationTracker] started watch', { id: watchIdRef.current });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to start tracking.');
+      } finally {
+        isStartingRef.current = false;
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start tracking.');
     }
@@ -162,6 +183,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
   }, [autoStart, startTracking, stopTracking]);
 
   useEffect(() => {
+    // Register app state change listener once. Use stable callbacks `startTracking`/`stopTracking`.
     let listener: PluginListenerHandle | null = null;
     let isCancelled = false;
 
@@ -187,7 +209,9 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
       isCancelled = true;
       listener?.remove();
     };
-  }, [isTracking, startTracking, stopTracking]);
+  // only run once (startTracking/stopTracking are stable)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return {
     location,

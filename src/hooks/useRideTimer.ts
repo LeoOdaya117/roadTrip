@@ -10,6 +10,8 @@ export type RideTimerState = {
   pause: () => void;
   resume: () => void;
   reset: () => void;
+  setElapsed?: (seconds: number) => void;
+  setRunning?: (running: boolean) => void;
 };
 
 const format = (totalSeconds: number): string => {
@@ -50,6 +52,14 @@ export const useRideTimer = (): RideTimerState => {
     setElapsedSeconds(0);
   }, []);
 
+  const setElapsed = useCallback((seconds: number) => {
+    setElapsedSeconds(Math.max(0, Math.floor(seconds)));
+  }, []);
+
+  const setRunning = useCallback((running: boolean) => {
+    setIsRunning(running);
+  }, []);
+
   useEffect(() => {
     if (isRunning) {
       intervalRef.current = setInterval(() => {
@@ -69,5 +79,7 @@ export const useRideTimer = (): RideTimerState => {
     pause,
     resume,
     reset,
+    setElapsed,
+    setRunning,
   };
 };

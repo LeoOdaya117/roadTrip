@@ -7,12 +7,17 @@ import {
   IonToolbar,
   IonToast,
   IonButtons,
+  IonSegment,
+  IonSegmentButton,
+  IonIcon,
 } from '@ionic/react';
+import { people, person, key, add, play, refresh } from 'ionicons/icons';
 import { useEffect, useState } from 'react';
+import { useIonViewWillEnter } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import { createRide, joinRide } from '../services/api';
-import { createLocalUser } from '../services/user';
-import { getRideSession, saveRideSession } from '../services/offlineDb';
+import { createLocalUser, loadUserProfile } from '../services/user';
+import { getRideSession, getAllSessions, saveRideSession, deleteSession } from '../services/offlineDb';
 import { useRideStore } from '../store/rideStore';
 import { RideSession } from '../types/ride';
 import { useCallback } from 'react';
@@ -29,15 +34,67 @@ const HomePage: React.FC = () => {
   const [loadingAction, setLoadingAction] = useState<'create' | 'join' | null>(
     null
   );
+  const [startMode, setStartMode] = useState<'group' | 'solo'>('group');
   const [error, setError] = useState<string | null>(null);
   const [savedSession, setSavedSession] = useState<RideSession | null>(null);
 
   const currentUser = useRideStore((state) => state.currentUser);
 
+  const refreshSavedSession = async () => {
+    try {
+      const sessions = await getAllSessions();
+      console.log('[HomePage] refreshSavedSession -> sessions (raw):', JSON.parse(JSON.stringify(sessions)));
+      console.log('[HomePage] refreshSavedSession -> sessions summary:', sessions.map(s => ({ rideId: s.rideId, endedAt: s.endedAt })));
+      // prefer explicit status if present; treat missing status as legacy active
+      const active = sessions.find((s) => {
+        // skip sessions the user explicitly hid after ending (keep for history)
+        try {
+          if (localStorage.getItem(`ride:hidden:${s.rideId}`) === '1') return false;
+        } catch (e) {
+          // ignore
+        }
+        return s.status ? s.status !== 'ended' : !s.endedAt;
+      });
+      console.log('[HomePage] active session after filter:', active);
+      setSavedSession(active ?? null);
+      console.log('[HomePage] savedSession set to:', JSON.parse(JSON.stringify(active ?? null)));
+    } catch (e) {
+      try {
+        const session = await getRideSession();
+        console.log('[HomePage] fallback getRideSession ->', session);
+        setSavedSession(session ?? null);
+      } catch (err) {
+        setSavedSession(null);
+      }
+    }
+  };
+
   useEffect(() => {
-    getRideSession()
-      .then((session) => setSavedSession(session ?? null))
-      .catch(() => undefined);
+    refreshSavedSession();
+  }, []);
+
+  useIonViewWillEnter(() => {
+    refreshSavedSession();
+  });
+
+  // Also refresh when navigation occurs so Home reflects session changes
+  useEffect(() => {
+    const unlisten = history.listen(() => {
+      refreshSavedSession();
+    });
+    return () => unlisten();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Listen for explicit events when a ride ends in another page
+  useEffect(() => {
+    const handler = (e: Event) => {
+      console.log('[HomePage] received ride:ended event', (e as CustomEvent).detail);
+      refreshSavedSession();
+    };
+    window.addEventListener('ride:ended', handler as EventListener);
+    return () => window.removeEventListener('ride:ended', handler as EventListener);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleCreateRide = async () => {
@@ -64,7 +121,8 @@ const HomePage: React.FC = () => {
         userId: user.id,
         userName: user.name,
         isHost: true,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        status: 'active'
       };
       await saveRideSession(session);
       setSavedSession(session);
@@ -106,7 +164,8 @@ const HomePage: React.FC = () => {
         userId: user.id,
         userName: user.name,
         isHost: false,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        status: 'active'
       };
       await saveRideSession(session);
       setSavedSession(session);
@@ -124,10 +183,13 @@ const HomePage: React.FC = () => {
       return;
     }
 
+    // restore user profile (avatar) if available
+    const profile = loadUserProfile();
     setUser({
       id: savedSession.userId,
       name: savedSession.userName,
-      isHost: savedSession.isHost
+      isHost: savedSession.isHost,
+      avatarUrl: profile.avatarUrl
     });
     // clear prior ride state before resuming
     clearRide();
@@ -158,7 +220,8 @@ const HomePage: React.FC = () => {
         userName: user.name,
         isHost: true,
         isSolo: true,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        status: 'active'
       };
       await saveRideSession(session);
       setSavedSession(session);
@@ -191,14 +254,17 @@ const HomePage: React.FC = () => {
               )}
             </button>
           </IonButtons>
+          {/* last-session pill removed from header — moved into page content */}
         </IonToolbar>
       </IonHeader>
-      <IonContent className="app-page page-content">
+      <IonContent className="app-page page-content home-minimal">
 
         <div className="page-hero">
-          <p className="hero-eyebrow">Live tracking</p>
-          <h1>Ride together,<br /><span>stay connected.</span></h1>
-          <p>Create or join a trip and track everyone on one map.</p>
+          <div className="hero-inner">
+            <p className="hero-eyebrow">Live tracking</p>
+            <h1>Ride together,<br /><span>stay connected.</span></h1>
+            <p className="hero-sub">Create or join a trip and track everyone on one map.</p>
+          </div>
         </div>
 
         <div className="home-actions">
@@ -206,87 +272,115 @@ const HomePage: React.FC = () => {
         </div>
 
         <div className="home-grid">
-          <div className="glass-card">
-            <span className="card-label">Solo ride</span>
-            <p className="card-description">
-              Track your own route offline. No internet or invite needed.
-            </p>
+          {savedSession && (
+            <div className="glass-card resume-card">
+              <div className="card-head">
+                <div className="card-head-left">
+                  <IonIcon icon={play} className="card-icon" />
+                  <span className="card-label">Resume ride</span>
+                </div>
+              </div>
+              <p className="card-description">Continue your last session — Code: <span className="session-id">{savedSession.rideId}</span></p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn-primary" onClick={handleResumeRide}>Resume Ride</button>
+                <button
+                  className="btn-secondary"
+                  onClick={async () => {
+                    if (!savedSession) return;
+                    try {
+                      await deleteSession(savedSession.rideId);
+                      setSavedSession(null);
+                    } catch (e) {
+                      /* ignore */
+                    }
+                  }}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="glass-card card-feature card-hero">
+            <div className="card-head">
+              <div className="card-head-left">
+                <IonIcon icon={add} className="card-icon large" />
+                <span className="card-label">Start ride</span>
+              </div>
+            </div>
+            <p className="card-description">Choose whether this ride is a group session or a solo route.</p>
+
+            <div className="start-mode-toggle" style={{ display: 'flex', gap: 8, marginTop: 8, marginBottom: 12 }}>
+              <button className={startMode === 'group' ? 'chip chip-active' : 'chip'} onClick={() => setStartMode('group')}>Group</button>
+              <button className={startMode === 'solo' ? 'chip chip-active' : 'chip'} onClick={() => setStartMode('solo')}>Solo</button>
+            </div>
+
             <button
-              className="btn-secondary"
-              onClick={handleSoloRide}
+              className="btn-primary btn-primary-lg"
+              onClick={async () => {
+                if (startMode === 'group') {
+                  await handleCreateRide();
+                } else {
+                  await handleSoloRide();
+                }
+              }}
               disabled={loadingAction !== null}
             >
-              {loadingAction === 'solo' ? (
+              {loadingAction === 'create' || loadingAction === 'solo' ? (
                 <span className="btn-inner">
                   <IonSpinner name="dots" style={{ width: 18, height: 18 }} />
                   Starting…
                 </span>
-              ) : 'Start Solo Ride'}
+              ) : (startMode === 'group' ? 'Create Ride' : 'Start Solo')}
             </button>
           </div>
 
-          <div className="glass-card card-feature">
-            <span className="card-label">New ride</span>
-            <p className="card-description">
-              Start a session and invite friends with a shareable code.
-            </p>
-            <button
-              className="btn-primary btn-primary-lg"
-              onClick={handleCreateRide}
-              disabled={loadingAction !== null}
-            >
-              {loadingAction === 'create' ? (
-                <span className="btn-inner">
-                  <IonSpinner name="dots" style={{ width: 18, height: 18 }} />
-                  Creating…
-                </span>
-              ) : 'Create Ride'}
-            </button>
-          </div>
-
-          <div className="glass-card">
-            <span className="card-label">Join a ride</span>
-            <div className="input-group">
-              <label className="input-label" htmlFor="ride-code">Ride code</label>
-              <input
-                id="ride-code"
-                className="custom-input"
-                type="text"
-                placeholder="Enter code"
-                value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value)}
-                autoComplete="off"
-                autoCorrect="off"
-                spellCheck={false}
-              />
+          <div className="glass-card join-card">
+            <div className="quick-header">
+              <div className="quick-title">Join Ride</div>
+              <div className="quick-divider" />
             </div>
-            <button
-              className="btn-primary"
-              onClick={handleJoinRide}
-              disabled={loadingAction !== null}
-            >
-              {loadingAction === 'join' ? (
-                <span className="btn-inner">
-                  <IonSpinner name="dots" style={{ width: 18, height: 18 }} />
-                  Joining…
-                </span>
-              ) : 'Join Ride'}
-            </button>
+            <div className="quick-row">
+              <div className="quick-item">
+                <div className="card-head-left">
+                  <IonIcon icon={people} className="card-icon" />
+                  <div>
+                    <div className="card-label">Join</div>
+                    <div className="card-sub">Code</div>
+                  </div>
+                </div>
+                <div className="input-group" style={{ marginTop: 8 }}>
+                  <input
+                    id="ride-code"
+                    className="custom-input"
+                    type="text"
+                    placeholder="Enter code"
+                    value={joinCode}
+                    onChange={(e) => setJoinCode(e.target.value)}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
+                </div>
+                <div className="quick-actions-row">
+                  <button className="mini-action" onClick={() => { /* focus input */ const el = document.getElementById('ride-code') as HTMLInputElement | null; el?.focus(); }} aria-label="Focus code input">
+                    <IonIcon icon={key} />
+                  </button>
+                  <button className="btn-primary" onClick={handleJoinRide} disabled={loadingAction !== null}>
+                    {loadingAction === 'join' ? (
+                      <span className="btn-inner">
+                        <IonSpinner name="dots" style={{ width: 18, height: 18 }} />
+                        Joining…
+                      </span>
+                    ) : 'Join Ride'}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Resume last session */}
-        {savedSession && (
-          <div className="glass-card">
-            <span className="card-label">Last session</span>
-            <p className="card-description">
-              Code: <span className="session-id">{savedSession.rideId}</span>
-            </p>
-            <button className="btn-secondary" onClick={handleResumeRide}>
-              Resume Ride
-            </button>
-          </div>
-        )}
+        {/* bottom resume card removed; moved into grid */}
 
       </IonContent>
       <IonToast
