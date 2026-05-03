@@ -6,7 +6,7 @@ import {
   IonInput,
   IonButton
 } from '@ionic/react';
-import { locate, pause, play, send, close, stopCircle, cafeOutline, camera } from 'ionicons/icons';
+import { locate, pause, play, send, close, stopCircle, camera } from 'ionicons/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useHistory, useParams } from 'react-router-dom';
 import type L from 'leaflet';
@@ -89,6 +89,8 @@ const RideMapPage: React.FC = () => {
   const [fallbackCenter, setFallbackCenter] = useState(FALLBACK_CENTER);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [photoToast, setPhotoToast] = useState<string | null>(null);
+  const [isTogglingTracking, setIsTogglingTracking] = useState(false);
+  const [topRideStatus, setTopRideStatus] = useState<'Live' | 'Paused' | 'Resuming...' | 'Pausing...' | 'Resumed'>('Live');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
@@ -167,12 +169,6 @@ const RideMapPage: React.FC = () => {
     startTracking();
     return () => stopTracking();
   }, [isTracking, startTracking, stopTracking]);
-
-  useEffect(() => {
-    if (trackerIsTracking && !isTracking) {
-      setTracking(true);
-    }
-  }, [trackerIsTracking, isTracking, setTracking]);
 
   // Keep trying while tracking is desired but GPS watch is not active yet
   // (for example when location services are turned on shortly after ride start).
@@ -298,7 +294,10 @@ const RideMapPage: React.FC = () => {
         };
         const updated = {
           ...base,
-          durationSeconds: elapsedRef.current,
+          durationSeconds: Math.max(
+            elapsedRef.current,
+            typeof base.durationSeconds === 'number' ? base.durationSeconds : 0
+          ),
           distanceMeters: Math.round(distanceRef.current)
         };
         await saveRideSession(updated).catch(() => undefined);
@@ -451,6 +450,55 @@ const RideMapPage: React.FC = () => {
     distanceRef.current = distanceMetersTotal;
   }, [distanceMetersTotal]);
 
+  const wasTrackingRef = useRef<boolean>(isTracking);
+  const topStatusTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (topStatusTimeoutRef.current !== null) {
+        window.clearTimeout(topStatusTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (topStatusTimeoutRef.current !== null) {
+      window.clearTimeout(topStatusTimeoutRef.current);
+      topStatusTimeoutRef.current = null;
+    }
+
+    if (isTogglingTracking) {
+      setTopRideStatus(isTracking ? 'Pausing...' : 'Resuming...');
+      return;
+    }
+
+    if (!isTracking) {
+      setTopRideStatus('Paused');
+      wasTrackingRef.current = false;
+      return;
+    }
+
+    const resumedFromPause = !wasTrackingRef.current && elapsedRef.current > 0;
+    wasTrackingRef.current = true;
+
+    if (resumedFromPause) {
+      setTopRideStatus('Resumed');
+      topStatusTimeoutRef.current = window.setTimeout(() => {
+        setTopRideStatus('Live');
+      }, 1600);
+      return;
+    }
+
+    setTopRideStatus('Live');
+  }, [isTracking, isTogglingTracking]);
+
+  const topRideBadgeClass = [
+    'live-badge',
+    topRideStatus === 'Paused' ? 'live-badge-paused' : '',
+    topRideStatus === 'Resumed' ? 'live-badge-resumed' : '',
+    topRideStatus === 'Pausing...' || topRideStatus === 'Resuming...' ? 'live-badge-transition' : ''
+  ].filter(Boolean).join(' ');
+
   // Auto-start timer when tracking begins, pause on stopover
   useEffect(() => {
     if (isTracking) {
@@ -562,16 +610,31 @@ const RideMapPage: React.FC = () => {
   }, [showPhotoModal]);
 
   const handleToggleTracking = async () => {
+    if (isTogglingTracking) return;
+    setIsTogglingTracking(true);
+
     if (isTracking) {
-      stopTracking();
-      setTracking(false);
-      rideTimer.pause();
+      try {
+        setTracking(false);
+        stopTracking();
+        rideTimer.pause();
+      } finally {
+        setIsTogglingTracking(false);
+      }
       return;
     }
 
-    await startTracking();
-    setTracking(true);
-    rideTimer.resume();
+    try {
+      setTracking(true);
+      await startTracking();
+      if (rideTimer.elapsedSeconds <= 0 && !rideTimer.isRunning) {
+        rideTimer.start();
+      } else {
+        rideTimer.resume();
+      }
+    } finally {
+      setIsTogglingTracking(false);
+    }
   };
 
   const handleEndRide = () => {
@@ -593,7 +656,11 @@ const RideMapPage: React.FC = () => {
                 endedAt: new Date().toISOString(),
                 status: 'ended' as const,
                 distanceMeters: Math.round(distanceMetersTotal),
-                durationSeconds: Math.round(rideTimer.elapsedSeconds)
+                durationSeconds: Math.max(
+                  Math.round(rideTimer.elapsedSeconds),
+                  Math.round(elapsedRef.current),
+                  typeof existing.durationSeconds === 'number' ? Math.round(existing.durationSeconds) : 0
+                )
               };
               console.log('[RideMapPage] ending ride, saving session:', updated);
               await saveRideSession(updated);
@@ -662,7 +729,7 @@ const RideMapPage: React.FC = () => {
           <div className="map-top-bar">
             <span className="map-title">Live Ride</span>
             <div style={{ marginLeft: 'auto' }}>
-              <span className="live-badge">Live</span>
+              <span className={topRideBadgeClass}>{topRideStatus}</span>
             </div>
           </div>
 
@@ -677,9 +744,10 @@ const RideMapPage: React.FC = () => {
             <button
               className={`map-fab${!isTracking ? ' fab-stopover' : ''}`}
               onClick={handleToggleTracking}
-              title={isTracking ? 'Stopover — pause tracking' : 'Resume ride'}
+              title={isTogglingTracking ? 'Updating tracking...' : (isTracking ? 'Stopover - pause tracking' : 'Resume ride')}
+              disabled={isTogglingTracking}
             >
-              <IonIcon icon={isTracking ? cafeOutline : play} />
+              <IonIcon icon={isTracking ? pause : play} />
             </button>
             <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleFileChange} />
           </div>

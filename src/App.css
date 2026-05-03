@@ -488,6 +488,35 @@
   animation: pulse-dot 1.8s ease-in-out infinite;
 }
 
+.live-badge.live-badge-paused {
+  color: #F59E0B;
+}
+
+.live-badge.live-badge-paused::before {
+  background: #F59E0B;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22);
+  animation: none;
+}
+
+.live-badge.live-badge-transition {
+  color: #38BDF8;
+}
+
+.live-badge.live-badge-transition::before {
+  background: #38BDF8;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+  animation: none;
+}
+
+.live-badge.live-badge-resumed {
+  color: #34D399;
+}
+
+.live-badge.live-badge-resumed::before {
+  background: #34D399;
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.22);
+}
+
 @keyframes pulse-dot {
   0%, 100% { box-shadow: 0 0 0 3px rgba(255,107,53,0.25); }
   50%       { box-shadow: 0 0 0 6px rgba(255,107,53,0.08); }
