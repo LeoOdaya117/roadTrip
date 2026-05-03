@@ -1,3 +1,4 @@
+import '../styles/MapStyleSwitcher.css';
 type MapLayerOption = {
   id: string;
   label: string;

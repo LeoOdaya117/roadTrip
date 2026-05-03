@@ -26,6 +26,7 @@ import satellitePreview from '../assets/images/default/Map/satellite.png';
 import darkPreview from '../assets/images/default/Map/dark.png';
 import BottomSheet from '../components/BottomSheet';
 import MapStyleSwitcher from '../components/MapStyleSwitcher';
+import '../styles/RideMapPage.css';
 
     // distance helpers (available for restoring track distance)
     const toRadians = (value: number) => (value * Math.PI) / 180;

@@ -522,54 +522,7 @@
   50%       { box-shadow: 0 0 0 6px rgba(255,107,53,0.08); }
 }
 
-/* ── Floating action buttons (top-right, below top bar) ── */
-.map-fabs {
-  position: absolute;
-  top: calc(max(env(safe-area-inset-top, 0px), 10px) + 48px);
-  right: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  z-index: 1002;
-}
-
-.map-fab {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(12, 14, 20, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #CBD5E1;
-  font-size: 18px;
-  cursor: pointer;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  transition: background 0.18s, border-color 0.18s, color 0.18s;
-  pointer-events: auto;
-}
-
-.map-fab:hover { background: rgba(255,255,255,0.06); color: #F1F5F9; }
-
-.map-fab.fab-active {
-  background: rgba(255, 107, 53, 0.18);
-  border-color: rgba(255, 107, 53, 0.4);
-  color: #FF8255;
-}
-
-.map-fab.fab-stopover {
-  background: rgba(245, 158, 11, 0.18);
-  border-color: rgba(245, 158, 11, 0.45);
-  color: #F59E0B;
-  animation: stopover-pulse 1.8s ease-in-out infinite;
-}
-
-@keyframes stopover-pulse {
-  0%,100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.0); }
-  50%      { box-shadow: 0 0 0 6px rgba(245,158,11,0.15); }
-}
+/* Floating action buttons moved to component-scoped stylesheet */
 
 /* ── Bottom sheet ── */
 .bottom-sheet {
@@ -685,129 +638,9 @@
   color: #FF8255;
 }
 
-.map-style-row {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-  scrollbar-width: none;
-}
+/* Map style cards moved to component-scoped stylesheet */
 
-.map-style-row::-webkit-scrollbar {
-  display: none;
-}
-
-.map-style-card {
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 12px;
-  width: 74px;
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  color: #CBD5E1;
-  cursor: pointer;
-  transition: transform 0.12s ease, border-color 0.18s ease, background 0.18s ease;
-  flex-shrink: 0;
-}
-
-.map-style-card:active {
-  transform: translateY(1px);
-}
-
-.map-style-card-active {
-  border-color: rgba(255, 107, 53, 0.55);
-  background: rgba(255, 107, 53, 0.12);
-  color: #F8FAFC;
-}
-
-.map-style-thumb {
-  width: 100%;
-  height: 42px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background-size: cover;
-  background-position: center;
-  overflow: hidden;
-  display: block;
-}
-
-.map-style-thumb-image {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
-}
-
-.map-style-name {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-}
-
-.map-overlay-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.map-overlay-chip {
-  padding: 8px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.04);
-  color: #cbd5e1;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease;
-}
-
-.map-overlay-chip-active {
-  border-color: rgba(56, 189, 248, 0.46);
-  background: rgba(56, 189, 248, 0.16);
-  color: #e0f2fe;
-}
-
-.map-style-thumb-carto-light {
-  background:
-    radial-gradient(circle at 80% 20%, rgba(108, 160, 255, 0.45), transparent 35%),
-    repeating-linear-gradient(35deg, rgba(115, 115, 115, 0.18) 0 2px, transparent 2px 8px),
-    linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
-}
-
-.map-style-thumb-osm {
-  background:
-    radial-gradient(circle at 15% 80%, rgba(34, 197, 94, 0.3), transparent 35%),
-    repeating-linear-gradient(-45deg, rgba(148, 163, 184, 0.25) 0 2px, transparent 2px 7px),
-    linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
-}
-
-.map-style-thumb-satellite {
-  background:
-    radial-gradient(circle at 70% 30%, rgba(99, 102, 241, 0.2), transparent 38%),
-    radial-gradient(circle at 25% 75%, rgba(22, 163, 74, 0.45), transparent 28%),
-    linear-gradient(145deg, #14532d 0%, #1f2937 45%, #0f172a 100%);
-}
-
-.map-style-thumb-carto-dark {
-  background:
-    radial-gradient(circle at 20% 25%, rgba(99, 102, 241, 0.22), transparent 35%),
-    repeating-linear-gradient(45deg, rgba(148, 163, 184, 0.22) 0 2px, transparent 2px 7px),
-    linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-}
-
-.map-style-sheet-content {
-  padding: 4px 2px 2px;
-}
-
-.map-style-sheet-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 10px;
-}
+/* Map style sheet content moved to component stylesheet */
 
 .chip.chip-topic {
   background: rgba(99,102,241,0.08);
@@ -910,38 +743,7 @@
 .status-dot.tracking { background: #FF6B35; }
 .status-dot.paused   { background: #334155; }
 
-.gps-signal {
-  font-size: 12px;
-}
-
-.gps-bars {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 14px;
-}
-
-.gps-bar {
-  width: 3px;
-  border-radius: 2px;
-  background: rgba(100, 116, 139, 0.45);
-}
-
-.gps-bar:nth-child(1) { height: 4px; }
-.gps-bar:nth-child(2) { height: 7px; }
-.gps-bar:nth-child(3) { height: 10px; }
-.gps-bar:nth-child(4) { height: 13px; }
-
-.gps-bars-1 .gps-bar:nth-child(-n+1),
-.gps-bars-2 .gps-bar:nth-child(-n+2),
-.gps-bars-3 .gps-bar:nth-child(-n+3),
-.gps-bars-4 .gps-bar:nth-child(-n+4) {
-  background: #34D399;
-}
-
-.gps-bars-0 .gps-bar {
-  background: rgba(239, 68, 68, 0.38);
-}
+/* GPS signal UI moved to RideMapPage-scoped stylesheet */
 
 
 /* ── Ride timer ── */
