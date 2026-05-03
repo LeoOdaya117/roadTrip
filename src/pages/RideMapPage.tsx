@@ -6,7 +6,7 @@ import {
   IonInput,
   IonButton
 } from '@ionic/react';
-import { locate, pause, play, send, close, stopCircle, camera } from 'ionicons/icons';
+import { locate, pause, play, send, close, stopCircle, camera, layersOutline } from 'ionicons/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useHistory, useParams } from 'react-router-dom';
 import type L from 'leaflet';
@@ -20,7 +20,12 @@ import { useRideTimer } from '../hooks/useRideTimer';
 import { getLastLocation, addPhoto, getSession, saveRideSession, getTrackPoints } from '../services/offlineDb';
 import { useRideStore } from '../store/rideStore';
 import maleAvatar from '../assets/images/default/user_male.png';
+import streetPreview from '../assets/images/default/Map/street.png';
+import osmPreview from '../assets/images/default/Map/osm.png';
+import satellitePreview from '../assets/images/default/Map/satellite.png';
+import darkPreview from '../assets/images/default/Map/dark.png';
 import BottomSheet from '../components/BottomSheet';
+import MapStyleSwitcher from '../components/MapStyleSwitcher';
 
     // distance helpers (available for restoring track distance)
     const toRadians = (value: number) => (value * Math.PI) / 180;
@@ -38,6 +43,14 @@ import BottomSheet from '../components/BottomSheet';
       return 2 * earthRadius * Math.asin(Math.sqrt(h));
     };
 const FALLBACK_CENTER = { lat: 37.7749, lng: -122.4194 };
+
+type MapLayerOption = {
+  id: string;
+  label: string;
+  url: string;
+  attribution: string;
+  previewSrc?: string;
+};
 
 const RideMapPage: React.FC = () => {
   const history = useHistory();
@@ -91,6 +104,7 @@ const RideMapPage: React.FC = () => {
   const [photoToast, setPhotoToast] = useState<string | null>(null);
   const [isTogglingTracking, setIsTogglingTracking] = useState(false);
   const [topRideStatus, setTopRideStatus] = useState<'Live' | 'Paused' | 'Resuming...' | 'Pausing...' | 'Resumed'>('Live');
+  const [showMapStyleSheet, setShowMapStyleSheet] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
@@ -409,34 +423,45 @@ const RideMapPage: React.FC = () => {
     lastLocationRef.current = current;
   }, [location]);
 
-  const MAP_LAYERS = [
+  const MAP_LAYERS: MapLayerOption[] = [
     {
       id: 'carto-light',
       label: 'Street',
       url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+      previewSrc: streetPreview
     },
     {
       id: 'osm',
       label: 'OSM',
       url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      attribution: '&copy; OpenStreetMap contributors'
+      attribution: '&copy; OpenStreetMap contributors',
+      previewSrc: osmPreview
     },
     {
       id: 'satellite',
       label: 'Satellite',
       url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      attribution: 'Tiles &copy; Esri'
+      attribution: 'Tiles &copy; Esri',
+      previewSrc: satellitePreview
     },
     {
       id: 'carto-dark',
       label: 'Dark',
       url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-      attribution: '&copy; CARTO'
+      attribution: '&copy; CARTO',
+      previewSrc: darkPreview
     }
   ];
 
+  const MAP_OVERLAYS = [
+    { id: 'labels', label: 'Labels' },
+    { id: 'riders', label: 'Riders' },
+    { id: 'track', label: 'Ride Path' }
+  ];
+
   const [activeLayer, setActiveLayer] = useState(MAP_LAYERS[0]);
+  const [enabledOverlays, setEnabledOverlays] = useState<string[]>(['labels', 'riders', 'track']);
 
   const rideTimer = useRideTimer();
 
@@ -525,6 +550,30 @@ const RideMapPage: React.FC = () => {
       mapRef.current.setView([center.lat, center.lng], mapRef.current.getZoom() ?? 15);
     }
   };
+
+  const handleSelectMapLayer = (layer: MapLayerOption) => {
+    setActiveLayer(layer);
+  };
+
+  const handleToggleOverlay = (overlayId: string) => {
+    setEnabledOverlays((prev) =>
+      prev.includes(overlayId)
+        ? prev.filter((id) => id !== overlayId)
+        : [...prev, overlayId]
+    );
+  };
+
+  const labelsTileUrl = useMemo(() => {
+    if (!enabledOverlays.includes('labels')) {
+      return undefined;
+    }
+
+    if (activeLayer.id === 'carto-dark') {
+      return 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png';
+    }
+
+    return 'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png';
+  }, [activeLayer.id, enabledOverlays]);
 
   const handlePhotoClick = () => {
     fileInputRef.current?.click();
@@ -723,6 +772,10 @@ const RideMapPage: React.FC = () => {
             }}
             tileUrl={activeLayer.url}
             attribution={activeLayer.attribution}
+            labelsTileUrl={labelsTileUrl}
+            labelsAttribution="&copy; OpenStreetMap contributors &copy; CARTO"
+            showRiders={enabledOverlays.includes('riders')}
+            showTrack={enabledOverlays.includes('track')}
           />
 
           {/* ── Top bar: title + live badge only ── */}
@@ -737,6 +790,13 @@ const RideMapPage: React.FC = () => {
           <div className="map-fabs">
             <button className="map-fab" onClick={handleCenterMap} title="Center map">
               <IonIcon icon={locate} />
+            </button>
+            <button
+              className={`map-fab${showMapStyleSheet ? ' fab-active' : ''}`}
+              onClick={() => setShowMapStyleSheet(true)}
+              title="Map style"
+            >
+              <IonIcon icon={layersOutline} />
             </button>
             <button className="map-fab" onClick={handlePhotoClick} title="Add photo">
               <IonIcon icon={cameraIcon} />
@@ -792,20 +852,6 @@ const RideMapPage: React.FC = () => {
                     {isOnline ? 'Online' : 'Offline'}
                   </span>
                 </div>
-              </div>
-
-              {/* Layer selector row */}
-              <div className="sheet-section-label">Map Style</div>
-              <div className="sheet-chips-row">
-                {MAP_LAYERS.map((l) => (
-                  <button
-                    key={l.id}
-                    onClick={() => setActiveLayer(l)}
-                    className={activeLayer.id === l.id ? 'chip chip-active' : 'chip'}
-                  >
-                    {l.label}
-                  </button>
-                ))}
               </div>
 
               {/* Topics row */}
@@ -885,6 +931,21 @@ const RideMapPage: React.FC = () => {
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }} className="btn-row">
           <IonButton className="cancel" fill="clear" onClick={() => { setShowPhotoModal(false); setPreviewDataUrl(null); setPhotoNote(''); }}>Cancel</IonButton>
           <IonButton className="save" onClick={handleSavePhoto}>Save</IonButton>
+        </div>
+      </BottomSheet>
+      <BottomSheet isOpen={showMapStyleSheet} onDidDismiss={() => setShowMapStyleSheet(false)}>
+        <div className="map-style-sheet-content">
+          <MapStyleSwitcher
+            layers={MAP_LAYERS}
+            activeLayerId={activeLayer.id}
+            onChange={handleSelectMapLayer}
+            overlays={MAP_OVERLAYS}
+            enabledOverlays={enabledOverlays}
+            onToggleOverlay={handleToggleOverlay}
+          />
+          <div className="map-style-sheet-actions">
+            <IonButton fill="clear" onClick={() => setShowMapStyleSheet(false)}>Close</IonButton>
+          </div>
         </div>
       </BottomSheet>
     </IonPage>

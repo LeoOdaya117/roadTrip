@@ -14,6 +14,10 @@ type RideMapViewProps = {
   onMapReady?: (map: L.Map) => void;
   tileUrl?: string;
   attribution?: string;
+  labelsTileUrl?: string;
+  labelsAttribution?: string;
+  showRiders?: boolean;
+  showTrack?: boolean;
 };
 
 const MapReadyHandler = ({ onReady }: { onReady?: (map: L.Map) => void }) => {
@@ -55,7 +59,19 @@ const MapReadyHandler = ({ onReady }: { onReady?: (map: L.Map) => void }) => {
   return null;
 };
 
-const RideMapView = ({ center, riders, trackPoints, currentUserId, onMapReady, tileUrl, attribution }: RideMapViewProps) => {
+const RideMapView = ({
+  center,
+  riders,
+  trackPoints,
+  currentUserId,
+  onMapReady,
+  tileUrl,
+  attribution,
+  labelsTileUrl,
+  labelsAttribution,
+  showRiders = true,
+  showTrack = true
+}: RideMapViewProps) => {
   const markers = useMemo(
     () =>
       riders.map((rider) => (
@@ -81,9 +97,17 @@ const RideMapView = ({ center, riders, trackPoints, currentUserId, onMapReady, t
         attribution={attribution ?? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; CARTO'}
         url={tileUrl ?? 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'}
       />
+      {labelsTileUrl && (
+        <TileLayer
+          key={`labels-${labelsTileUrl}`}
+          attribution={labelsAttribution ?? ''}
+          url={labelsTileUrl}
+          pane="overlayPane"
+        />
+      )}
       <MapReadyHandler onReady={onMapReady} />
-      {markers}
-      {trackPoints && trackPoints.length > 1 && (
+      {showRiders ? markers : null}
+      {showTrack && trackPoints && trackPoints.length > 1 && (
         <Polyline
           positions={trackPoints.map((p) => [p.lat, p.lng] as [number, number])}
           pathOptions={{ color: '#FF6B35', weight: 3, opacity: 0.9 }}
