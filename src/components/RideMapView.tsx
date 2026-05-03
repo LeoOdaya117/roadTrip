@@ -11,6 +11,7 @@ type RideMapViewProps = {
   riders: Rider[];
   trackPoints?: { lat: number; lng: number }[];
   currentUserId?: string;
+  currentUserAccuracy?: number | null;
   onMapReady?: (map: L.Map) => void;
   tileUrl?: string;
   attribution?: string;
@@ -64,6 +65,7 @@ const RideMapView = ({
   riders,
   trackPoints,
   currentUserId,
+  currentUserAccuracy,
   onMapReady,
   tileUrl,
   attribution,
@@ -79,9 +81,10 @@ const RideMapView = ({
           key={rider.id}
           rider={rider}
           isCurrentUser={rider.id === currentUserId}
+          accuracy={rider.id === currentUserId ? currentUserAccuracy ?? null : null}
         />
       )),
-    [riders, currentUserId]
+    [riders, currentUserId, currentUserAccuracy]
   );
 
   return (

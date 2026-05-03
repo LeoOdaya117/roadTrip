@@ -799,6 +799,7 @@ const RideMapPage: React.FC = () => {
             riders={riders}
             trackPoints={trackPoints}
             currentUserId={currentUser?.id}
+            currentUserAccuracy={location?.accuracy ?? null}
             onMapReady={(map) => {
               mapRef.current = map;
             }}
