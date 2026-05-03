@@ -289,7 +289,8 @@
 
 /* History card photo gallery */
 .history-photo-gallery { display: flex; gap: 6px; margin-top: 8px; }
-.history-photo-thumb { width: 64px; height: 48px; object-fit: cover; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); }
+.history-photo-thumb { width: 48px; height: 36px; object-fit: cover; border-radius: 6px; border: 1px solid rgba(255,255,255,0.06); }
+.history-card { padding: 8px; }
 
 /* ── Input ── */
 .input-group {
@@ -1055,11 +1056,14 @@
   color: #FFEDD5;
   padding: 4px 8px;
   border-radius: 8px;
-  font-weight: 800;
+  font-weight: 700;
   font-size: 12px;
   border: 1px solid rgba(255,255,255,0.04);
   pointer-events: none;
+  z-index: 1000;
 }
+
+.history-card { display: block; }
 .history-mini-map { position: relative; }
 
 /* Photo sheet modal styling (makes IonModal look like an IonSheet) */

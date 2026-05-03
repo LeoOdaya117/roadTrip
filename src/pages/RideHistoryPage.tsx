@@ -8,10 +8,13 @@ import {
   IonSegment,
   IonSegmentButton,
   IonLabel,
-  IonButton,
   IonButtons,
   IonBackButton,
   IonToast,
+  IonItem,
+  IonItemSliding,
+  IonItemOptions,
+  IonItemOption,
   IonInfiniteScroll,
   IonInfiniteScrollContent,
 } from '@ionic/react';
@@ -34,6 +37,19 @@ const fmtDuration = (s?: number) => {
   if (hh > 0) return `${hh}h ${mm}m`;
   if (mm > 0) return `${mm}m ${ss}s`;
   return `${ss}s`;
+};
+
+const fmtDate = (iso?: string) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const month = months[d.getMonth()];
+  const day = d.getDate();
+  const year = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${month} ${day}, ${year} ${hh}:${mm}:${ss}`;
 };
 
 const RideHistoryPage: React.FC = () => {
@@ -77,6 +93,22 @@ const RideHistoryPage: React.FC = () => {
     setPhotoUrlsByRide(urls);
   }, [photosByRide]);
 
+  // trigger a window resize when tracks are loaded so leaflet recalculates map sizes
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+    }, 250);
+    return () => clearTimeout(t);
+  }, [tracksByRide]);
+
+  // also trigger a resize when the segment filter or sessions change
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+    }, 120);
+    return () => clearTimeout(t);
+  }, [filter, sessions]);
+
   const loadPage = async (pageToLoad: number) => {
     if (!hasMore && pageToLoad !== 1) return;
     setLoadingMore(true);
@@ -116,6 +148,11 @@ const RideHistoryPage: React.FC = () => {
     await deleteTrackPoints(rideId);
     setSessions((s) => s.filter((x) => x.rideId !== rideId));
     setToast('Session deleted');
+  };
+
+  const handleOpen = async (s: RideSession) => {
+    // Always open ride replay from the history list
+    history.push(`/ride-replay/${s.rideId}`);
   };
 
   const list = sessions.filter((s) => (filter === 'solo' ? s.isSolo : !s.isSolo));
@@ -159,59 +196,51 @@ const RideHistoryPage: React.FC = () => {
             const first = tracks && tracks.length ? tracks[0] : undefined;
             const center = first ? [first.lat, first.lng] : [51.505, -0.09];
             return (
-              <div key={s.rideId} className="glass-card history-card">
-                <div style={{ display: 'flex', gap: 12 }}>
-                  <div className="history-mini-map" onMouseEnter={() => handleLoadTracks(s.rideId)}>
-                    <MapContainer center={center as [number, number]} zoom={13} style={{ width: '100%', height: '100%' }} zoomControl={false} dragging={false} doubleClickZoom={false} touchZoom={false} scrollWheelZoom={false} attributionControl={false}>
-                      <TileLayer url={'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'} />
-                      {tracks && tracks.length > 1 && (
-                        <>
-                          <Polyline positions={tracks.map((p) => [p.lat, p.lng])} pathOptions={{ color: '#FF6B35', weight: 3 }} />
-                          <CircleMarker center={[tracks[0].lat, tracks[0].lng]} radius={5} pathOptions={{ color: '#34D399', fillColor: '#34D399' }} />
-                          <CircleMarker center={[tracks[tracks.length - 1].lat, tracks[tracks.length - 1].lng]} radius={5} pathOptions={{ color: '#FB7185', fillColor: '#FB7185' }} />
-                        </>
+              <IonItemSliding key={s.rideId}>
+                <IonItem button className="glass-card history-card" onClick={() => handleOpen(s)}>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                    <div className="history-mini-map" onMouseEnter={() => handleLoadTracks(s.rideId)}>
+                      <MapContainer key={`map-${s.rideId}-${(tracks && tracks.length) || 0}`} center={center as [number, number]} zoom={13} style={{ width: '100%', height: '100%' }} zoomControl={false} dragging={false} doubleClickZoom={false} touchZoom={false} scrollWheelZoom={false} attributionControl={false}>
+                        <TileLayer url={'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'} />
+                        {tracks && tracks.length > 1 && (
+                          <>
+                            <Polyline positions={tracks.map((p) => [p.lat, p.lng])} pathOptions={{ color: '#FF6B35', weight: 3 }} />
+                            <CircleMarker center={[tracks[0].lat, tracks[0].lng]} radius={5} pathOptions={{ color: '#34D399', fillColor: '#34D399' }} />
+                            <CircleMarker center={[tracks[tracks.length - 1].lat, tracks[tracks.length - 1].lng]} radius={5} pathOptions={{ color: '#FB7185', fillColor: '#FB7185' }} />
+                          </>
+                        )}
+                      </MapContainer>
+                      <div className="history-distance-badge">{fmtDistance(s.distanceMeters)}</div>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontWeight: 800 }}>{fmtDate(s.createdAt)}</div>
+                          {filter !== 'solo' && (
+                            <div style={{ color: '#94A3B8', fontSize: 13 }}>{s.userName}</div>
+                          )}
+                          <div style={{ color: '#94A3B8', fontSize: 12, marginTop: 4 }}>
+                            Duration: {fmtDuration(s.durationSeconds)}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div />
+                        </div>
+                      </div>
+                      {photosByRide[s.rideId] && photosByRide[s.rideId].length > 0 && (
+                        <div className="history-photo-gallery" style={{ marginTop: 8 }}>
+                          {photosByRide[s.rideId].slice(0, 3).map((ph: any, idx: number) => (
+                            <img key={ph.id} src={photoUrlsByRide[s.rideId]?.[idx] ?? ''} className="history-photo-thumb" alt="photo" />
+                          ))}
+                        </div>
                       )}
-                    </MapContainer>
-                    <div className="history-distance-badge">{fmtDistance(s.distanceMeters)}</div>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <div style={{ fontWeight: 800 }}>{new Date(s.createdAt).toLocaleString()}</div>
-                                <div style={{ color: '#94A3B8', fontSize: 13 }}>{s.userName}</div>
-                                <div style={{ color: '#94A3B8', fontSize: 12, marginTop: 4 }}>
-                                  Points: {(tracks && tracks.length) || 0}
-                                  {(!tracks || tracks.length === 0) && ' — no track data'}
-                                </div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontWeight: 800 }}>{fmtDistance(s.distanceMeters)}</div>
-                        <div style={{ color: '#94A3B8', fontSize: 13 }}>{fmtDuration(s.durationSeconds)}</div>
-                      </div>
-                    </div>
-                    {photosByRide[s.rideId] && photosByRide[s.rideId].length > 0 && (
-                      <div className="history-photo-gallery">
-                        {photosByRide[s.rideId].slice(0, 3).map((ph: any, idx: number) => (
-                          <img key={ph.id} src={photoUrlsByRide[s.rideId]?.[idx] ?? ''} className="history-photo-thumb" alt="photo" />
-                        ))}
-                      </div>
-                    )}
-
-                    <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
-                      <IonButton size="small" onClick={async () => {
-                        // Ensure we consult the DB in real-time (mobile has no mouseenter)
-                        const t = await getTrackPoints(s.rideId);
-                        const has = t && t.length > 1;
-                        if (has) history.push(`/ride-replay/${s.rideId}`);
-                        else history.push(`/ride-map/${s.rideId}`);
-                      }}>
-                        Open
-                      </IonButton>
-                      <IonButton color="danger" size="small" fill="clear" onClick={() => handleDelete(s.rideId)}>Delete</IonButton>
                     </div>
                   </div>
-                </div>
-              </div>
+                </IonItem>
+                <IonItemOptions side="end">
+                  <IonItemOption color="danger" onClick={() => handleDelete(s.rideId)}>Delete</IonItemOption>
+                </IonItemOptions>
+              </IonItemSliding>
             );
           })}
           <IonInfiniteScroll threshold="100px" onIonInfinite={(e) => loadMore(e)} disabled={!hasMore}>
