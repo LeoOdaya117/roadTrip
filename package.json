@@ -13,7 +13,9 @@
     "android:live-preview": "npx ionic cap run android -l --external",
     "build:android": "npx ionic build && npx cap copy android && npx cap sync android",
     "build:android:release": "npx ionic build && npx cap copy android && npx cap sync android && cd android && ./gradlew assembleRelease",
-    "build:android:debug": "npx ionic build && npx cap copy android && npx cap sync android && cd android && ./gradlew assembleDebug"
+    "build:android:debug": "npx ionic build && npx cap copy android && npx cap sync android && cd android && ./gradlew assembleDebug",
+    "build:android:debug1": "npx ionic cap run android --external"
+
   },
   "dependencies": {
     "@capacitor/android": "7.4.4",

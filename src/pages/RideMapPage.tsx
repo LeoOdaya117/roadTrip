@@ -6,7 +6,7 @@ import {
   IonInput,
   IonButton
 } from '@ionic/react';
-import { locate, pause, play, send, close, stopCircle, cafeOutline, camera } from 'ionicons/icons';
+import { locate, pause, play, send, close, stopCircle, camera, layersOutline } from 'ionicons/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useHistory, useParams } from 'react-router-dom';
 import type L from 'leaflet';
@@ -20,7 +20,13 @@ import { useRideTimer } from '../hooks/useRideTimer';
 import { getLastLocation, addPhoto, getSession, saveRideSession, getTrackPoints } from '../services/offlineDb';
 import { useRideStore } from '../store/rideStore';
 import maleAvatar from '../assets/images/default/user_male.png';
+import streetPreview from '../assets/images/default/Map/street.png';
+import osmPreview from '../assets/images/default/Map/osm.png';
+import satellitePreview from '../assets/images/default/Map/satellite.png';
+import darkPreview from '../assets/images/default/Map/dark.png';
 import BottomSheet from '../components/BottomSheet';
+import MapStyleSwitcher from '../components/MapStyleSwitcher';
+import '../styles/RideMapPage.css';
 
     // distance helpers (available for restoring track distance)
     const toRadians = (value: number) => (value * Math.PI) / 180;
@@ -38,6 +44,14 @@ import BottomSheet from '../components/BottomSheet';
       return 2 * earthRadius * Math.asin(Math.sqrt(h));
     };
 const FALLBACK_CENTER = { lat: 37.7749, lng: -122.4194 };
+
+type MapLayerOption = {
+  id: string;
+  label: string;
+  url: string;
+  attribution: string;
+  previewSrc?: string;
+};
 
 const RideMapPage: React.FC = () => {
   const history = useHistory();
@@ -89,6 +103,9 @@ const RideMapPage: React.FC = () => {
   const [fallbackCenter, setFallbackCenter] = useState(FALLBACK_CENTER);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [photoToast, setPhotoToast] = useState<string | null>(null);
+  const [isTogglingTracking, setIsTogglingTracking] = useState(false);
+  const [topRideStatus, setTopRideStatus] = useState<'Live' | 'Paused' | 'Resuming...' | 'Pausing...' | 'Resumed'>('Live');
+  const [showMapStyleSheet, setShowMapStyleSheet] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
@@ -134,12 +151,13 @@ const RideMapPage: React.FC = () => {
   }, [routeRideId, setRide]);
 
   useEffect(() => {
-    setTracking(true);
-  }, [setTracking]);
+    if (rideId) {
+      setTracking(true);
+    }
+  }, [rideId, setTracking]);
 
   // Ensure we request location when the page mounts so the map can show current location
   useEffect(() => {
-    let mounted = true;
     (async () => {
       try {
         await startTracking();
@@ -149,7 +167,6 @@ const RideMapPage: React.FC = () => {
     })();
 
     return () => {
-      mounted = false;
       try {
         stopTracking();
       } catch (e) {
@@ -168,11 +185,22 @@ const RideMapPage: React.FC = () => {
     return () => stopTracking();
   }, [isTracking, startTracking, stopTracking]);
 
+  // Keep trying while tracking is desired but GPS watch is not active yet
+  // (for example when location services are turned on shortly after ride start).
   useEffect(() => {
-    if (trackerIsTracking !== isTracking) {
-      setTracking(trackerIsTracking);
+    if (!isTracking || trackerIsTracking) {
+      return;
     }
-  }, [trackerIsTracking, isTracking, setTracking]);
+
+    startTracking().catch(() => undefined);
+    const retryId = window.setInterval(() => {
+      startTracking().catch(() => undefined);
+    }, 3500);
+
+    return () => {
+      window.clearInterval(retryId);
+    };
+  }, [isTracking, trackerIsTracking, startTracking]);
 
   useEffect(() => {
     if (error) {
@@ -277,11 +305,14 @@ const RideMapPage: React.FC = () => {
           userName: currentUser?.name ?? 'Me',
           isHost: currentUser?.isHost ?? false,
           isSolo: isSoloMode,
-          createdAt: existing?.createdAt ?? new Date().toISOString()
+          createdAt: new Date().toISOString()
         };
         const updated = {
           ...base,
-          durationSeconds: elapsedRef.current,
+          durationSeconds: Math.max(
+            elapsedRef.current,
+            typeof base.durationSeconds === 'number' ? base.durationSeconds : 0
+          ),
           distanceMeters: Math.round(distanceRef.current)
         };
         await saveRideSession(updated).catch(() => undefined);
@@ -393,34 +424,45 @@ const RideMapPage: React.FC = () => {
     lastLocationRef.current = current;
   }, [location]);
 
-  const MAP_LAYERS = [
+  const MAP_LAYERS: MapLayerOption[] = [
     {
       id: 'carto-light',
       label: 'Street',
       url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+      previewSrc: streetPreview
     },
     {
       id: 'osm',
       label: 'OSM',
       url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      attribution: '&copy; OpenStreetMap contributors'
+      attribution: '&copy; OpenStreetMap contributors',
+      previewSrc: osmPreview
     },
     {
       id: 'satellite',
       label: 'Satellite',
       url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      attribution: 'Tiles &copy; Esri'
+      attribution: 'Tiles &copy; Esri',
+      previewSrc: satellitePreview
     },
     {
       id: 'carto-dark',
       label: 'Dark',
       url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-      attribution: '&copy; CARTO'
+      attribution: '&copy; CARTO',
+      previewSrc: darkPreview
     }
   ];
 
+  const MAP_OVERLAYS = [
+    { id: 'labels', label: 'Labels' },
+    { id: 'riders', label: 'Riders' },
+    { id: 'track', label: 'Ride Path' }
+  ];
+
   const [activeLayer, setActiveLayer] = useState(MAP_LAYERS[0]);
+  const [enabledOverlays, setEnabledOverlays] = useState<string[]>(['labels', 'riders', 'track']);
 
   const rideTimer = useRideTimer();
 
@@ -433,6 +475,86 @@ const RideMapPage: React.FC = () => {
   useEffect(() => {
     distanceRef.current = distanceMetersTotal;
   }, [distanceMetersTotal]);
+
+  const wasTrackingRef = useRef<boolean>(isTracking);
+  const topStatusTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (topStatusTimeoutRef.current !== null) {
+        window.clearTimeout(topStatusTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (topStatusTimeoutRef.current !== null) {
+      window.clearTimeout(topStatusTimeoutRef.current);
+      topStatusTimeoutRef.current = null;
+    }
+
+    if (isTogglingTracking) {
+      setTopRideStatus(isTracking ? 'Pausing...' : 'Resuming...');
+      return;
+    }
+
+    if (!isTracking) {
+      setTopRideStatus('Paused');
+      wasTrackingRef.current = false;
+      return;
+    }
+
+    const resumedFromPause = !wasTrackingRef.current && elapsedRef.current > 0;
+    wasTrackingRef.current = true;
+
+    if (resumedFromPause) {
+      setTopRideStatus('Resumed');
+      topStatusTimeoutRef.current = window.setTimeout(() => {
+        setTopRideStatus('Live');
+      }, 1600);
+      return;
+    }
+
+    setTopRideStatus('Live');
+  }, [isTracking, isTogglingTracking]);
+
+  const topRideBadgeClass = [
+    'live-badge',
+    topRideStatus === 'Paused' ? 'live-badge-paused' : '',
+    topRideStatus === 'Resumed' ? 'live-badge-resumed' : '',
+    topRideStatus === 'Pausing...' || topRideStatus === 'Resuming...' ? 'live-badge-transition' : ''
+  ].filter(Boolean).join(' ');
+
+  const gpsSignal = useMemo(() => {
+    if (permission === 'denied') {
+      return { label: 'Denied', bars: 0 };
+    }
+
+    if (!trackerIsTracking) {
+      return { label: 'Off', bars: 0 };
+    }
+
+    if (!location) {
+      return { label: 'Searching', bars: 1 };
+    }
+
+    const accuracy = location.accuracy;
+    if (typeof accuracy !== 'number') {
+      return { label: 'Good', bars: 3 };
+    }
+
+    if (accuracy <= 8) {
+      return { label: 'Excellent', bars: 4 };
+    }
+    if (accuracy <= 18) {
+      return { label: 'Good', bars: 3 };
+    }
+    if (accuracy <= 35) {
+      return { label: 'Fair', bars: 2 };
+    }
+
+    return { label: 'Poor', bars: 1 };
+  }, [permission, trackerIsTracking, location]);
 
   // Auto-start timer when tracking begins, pause on stopover
   useEffect(() => {
@@ -460,6 +582,30 @@ const RideMapPage: React.FC = () => {
       mapRef.current.setView([center.lat, center.lng], mapRef.current.getZoom() ?? 15);
     }
   };
+
+  const handleSelectMapLayer = (layer: MapLayerOption) => {
+    setActiveLayer(layer);
+  };
+
+  const handleToggleOverlay = (overlayId: string) => {
+    setEnabledOverlays((prev) =>
+      prev.includes(overlayId)
+        ? prev.filter((id) => id !== overlayId)
+        : [...prev, overlayId]
+    );
+  };
+
+  const labelsTileUrl = useMemo(() => {
+    if (!enabledOverlays.includes('labels')) {
+      return undefined;
+    }
+
+    if (activeLayer.id === 'carto-dark') {
+      return 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png';
+    }
+
+    return 'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png';
+  }, [activeLayer.id, enabledOverlays]);
 
   const handlePhotoClick = () => {
     fileInputRef.current?.click();
@@ -545,16 +691,31 @@ const RideMapPage: React.FC = () => {
   }, [showPhotoModal]);
 
   const handleToggleTracking = async () => {
+    if (isTogglingTracking) return;
+    setIsTogglingTracking(true);
+
     if (isTracking) {
-      stopTracking();
-      setTracking(false);
-      rideTimer.pause();
+      try {
+        setTracking(false);
+        stopTracking();
+        rideTimer.pause();
+      } finally {
+        setIsTogglingTracking(false);
+      }
       return;
     }
 
-    await startTracking();
-    setTracking(true);
-    rideTimer.resume();
+    try {
+      setTracking(true);
+      await startTracking();
+      if (rideTimer.elapsedSeconds <= 0 && !rideTimer.isRunning) {
+        rideTimer.start();
+      } else {
+        rideTimer.resume();
+      }
+    } finally {
+      setIsTogglingTracking(false);
+    }
   };
 
   const handleEndRide = () => {
@@ -574,9 +735,13 @@ const RideMapPage: React.FC = () => {
               const updated = {
                 ...existing,
                 endedAt: new Date().toISOString(),
-                status: 'ended',
+                status: 'ended' as const,
                 distanceMeters: Math.round(distanceMetersTotal),
-                durationSeconds: Math.round(rideTimer.elapsedSeconds)
+                durationSeconds: Math.max(
+                  Math.round(rideTimer.elapsedSeconds),
+                  Math.round(elapsedRef.current),
+                  typeof existing.durationSeconds === 'number' ? Math.round(existing.durationSeconds) : 0
+                )
               };
               console.log('[RideMapPage] ending ride, saving session:', updated);
               await saveRideSession(updated);
@@ -634,18 +799,23 @@ const RideMapPage: React.FC = () => {
             riders={riders}
             trackPoints={trackPoints}
             currentUserId={currentUser?.id}
+            currentUserAccuracy={location?.accuracy ?? null}
             onMapReady={(map) => {
               mapRef.current = map;
             }}
             tileUrl={activeLayer.url}
             attribution={activeLayer.attribution}
+            labelsTileUrl={labelsTileUrl}
+            labelsAttribution="&copy; OpenStreetMap contributors &copy; CARTO"
+            showRiders={enabledOverlays.includes('riders')}
+            showTrack={enabledOverlays.includes('track')}
           />
 
           {/* ── Top bar: title + live badge only ── */}
           <div className="map-top-bar">
             <span className="map-title">Live Ride</span>
             <div style={{ marginLeft: 'auto' }}>
-              <span className="live-badge">Live</span>
+              <span className={topRideBadgeClass}>{topRideStatus}</span>
             </div>
           </div>
 
@@ -654,15 +824,23 @@ const RideMapPage: React.FC = () => {
             <button className="map-fab" onClick={handleCenterMap} title="Center map">
               <IonIcon icon={locate} />
             </button>
+            <button
+              className={`map-fab${showMapStyleSheet ? ' fab-active' : ''}`}
+              onClick={() => setShowMapStyleSheet(true)}
+              title="Map style"
+            >
+              <IonIcon icon={layersOutline} />
+            </button>
             <button className="map-fab" onClick={handlePhotoClick} title="Add photo">
               <IonIcon icon={cameraIcon} />
             </button>
             <button
               className={`map-fab${!isTracking ? ' fab-stopover' : ''}`}
               onClick={handleToggleTracking}
-              title={isTracking ? 'Stopover — pause tracking' : 'Resume ride'}
+              title={isTogglingTracking ? 'Updating tracking...' : (isTracking ? 'Stopover - pause tracking' : 'Resume ride')}
+              disabled={isTogglingTracking}
             >
-              <IonIcon icon={isTracking ? cafeOutline : play} />
+              <IonIcon icon={isTracking ? pause : play} />
             </button>
             <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleFileChange} />
           </div>
@@ -701,26 +879,17 @@ const RideMapPage: React.FC = () => {
                 </div>
                 <div className="sheet-stat-sep" />
                 <div className="sheet-stat">
-                  <span className="s-label">Status</span>
-                  <span className="s-value" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span className={`status-dot ${isOnline ? 'online' : 'offline'}`} />
-                    {isOnline ? 'Online' : 'Offline'}
+                  <span className="s-label">GPS Status</span>
+                  <span className="s-value gps-signal" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span className={`gps-bars gps-bars-${gpsSignal.bars}`} aria-hidden="true">
+                      <span className="gps-bar" />
+                      <span className="gps-bar" />
+                      <span className="gps-bar" />
+                      <span className="gps-bar" />
+                    </span>
+                    <span>{gpsSignal.label}</span>
                   </span>
                 </div>
-              </div>
-
-              {/* Layer selector row */}
-              <div className="sheet-section-label">Map Style</div>
-              <div className="sheet-chips-row">
-                {MAP_LAYERS.map((l) => (
-                  <button
-                    key={l.id}
-                    onClick={() => setActiveLayer(l)}
-                    className={activeLayer.id === l.id ? 'chip chip-active' : 'chip'}
-                  >
-                    {l.label}
-                  </button>
-                ))}
               </div>
 
               {/* Topics row */}
@@ -800,6 +969,21 @@ const RideMapPage: React.FC = () => {
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }} className="btn-row">
           <IonButton className="cancel" fill="clear" onClick={() => { setShowPhotoModal(false); setPreviewDataUrl(null); setPhotoNote(''); }}>Cancel</IonButton>
           <IonButton className="save" onClick={handleSavePhoto}>Save</IonButton>
+        </div>
+      </BottomSheet>
+      <BottomSheet isOpen={showMapStyleSheet} onDidDismiss={() => setShowMapStyleSheet(false)}>
+        <div className="map-style-sheet-content">
+          <MapStyleSwitcher
+            layers={MAP_LAYERS}
+            activeLayerId={activeLayer.id}
+            onChange={handleSelectMapLayer}
+            overlays={MAP_OVERLAYS}
+            enabledOverlays={enabledOverlays}
+            onToggleOverlay={handleToggleOverlay}
+          />
+          <div className="map-style-sheet-actions">
+            <IonButton fill="clear" onClick={() => setShowMapStyleSheet(false)}>Close</IonButton>
+          </div>
         </div>
       </BottomSheet>
     </IonPage>

@@ -53,6 +53,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
   const isStartingRef = useRef(false);
   const lastUpdateRef = useRef<LocationPoint | null>(null);
   const shouldResumeRef = useRef(false);
+  const isTrackingRef = useRef(false);
 
   const updateLocation = useCallback((nextLocation: LocationPoint) => {
     const previous = lastUpdateRef.current;
@@ -79,6 +80,10 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
     }
     setIsTracking(false);
   }, []);
+
+  useEffect(() => {
+    isTrackingRef.current = isTracking;
+  }, [isTracking]);
 
   const startTracking = useCallback(async () => {
     if (isStartingRef.current) {
@@ -115,10 +120,10 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
       }
 
       setError(null);
-      setIsTracking(true);
 
       if (watchIdRef.current) {
         Geolocation.clearWatch({ id: watchIdRef.current });
+        watchIdRef.current = null;
       }
 
       try {
@@ -128,6 +133,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
           lat: current.coords.latitude,
           lng: current.coords.longitude,
           speed: current.coords.speed ?? null,
+          accuracy: current.coords.accuracy ?? null,
           timestamp: new Date(current.timestamp).toISOString()
         });
       } catch (currentError) {
@@ -144,11 +150,13 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
           (position, watchError) => {
             if (watchError) {
               setError(watchError.message);
+              setIsTracking(false);
               return;
             }
 
             if (!position) {
               setError('Location unavailable.');
+              setIsTracking(false);
               return;
             }
 
@@ -156,20 +164,24 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
               lat: position.coords.latitude,
               lng: position.coords.longitude,
               speed: position.coords.speed ?? null,
+              accuracy: position.coords.accuracy ?? null,
               timestamp: new Date(position.timestamp).toISOString()
             });
           }
         );
 
         watchIdRef.current = id as string;
+        setIsTracking(true);
         console.debug('[useLocationTracker] started watch', { id: watchIdRef.current });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to start tracking.');
-      } finally {
-        isStartingRef.current = false;
+        setIsTracking(false);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start tracking.');
+      setIsTracking(false);
+    } finally {
+      isStartingRef.current = false;
     }
   }, [updateLocation]);
 
@@ -188,7 +200,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
     let isCancelled = false;
 
     App.addListener('appStateChange', (state) => {
-      if (!state.isActive && isTracking) {
+      if (!state.isActive && isTrackingRef.current) {
         shouldResumeRef.current = true;
         stopTracking();
       }
