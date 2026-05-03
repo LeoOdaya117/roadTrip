@@ -9,6 +9,7 @@ export type LocationPoint = {
   lat: number;
   lng: number;
   speed: number | null;
+  accuracy?: number | null;
   timestamp: string;
 };
 

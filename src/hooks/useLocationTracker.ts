@@ -133,6 +133,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
           lat: current.coords.latitude,
           lng: current.coords.longitude,
           speed: current.coords.speed ?? null,
+          accuracy: current.coords.accuracy ?? null,
           timestamp: new Date(current.timestamp).toISOString()
         });
       } catch (currentError) {
@@ -163,6 +164,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
               lat: position.coords.latitude,
               lng: position.coords.longitude,
               speed: position.coords.speed ?? null,
+              accuracy: position.coords.accuracy ?? null,
               timestamp: new Date(position.timestamp).toISOString()
             });
           }

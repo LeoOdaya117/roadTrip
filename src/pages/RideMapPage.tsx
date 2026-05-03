@@ -524,6 +524,37 @@ const RideMapPage: React.FC = () => {
     topRideStatus === 'Pausing...' || topRideStatus === 'Resuming...' ? 'live-badge-transition' : ''
   ].filter(Boolean).join(' ');
 
+  const gpsSignal = useMemo(() => {
+    if (permission === 'denied') {
+      return { label: 'Denied', bars: 0 };
+    }
+
+    if (!trackerIsTracking) {
+      return { label: 'Off', bars: 0 };
+    }
+
+    if (!location) {
+      return { label: 'Searching', bars: 1 };
+    }
+
+    const accuracy = location.accuracy;
+    if (typeof accuracy !== 'number') {
+      return { label: 'Good', bars: 3 };
+    }
+
+    if (accuracy <= 8) {
+      return { label: 'Excellent', bars: 4 };
+    }
+    if (accuracy <= 18) {
+      return { label: 'Good', bars: 3 };
+    }
+    if (accuracy <= 35) {
+      return { label: 'Fair', bars: 2 };
+    }
+
+    return { label: 'Poor', bars: 1 };
+  }, [permission, trackerIsTracking, location]);
+
   // Auto-start timer when tracking begins, pause on stopover
   useEffect(() => {
     if (isTracking) {
@@ -846,10 +877,15 @@ const RideMapPage: React.FC = () => {
                 </div>
                 <div className="sheet-stat-sep" />
                 <div className="sheet-stat">
-                  <span className="s-label">Status</span>
-                  <span className="s-value" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span className={`status-dot ${isOnline ? 'online' : 'offline'}`} />
-                    {isOnline ? 'Online' : 'Offline'}
+                  <span className="s-label">GPS Status</span>
+                  <span className="s-value gps-signal" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span className={`gps-bars gps-bars-${gpsSignal.bars}`} aria-hidden="true">
+                      <span className="gps-bar" />
+                      <span className="gps-bar" />
+                      <span className="gps-bar" />
+                      <span className="gps-bar" />
+                    </span>
+                    <span>{gpsSignal.label}</span>
                   </span>
                 </div>
               </div>
