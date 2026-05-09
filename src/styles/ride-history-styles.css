@@ -1,0 +1,111 @@
+.ride-theme {
+  /* Link accents to Ionic theme variables */
+  --bg: var(--ion-background-color);
+  --card: var(--ion-card-background);
+  --muted: var(--ion-color-medium);
+  --accent: var(--ion-color-primary);
+  --accent-2: var(--ion-color-primary-tint);
+  --glass: rgba(255,255,255,0.04);
+  --glass-2: rgba(255,255,255,0.02);
+}
+
+/* Import a modern system font (Inter) for Strava-like aesthetic */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+
+/* Ensure page-level tokens fallback to Ionic vars when included in app */
+:root {
+  --accent: var(--ion-color-primary);
+  --accent-2: var(--ion-color-primary-tint);
+  --muted: var(--ion-color-medium);
+  --card: var(--ion-card-background);
+  --bg: var(--ion-background-color);
+}
+.ride-history-page {
+  padding: 20px;
+  font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  color: var(--ion-text-color);
+  background: linear-gradient(180deg, var(--bg) 0%, #0b0f14 100%);
+  min-height: 100vh;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+.rh-container {
+  display: grid;
+  gap: 18px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+@media (min-width: 960px) {
+  .rh-container {
+    grid-template-columns: 1fr 380px;
+    align-items: start;
+  }
+}
+/* allow reordering of map and side column on mobile */
+.rh-map { order: 0; }
+.rh-side { order: 1; }
+.rh-card {
+  background: var(--card);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 8px 30px rgba(2,6,23,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.04);
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow: hidden;
+}
+.rh-map {
+  height: 460px;
+  border-radius: 14px;
+  overflow: hidden;
+  padding: 8px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(0,0,0,0.04));
+}
+
+/* Mobile: reduce map height so cards are visible without extreme scrolling */
+@media (max-width: 959px) {
+  .rh-map { height: 40vh; min-height: 220px; }
+  .ride-history-page { padding: 12px; overflow-x: hidden; }
+  /* On mobile show the side content before the map */
+  .rh-container { display: flex; flex-direction: column; max-width: 100%; }
+  /* place map at top on mobile */
+  .rh-map { order: -1; }
+  .rh-side { order: 0; max-width: 100%; }
+  .rh-card { max-width: 100%; }
+}
+.rh-hero-stats { display:flex; gap:12px; align-items:center; max-width: 100%; overflow-x: auto; }
+.rh-hero-stat { flex:1; background: linear-gradient(90deg,var(--glass), var(--glass-2)); padding:12px; border-radius:10px; text-align:center; min-width: 0; }
+.rh-hero-value { font-size:28px; font-weight:800; color:var(--accent); word-break: break-word; }
+.rh-hero-label { font-size:12px; color:var(--muted); margin-top:6px; }
+.rh-stats-grid { display:grid; grid-template-columns: repeat(2,1fr); gap:12px; max-width: 100%; }
+.rh-stat-title { font-weight:700; color: #cbd5e1; font-size:12px; }
+.rh-stat-value { font-size:20px; font-weight:800; color:#ffffff; }
+.rh-generate-btn { background: linear-gradient(90deg,var(--accent),var(--accent-2)); color:#08101a; border:none; padding:10px 14px; border-radius:10px; cursor:pointer; font-weight:700; }
+.rh-small-btn { background: transparent; color: #9aa8bd; border:1px solid rgba(255,255,255,0.04); padding:8px 12px; border-radius:8px; cursor:pointer; }
+.rh-gallery-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; max-width: 100%; box-sizing: border-box; }
+.rh-gallery-item img { width:100%; height:96px; object-fit:cover; border-radius:8px; display:block; }
+.rh-page-title { font-size:20px; font-weight:800; margin:0 0 6px 0; color:#dbeafe; max-width: 100%; }
+.rh-section-title { font-size:13px; font-weight:700; color:#93c5fd; margin:0 0 8px 0; max-width: 100%; }
+.rh-muted { color: var(--muted); }
+.map-canvas-glow { filter: drop-shadow(0 6px 18px rgba(255,107,45,0.16)); }
+
+/* Icon button styles */
+.icon-btn { display:inline-flex; align-items:center; gap:6px; background: transparent; border:1px solid rgba(255,255,255,0.06); color:inherit; padding:6px 8px; border-radius:8px; cursor:pointer; font-weight:700; }
+.icon-btn.primary { background: linear-gradient(90deg,var(--accent),var(--accent-2)); color: #08101a; border: none; }
+
+/* Pulsing marker (used in thumbnail map overlays) */
+.pulse { position: relative; }
+.pulse::after { content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 12px; height: 12px; border-radius: 50%; background: rgba(52,211,153,0.16); animation: pulse 1.6s infinite; }
+@keyframes pulse { 0% { transform: translate(-50%,-50%) scale(0.8); opacity: 0.9 } 70% { transform: translate(-50%,-50%) scale(2.2); opacity: 0.0 } 100% { opacity: 0 } }
+
+/* Micro-animations */
+.rh-generate-btn:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 8px 24px rgba(255,107,45,0.12); transition: all 180ms ease; }
+.rh-small-btn:hover { transform: translateY(-1px); transition: all 150ms ease; }
+.rh-hero-value { transition: transform 360ms cubic-bezier(.2,.9,.2,1); }
+.rh-card { transition: transform 220ms ease, box-shadow 220ms ease; }
+.rh-card:hover { transform: translateY(-4px); box-shadow: 0 18px 48px rgba(2,6,23,0.7); }
+
+/* map center control */
+.map-center-btn { position: absolute; right: 12px; top: 12px; z-index: 600; background: rgba(255,255,255,0.92); border: none; padding: 8px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 6px 16px rgba(2,6,23,0.45); }
+.map-center-btn svg { display: block; }
+.map-center-btn:hover { transform: translateY(-2px); transition: transform 140ms ease; }

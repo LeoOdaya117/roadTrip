@@ -69,6 +69,7 @@ export const clearRideSession = async () => rideDb.sessions.clear();
 
 export const saveLastLocation = async (rideId: string, location: LocationPoint) => {
   await rideDb.locations.put({ rideId, ...location });
+  console.debug('💾 [DB] Last location saved', { rideId, lat: location.lat, lng: location.lng });
 };
 
 export const getLastLocation = async (rideId: string) => rideDb.locations.get(rideId);
@@ -76,6 +77,8 @@ export const getLastLocation = async (rideId: string) => rideDb.locations.get(ri
 /** Append a GPS point to the solo ride track log */
 export const appendTrackPoint = async (rideId: string, location: LocationPoint) => {
   await rideDb.tracks.add({ rideId, ...location });
+  const count = await rideDb.tracks.where('rideId').equals(rideId).count();
+  console.debug('💾 [DB] Track point appended', { rideId, total: count, lat: location.lat, lng: location.lng });
 };
 
 /** Get all recorded track points for a ride, oldest first */

@@ -37,11 +37,24 @@ export const useRideLocationSync = ({
     }
 
     // Always save the last known position locally
-    saveLastLocation(rideId, location).catch(() => undefined);
+    console.debug('[useRideLocationSync] saving location to DB', { 
+      rideId, 
+      lat: location.lat, 
+      lng: location.lng,
+      timestamp: location.timestamp,
+      isSoloMode 
+    });
+    saveLastLocation(rideId, location).catch((err) => {
+      console.error('[useRideLocationSync] failed to save last location', err);
+    });
 
     // In solo mode, also append every point to the full track log
     if (isSoloMode) {
-      appendTrackPoint(rideId, location).catch(() => undefined);
+      appendTrackPoint(rideId, location).catch((err) => {
+        console.error('[useRideLocationSync] failed to append track point', err);
+      }).then(() => {
+        console.debug('[useRideLocationSync] track point appended successfully');
+      });
     }
   }, [location, rideId, riderId, isSoloMode]);
 

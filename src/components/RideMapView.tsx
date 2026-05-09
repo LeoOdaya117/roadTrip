@@ -111,10 +111,17 @@ const RideMapView = ({
       <MapReadyHandler onReady={onMapReady} />
       {showRiders ? markers : null}
       {showTrack && trackPoints && trackPoints.length > 1 && (
-        <Polyline
-          positions={trackPoints.map((p) => [p.lat, p.lng] as [number, number])}
-          pathOptions={{ color: '#FF6B35', weight: 3, opacity: 0.9 }}
-        />
+        <>
+          {/* subtle shadow for contrast */}
+          <Polyline
+            positions={trackPoints.map((p) => [p.lat, p.lng] as [number, number])}
+            pathOptions={{ color: 'rgba(0,0,0,0.14)', weight: 6, opacity: 1, lineCap: 'round' }}
+          />
+          <Polyline
+            positions={trackPoints.map((p) => [p.lat, p.lng] as [number, number])}
+            pathOptions={{ color: '#ff6b2d', weight: 3, opacity: 0.72, lineCap: 'round' }}
+          />
+        </>
       )}
     </MapContainer>
   );
