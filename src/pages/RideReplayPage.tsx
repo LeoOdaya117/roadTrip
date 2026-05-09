@@ -22,6 +22,7 @@ import { PhotoRecord } from '../types/ride';
 import { IonModal } from '@ionic/react';
 
 const RideReplayPage: React.FC = () => {
+  const AnyMapContainer = MapContainer as any;
   const { rideId } = useParams<{ rideId: string }>();
   const history = useHistory();
   const [points, setPoints] = useState<any[]>([]);
@@ -308,7 +309,7 @@ const RideReplayPage: React.FC = () => {
 
         <div style={{ height: 320, borderRadius: 12, overflow: 'hidden' }}>
           {mapReady && (
-            <MapContainer whenCreated={(m) => { mapRef.current = m; try { m.invalidateSize(); } catch (e) { } }} center={center} zoom={13} style={{ width: '100%', height: '100%' }}>
+            <AnyMapContainer whenCreated={(m: any) => { mapRef.current = m; try { m.invalidateSize(); } catch (e) { } }} center={center} zoom={13} style={{ width: '100%', height: '100%' }}>
             
             <TileLayer url={'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'} />
               {points && points.length > 0 && (
@@ -320,8 +321,8 @@ const RideReplayPage: React.FC = () => {
                   <CircleMarker center={[current.lat, current.lng]} radius={8} pathOptions={{ color: '#FF6B35', fillColor: '#FF6B35' }} />
                 )}
               </>
-            )}
-                {photos && photos.length > 0 && photos.map((ph, pIdx) => ph.lat && ph.lng ? (
+                )}
+                  {photos && photos.length > 0 && photos.map((ph, pIdx) => ph.lat && ph.lng ? (
               (() => {
                 const thumbUrl = ph.id ? thumbUrls[ph.id] : undefined;
                 const imgSrc = thumbUrl ?? '';
@@ -332,7 +333,7 @@ const RideReplayPage: React.FC = () => {
                 );
               })()
             ) : null)}
-          </MapContainer>
+          </AnyMapContainer>
           )}
           
         </div>

@@ -31,7 +31,7 @@ const HomePage: React.FC = () => {
   const setSoloMode = useRideStore((state) => state.setSoloMode);
 
   const [joinCode, setJoinCode] = useState('');
-  const [loadingAction, setLoadingAction] = useState<'create' | 'join' | null>(
+  const [loadingAction, setLoadingAction] = useState<'create' | 'join' | 'solo' | null>(
     null
   );
   const [startMode, setStartMode] = useState<'group' | 'solo'>('group');
@@ -204,7 +204,7 @@ const HomePage: React.FC = () => {
 
   const handleSoloRide = async () => {
     try {
-      setLoadingAction('solo' as typeof loadingAction);
+      setLoadingAction('solo');
       const user = createLocalUser(true);
       setUser(user);
       const rideId = `solo-${globalThis.crypto?.randomUUID?.() ?? Date.now().toString(16)}`;
