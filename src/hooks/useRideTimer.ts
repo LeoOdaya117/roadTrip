@@ -30,6 +30,7 @@ export const useRideTimer = (): RideTimerState => {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const STORAGE_KEY = 'ride_timer_state_v1';
   const lastSavedRef = useRef<number | null>(null);
+  const elapsedRef = useRef<number>(0);
   const ignoreLoadRef = useRef<boolean>(false);
 
   const clearTimer = () => {
@@ -42,7 +43,7 @@ export const useRideTimer = (): RideTimerState => {
   const saveState = (opts?: { elapsed?: number; running?: boolean }) => {
     try {
       const payload = {
-        elapsedSeconds: typeof opts?.elapsed === 'number' ? opts.elapsed : elapsedSeconds,
+        elapsedSeconds: typeof opts?.elapsed === 'number' ? opts.elapsed : elapsedRef.current,
         isRunning: typeof opts?.running === 'boolean' ? opts.running : isRunning,
         lastTs: Date.now()
       };
@@ -128,11 +129,34 @@ export const useRideTimer = (): RideTimerState => {
 
   // Persist elapsedSeconds on change
   useEffect(() => {
-    try { saveState(); } catch (_) {}
+    // keep ref in sync and persist using the freshest value
+    try { elapsedRef.current = elapsedSeconds; saveState(); } catch (_) {}
   }, [elapsedSeconds]);
 
   // Handle app background/resume to account for paused timers
   useEffect(() => {
+    // Try to restore persisted timer state on mount so paused timers survive
+    try {
+      if (!ignoreLoadRef.current) {
+        const savedOnMount = loadState();
+        if (savedOnMount) {
+          console.debug('[useRideTimer] loaded saved state on mount', savedOnMount);
+          if (savedOnMount.isRunning) {
+            const now = Date.now();
+            const last = savedOnMount.lastTs ?? now;
+            const deltaSec = Math.max(0, Math.floor((now - last) / 1000));
+            const newElapsed = Math.max(0, savedOnMount.elapsedSeconds + deltaSec);
+            setElapsedSeconds(newElapsed);
+            setIsRunning(true);
+          } else {
+            setElapsedSeconds(savedOnMount.elapsedSeconds);
+            setIsRunning(false);
+          }
+        }
+      }
+    } catch (e) {
+      console.debug('[useRideTimer] failed to restore saved state on mount', e);
+    }
     let listener: PluginListenerHandle | null = null;
     App.addListener('appStateChange', async (state) => {
       console.debug('[useRideTimer] appStateChange', state);

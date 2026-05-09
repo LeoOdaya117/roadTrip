@@ -7,9 +7,10 @@ type Props = {
   avgSpeedMs?: number;
   maxSpeedMs?: number;
   elevationGainMeters?: number;
+  stopoverCount?: number;
 };
 
-export default function StatsPanel({ distanceMeters, durationSeconds, avgSpeedMs, maxSpeedMs, elevationGainMeters }: Props) {
+export default function StatsPanel({ distanceMeters, durationSeconds, avgSpeedMs, maxSpeedMs, elevationGainMeters, stopoverCount }: Props) {
   const km = Number((distanceMeters / 1000).toFixed(2));
   const avgKmh = avgSpeedMs ? Number((avgSpeedMs * 3.6).toFixed(1)) : null;
   const maxKmh = maxSpeedMs ? Number((maxSpeedMs * 3.6).toFixed(1)) : null;
@@ -64,8 +65,8 @@ export default function StatsPanel({ distanceMeters, durationSeconds, avgSpeedMs
           <div className="rh-stat-value">{animMax} km/h</div>
         </div>
         <div>
-          <div className="rh-stat-title">Elevation</div>
-          <div className="rh-stat-value">{elevationGainMeters ?? 0} m</div>
+          <div className="rh-stat-title">Stopovers</div>
+          <div className="rh-stat-value">{typeof stopoverCount === 'number' ? stopoverCount : 0}</div>
         </div>
         <div>
           <div className="rh-stat-title">Pace</div>

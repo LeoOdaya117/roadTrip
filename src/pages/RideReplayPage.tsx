@@ -309,7 +309,7 @@ const RideReplayPage: React.FC = () => {
 
         <div style={{ height: 320, borderRadius: 12, overflow: 'hidden' }}>
           {mapReady && (
-            <AnyMapContainer whenCreated={(m: any) => { mapRef.current = m; try { m.invalidateSize(); } catch (e) { } }} center={center} zoom={13} style={{ width: '100%', height: '100%' }}>
+            <AnyMapContainer whenCreated={(m: any) => { mapRef.current = m; try { m.invalidateSize(); } catch (e) { } }} center={center} zoom={13} maxZoom={22} style={{ width: '100%', height: '100%' }}>
             
             <TileLayer url={'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'} />
               {points && points.length > 0 && (

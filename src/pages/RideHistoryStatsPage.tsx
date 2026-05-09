@@ -129,6 +129,7 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
                   avgSpeedMs={ride.avgSpeedMs}
                   maxSpeedMs={ride.maxSpeedMs}
                   elevationGainMeters={ride.elevationGainMeters}
+                  stopoverCount={ride.stopoverCount}
                 />
               </div>
 

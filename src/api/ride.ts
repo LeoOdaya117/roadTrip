@@ -36,6 +36,8 @@ export async function fetchRideById(rideId: string): Promise<Ride> {
         }
       }).filter(Boolean);
 
+      const stopoverCount = (points || []).filter((p: any) => (p as any).event === 'stopover').length;
+
       const ride: Ride = {
         id: rideId,
         polylineGeoJSON: {
@@ -51,6 +53,7 @@ export async function fetchRideById(rideId: string): Promise<Ride> {
         avgSpeedMs,
         maxSpeedMs,
         elevationGainMeters: (session as any).elevationGainMeters ?? 0,
+        stopoverCount,
         startTimeISO: session.createdAt,
         photoUrls
       };

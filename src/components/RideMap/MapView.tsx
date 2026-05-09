@@ -54,7 +54,7 @@ export default function MapView({ polylineGeoJSON, height = 460, className, onMa
 
   return (
     <div className={className} style={{ height, position: 'relative' }}>
-      <MapContainer center={start || [0, 0]} zoom={13} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false} zoomControl={false}>
+      <MapContainer center={start || [0, 0]} zoom={13} maxZoom={22} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false} zoomControl={false}>
         <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
         {latlngs.length > 0 && (
           <>
