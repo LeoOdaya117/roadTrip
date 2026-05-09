@@ -14,7 +14,7 @@
     "build:android": "npx ionic build && npx cap copy android && npx cap sync android",
     "build:android:release": "npx ionic build && npx cap copy android && npx cap sync android && cd android && ./gradlew assembleRelease",
     "build:android:debug": "npx ionic build && npx cap copy android && npx cap sync android && cd android && ./gradlew assembleDebug",
-    "build:android:debug1": "npx ionic build && npx ionic cap run android --external"
+    "build:android:debug1": "npx ionic build && npx cap copy android && npx cap sync android &&  npx ionic cap run android --external"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

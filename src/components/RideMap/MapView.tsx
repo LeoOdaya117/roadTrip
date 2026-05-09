@@ -58,7 +58,9 @@ export default function MapView({ polylineGeoJSON, height = 460, className, onMa
         <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
         {latlngs.length > 0 && (
           <>
-            <Polyline positions={latlngs} pathOptions={{ color: '#ff6b2d', weight: 5, opacity: 0.95 }} />
+            {/* subtle shadow beneath the route for better contrast on photos */}
+            <Polyline positions={latlngs} pathOptions={{ color: 'rgba(0,0,0,0.12)', weight: 8, opacity: 1, lineCap: 'round' }} />
+            <Polyline positions={latlngs} pathOptions={{ color: '#ff6b2d', weight: 4, opacity: 0.75, lineCap: 'round' }} />
             {start && <CircleMarker center={start} radius={6} pathOptions={{ color: '#34D399', fillColor: '#34D399' }} />}
             {end && <CircleMarker center={end} radius={6} pathOptions={{ color: '#FB7185', fillColor: '#FB7185' }} />}
             <FitBounds geo={polylineGeoJSON} />

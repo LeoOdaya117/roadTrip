@@ -133,7 +133,12 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
               </div>
 
               <div className="rh-card">
-                <div className="rh-section-title">Share</div>
+                <div className="rh-section-title">Photos</div>
+                <GalleryGrid photoUrls={ride.photoUrls} />
+              </div>
+
+              <div className="rh-card">
+                <div className="rh-section-title">Customize</div>
                 <p style={{ marginBottom: 12, opacity: 0.7, fontSize: 14 }}>Create a customizable share image for social media</p>
                 <button 
                   className="rh-generate-btn" 
@@ -144,10 +149,7 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
                 </button>
               </div>
 
-              <div className="rh-card">
-                <div className="rh-section-title">Photos</div>
-                <GalleryGrid photoUrls={ride.photoUrls} />
-              </div>
+              
 
               <div>
                 <button className="rh-small-btn" onClick={saveSampleToLocal} style={{ marginTop: 8 }}>Save sample ride to localStorage</button>

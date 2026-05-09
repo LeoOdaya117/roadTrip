@@ -22,14 +22,23 @@ export default function ShareImageGenerator({ ride }: Props) {
   const [overlayColor, setOverlayColor] = useState('#000000');
   const [bgImageUrl, setBgImageUrl] = useState<string | null>(null);
   const [overlayEnabled, setOverlayEnabled] = useState(true);
-  const [routeTitle, setRouteTitle] = useState('');
+  const [routeTitle, setRouteTitle] = useState(() => {
+    try {
+      return ride.startTimeISO ? new Date(ride.startTimeISO).toLocaleDateString() : '';
+    } catch (e) {
+      return '';
+    }
+  });
   const [startLocation, setStartLocation] = useState('');
   const [endLocation, setEndLocation] = useState('');
+  const [weatherMode, setWeatherMode] = useState<'auto' | 'none' | 'manual'>('auto');
+  const [manualWeather, setManualWeather] = useState('');
+  const [geoPermissionDenied, setGeoPermissionDenied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // fixed constants (single configured setting)
   const CARD_ALPHA = 0.62;
   const SHADOW_BLUR = 28;
-  const OVERLAY_OPACITY = 0.22;
+  const OVERLAY_OPACITY = 0.12;
 
   // revoke object URL when component unmounts
   React.useEffect(() => {
@@ -72,17 +81,20 @@ export default function ShareImageGenerator({ ride }: Props) {
 
       // Redesigned layout with equal spacing between sections
       const topPadding = 60;
-      const bottomPadding = 60;
+      const bottomPadding = 100; // increased bottom padding for extra breathing room
       const sectionGap = 50;  // gap between title/map/stats
       const mapPad = 48;
       
       // Title and locations area
       const titleAreaY = topPadding;
-      const titleFontSize = 56;
+      const titleFontSize = 48;
       const locationFontSize = 30;
       const titleHeight = titleFontSize + 20;  // title + spacing below
+      const labelFontSize = Math.round(titleFontSize * 0.78);
+      const smallTagFont = 16;
       const locationHeight = locationFontSize + 10;
-      const titleAreaHeight = titleHeight + locationHeight;
+      // include space for ride-type label, small tags, and locations
+      const titleAreaHeight = titleHeight + labelFontSize + smallTagFont + locationHeight + 20;
       
       // Map area
       const mapY = titleAreaY + titleAreaHeight + sectionGap;
@@ -96,58 +108,185 @@ export default function ShareImageGenerator({ ride }: Props) {
       
       const radius = 20;
 
-      // route title and locations at top (if provided)
-      if (routeTitle || startLocation || endLocation) {
-        ctx.textBaseline = 'top';
-        
-        if (routeTitle) {
-          ctx.font = `800 ${titleFontSize}px Inter, system-ui, Arial`;
-          ctx.fillStyle = '#ffffff';
-          ctx.shadowColor = 'rgba(0,0,0,0.7)';
-          ctx.shadowBlur = 16;
-          ctx.fillText(routeTitle, mapX + 24, titleAreaY);
-          ctx.shadowBlur = 0;
+      // precompute small header values (date/time/weather) so stats can show them
+      let timeText = '';
+      let weatherText = '';
+      let weatherIcon = '';
+
+      // route title and locations at top
+      // Always render the header area (ride type should always show). Locations render only if provided.
+      if (true) {
+        // header layout constants (shared left padding and colors)
+        const headerLeft = mapX + 24;
+        const headerTextColor = 'rgba(255,255,255,0.95)';
+        const headerShadowColor = 'rgba(0,0,0,0.6)';
+        const headerShadowBlur = 14;
+        try {
+          if (weatherMode === 'manual') {
+            weatherText = manualWeather || '';
+          } else if (weatherMode === 'auto') {
+            // Prefer the device's current GPS position for "exact" current weather
+            // If permission denied or unavailable, fall back to the ride start coordinate
+            let lat: number | null = null;
+            let lon: number | null = null;
+
+            // try navigator.geolocation (may prompt user)
+            if (typeof navigator !== 'undefined' && navigator.geolocation) {
+              try {
+                const pos = await new Promise<GeolocationPosition>((res, rej) => {
+                  navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 5000 });
+                });
+                lat = pos.coords.latitude;
+                lon = pos.coords.longitude;
+              } catch (geoErr: any) {
+                // If permission denied, record state so UI can show a friendly hint
+                if (geoErr && (geoErr.code === 1 || geoErr.PERMISSION_DENIED)) {
+                  setGeoPermissionDenied(true);
+                }
+              }
+            }
+
+            // fall back to ride start coordinate
+            const coordsForWeather = extractCoords(ride.polylineGeoJSON);
+            if ((lat == null || lon == null) && coordsForWeather && coordsForWeather.length > 0) {
+              const spt = coordsForWeather[0];
+              lon = spt[0];
+              lat = spt[1];
+            }
+
+            if (lat != null && lon != null) {
+              // Use Open‑Meteo current_weather endpoint with timezone auto
+              const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&timezone=auto`;
+              const wresp = await fetch(url);
+              if (wresp.ok) {
+                const wj = await wresp.json();
+                const cw = wj.current_weather;
+                if (cw) {
+                  const code = cw.weathercode;
+                  const temp = cw.temperature;
+                  const codeMap: Record<number, string> = {
+                    0: 'Clear', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast',
+                    45: 'Fog', 48: 'Depositing rime fog', 51: 'Light drizzle', 61: 'Rain',
+                    71: 'Snow', 80: 'Rain showers', 95: 'Thunderstorm'
+                  };
+                  const desc = codeMap[code] || 'Clear';
+                  // simple emoji mapping for an icon
+                  const emojiMap: Record<number, string> = {
+                    0: '☀️', 1: '🌤️', 2: '⛅', 3: '☁️',
+                    45: '🌫️', 48: '🌫️', 51: '🌦️', 61: '🌧️',
+                    71: '❄️', 80: '🌧️', 95: '⛈️'
+                  };
+                  weatherIcon = emojiMap[code] || '☀️';
+                  // current_weather provides the instantaneous observation at request time
+                  weatherText = `${desc} ${Math.round(temp)}°C`;
+                }
+              }
+            }
+          } else {
+            weatherText = '';
+          }
+        } catch (e) {
+          weatherText = '';
         }
+
+        const rideTypeText = (ride.id && String(ride.id).startsWith('solo-')) ? 'Solo Ride' : 'Group Ride';
+        // measured height of ride-type text (fallback to titleFontSize)
+        let rtHeight = titleFontSize;
+        // declare header layout vars so they are available outside the try block
+        let rideTypeFontSize = Math.round(titleFontSize * 0.78);
+        let headerLineGap = 8;
+
+        // draw ride type as its own line under the title (left aligned)
+        try {
+          // Title (if provided)
+          if (routeTitle) {
+            ctx.font = `800 ${titleFontSize}px Inter, system-ui, Arial`;
+            ctx.fillStyle = headerTextColor;
+            ctx.shadowColor = headerShadowColor;
+            ctx.shadowBlur = headerShadowBlur;
+            ctx.textBaseline = 'top';
+            ctx.fillText(routeTitle, headerLeft, titleAreaY);
+            ctx.shadowBlur = 0;
+          }
+
+          // Make the ride type smaller than title but still prominent
+          rideTypeFontSize = Math.round(titleFontSize * 0.78); // ~37px if title is 48px
+          headerLineGap = 8; // uniform gap between header lines
+          ctx.font = `700 ${rideTypeFontSize}px Inter, system-ui, Arial`;
+          ctx.fillStyle = headerTextColor;
+          ctx.textBaseline = 'top';
+          ctx.shadowColor = headerShadowColor;
+          ctx.shadowBlur = headerShadowBlur;
+          const rtX = headerLeft;
+          const rtY = titleAreaY + titleFontSize + headerLineGap;
+          ctx.fillText(rideTypeText, rtX, rtY);
+          // measure ride type height to position locations reliably
+          const rtMetrics = ctx.measureText(rideTypeText);
+          rtHeight = ((rtMetrics.actualBoundingBoxAscent || 0) + (rtMetrics.actualBoundingBoxDescent || 0)) || rideTypeFontSize;
+          ctx.shadowBlur = 0;
+        } catch (e) {}
+
+        // header shows only the ride type (weather/time moved to stats)
         
         if (startLocation && endLocation) {
-          const locTextY = titleAreaY + titleHeight;
+          // place the location line below the ride-type label, aligned with headerLeft
+          const rtY = titleAreaY + titleFontSize + headerLineGap; // same rtY used earlier for ride-type
+          const locTextTopY = rtY + rideTypeFontSize + headerLineGap; // top-aligned under ride-type using font size and uniform gap
           ctx.font = `600 ${locationFontSize}px Inter, system-ui, Arial`;
-          ctx.textBaseline = 'middle';  // use middle for better dot alignment
-          const locCenterY = locTextY + locationFontSize / 2;
+          ctx.textBaseline = 'top';
+          const locCenterY = locTextTopY + locationFontSize / 2;
+
+          ctx.shadowColor = headerShadowColor;
+          ctx.shadowBlur = headerShadowBlur;
+
+          // align location container with title/ride-type left edge (headerLeft)
+          const locDotRadius = 5;
+          const dotOffsetY = locCenterY;
           
-          ctx.shadowColor = 'rgba(0,0,0,0.6)';
-          ctx.shadowBlur = 12;
-          
-          // start location with green dot (centered with text)
+          // start dot positioned at headerLeft + radius (so left edge starts at headerLeft)
+          const startDotX = headerLeft + locDotRadius;
           ctx.fillStyle = '#34D399';
           ctx.beginPath();
-          ctx.arc(mapX + 24, locCenterY, 8, 0, Math.PI * 2);
+          ctx.arc(startDotX, dotOffsetY, locDotRadius, 0, Math.PI * 2);
           ctx.fill();
-          
-          ctx.fillStyle = 'rgba(255,255,255,0.9)';
-          ctx.fillText(startLocation, mapX + 44, locCenterY);
-          
-          // end location with red dot
+
+          // start location text after dot with small gap
+          const startTextX = startDotX + locDotRadius + 8;
+          ctx.font = `600 ${locationFontSize}px Inter, system-ui, Arial`;
+          ctx.fillStyle = headerTextColor;
+          ctx.textBaseline = 'top';
+          ctx.fillText(startLocation, startTextX, locTextTopY);
+
+          // arrow between locations (orange)
           const startWidth = ctx.measureText(startLocation).width;
-          const arrowX = mapX + 44 + startWidth + 24;
-          ctx.fillStyle = 'rgba(255,255,255,0.6)';
+          const arrowX = startTextX + startWidth + 12;
+          ctx.fillStyle = headerTextColor;
+          ctx.textBaseline = 'middle';
           ctx.fillText('→', arrowX, locCenterY);
-          
+
           const arrowWidth = ctx.measureText('→').width;
-          const endX = arrowX + arrowWidth + 24;
+          const endDotX = arrowX + arrowWidth + 12;
+
+          // end location dot
           ctx.fillStyle = '#EF4444';
           ctx.beginPath();
-          ctx.arc(endX, locCenterY, 8, 0, Math.PI * 2);
+          ctx.arc(endDotX, dotOffsetY, locDotRadius, 0, Math.PI * 2);
           ctx.fill();
-          
-          ctx.fillStyle = 'rgba(255,255,255,0.9)';
-          ctx.fillText(endLocation, endX + 20, locCenterY);
+
+          // end location text after dot
+          const endTextX = endDotX + locDotRadius + 8;
+          ctx.textBaseline = 'top';
+          ctx.fillStyle = headerTextColor;
+          ctx.fillText(endLocation, endTextX, locTextTopY);
           ctx.shadowBlur = 0;
         }
       }
 
+      // (Removed top-right pill) — ride type badge will be shown in stats area to avoid overlapping photo
+
       // draw stylized polyline centered inside map area
       const coords = extractCoords(ride.polylineGeoJSON);
+      // curve metric removed (user requested); keep placeholder for compatibility
       if (coords.length > 0) {
         let minX = coords[0][0], maxX = coords[0][0], minY = coords[0][1], maxY = coords[0][1];
         coords.forEach(([x, y]) => {
@@ -175,36 +314,71 @@ export default function ShareImageGenerator({ ride }: Props) {
           return [x, y];
         };
 
-        // shadow
-        ctx.lineWidth = 16;
-        ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+        // Filter out very-close consecutive points (reduce GPS jitter)
+        const toRadLocal = (d: number) => d * Math.PI / 180;
+        const haversineRawLocal = (p1: [number, number], p2: [number, number]) => {
+          const R = 6371000;
+          const dLat = toRadLocal(p2[1] - p1[1]);
+          const dLon = toRadLocal(p2[0] - p1[0]);
+          const lat1 = toRadLocal(p1[1]);
+          const lat2 = toRadLocal(p2[1]);
+          const a = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+          return 2 * R * Math.asin(Math.sqrt(a));
+        };
+        const MIN_PT_DIST_M = 3;
+        const filteredPts: [number, number][] = [];
+        for (let i = 0; i < coords.length; i++) {
+          if (filteredPts.length === 0) filteredPts.push(coords[i]);
+          else {
+            const last = filteredPts[filteredPts.length - 1];
+            const d = haversineRawLocal(last as [number, number], coords[i] as [number, number]);
+            if (d >= MIN_PT_DIST_M) filteredPts.push(coords[i]);
+          }
+        }
+        const pts = filteredPts.length >= 2 ? filteredPts : coords;
+
+        // stronger shadow beneath the route for contrast (kept subtle)
+        ctx.lineWidth = 18;
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+        ctx.lineCap = 'round';
         ctx.beginPath();
-        coords.forEach((c, idx) => {
+        pts.forEach((c, idx) => {
           const [x, y] = toCanvas(c[0], c[1]);
           if (idx === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         });
         ctx.stroke();
 
-        // main gradient track
-        ctx.lineWidth = 8;
+        // main gradient track (thicker and more visible)
+        ctx.lineWidth = 10;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
         const trackGrad = ctx.createLinearGradient(mapX, 0, mapX + mapW, 0);
         trackGrad.addColorStop(0, '#FF6B35');
         trackGrad.addColorStop(1, '#FFB58A');
         ctx.strokeStyle = trackGrad;
+        ctx.globalAlpha = 0.92;
         ctx.beginPath();
-        coords.forEach((c, idx) => {
+        pts.forEach((c, idx) => {
           const [x, y] = toCanvas(c[0], c[1]);
           if (idx === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         });
         ctx.stroke();
+        ctx.globalAlpha = 1;
 
-        // start + end markers
-        const s = toCanvas(coords[0][0], coords[0][1]);
-        const e = toCanvas(coords[coords.length - 1][0], coords[coords.length - 1][1]);
-        ctx.fillStyle = '#34D399'; ctx.beginPath(); ctx.arc(s[0], s[1], 8, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#EF4444'; ctx.beginPath(); ctx.arc(e[0], e[1], 8, 0, Math.PI * 2); ctx.fill();
+        // curve metric removed per user request
+
+        // start + end markers with white halo for visibility
+        const s = toCanvas(pts[0][0], pts[0][1]);
+        const e = toCanvas(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+        // white halo
+        ctx.beginPath(); ctx.arc(s[0], s[1], 11, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fill();
+        ctx.beginPath(); ctx.arc(e[0], e[1], 11, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fill();
+        // inner colored
+        ctx.beginPath(); ctx.arc(s[0], s[1], 7, 0, Math.PI * 2); ctx.fillStyle = '#34D399'; ctx.fill();
+        ctx.beginPath(); ctx.arc(e[0], e[1], 7, 0, Math.PI * 2); ctx.fillStyle = '#EF4444'; ctx.fill();
       } else {
         // placeholder small map tiles-like pattern
         ctx.fillStyle = 'rgba(255,255,255,0.02)';
@@ -218,6 +392,18 @@ export default function ShareImageGenerator({ ride }: Props) {
         ? ((ride.distanceMeters / 1000) / (ride.durationSeconds / 3600)).toFixed(1)
         : '-';
       
+      // curve removed
+
+      const dateTimeVal = (() => {
+        try {
+          const d = new Date();
+          const date = d.toLocaleDateString();
+          const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          return `${date} ${time}`;
+        } catch (e) {
+          return '-';
+        }
+      })();
       const stats = [
         { label: 'Distance', value: (ride.distanceMeters / 1000).toFixed(2), unit: 'km' },
         { label: 'Duration', value: (() => {
@@ -228,35 +414,115 @@ export default function ShareImageGenerator({ ride }: Props) {
           return h > 0 ? `${h}h ${m}m` : (m > 0 ? `${m}m ${ss}s` : `${ss}s`);
         })(), unit: '' },
         { label: 'Avg Speed', value: avgSpeedKmh, unit: 'km/h' },
-        { label: 'Max Speed', value: `${ride.maxSpeedMs ? (ride.maxSpeedMs * 3.6).toFixed(1) : '-'}`, unit: 'km/h' }
+        { label: 'Max Speed', value: `${ride.maxSpeedMs ? (ride.maxSpeedMs * 3.6).toFixed(1) : '-'}`, unit: 'km/h' },
+        // show elevation (sea level / gain) if available
+        { label: 'Elevation', value: ride.elevationGainMeters != null ? Math.round(ride.elevationGainMeters).toString() : '-', unit: 'm' },
+        // place Date and Weather on the last row
+        { label: 'Date', value: dateTimeVal || '-', unit: '' },
+        { label: 'Weather', value: weatherText || '-', unit: '' }
       ];
+      // ride type already included in the small tag row above the title; no separate badge drawn
       
-      stats.forEach((stat, i) => {
-        const statY = statsAreaY + i * statSpacing;
-        const statX = mapX + 24;
+      // Responsive stats layout: primary row (Distance + Duration) side-by-side, others stacked below
+      try {
+        const paddingX = 24;
+        const availableW = mapW - paddingX * 2;
+
+        // split out primary (Distance, Duration) and the rest
+        const primaryLabels = ['Distance', 'Duration'];
+        const primaryStats = stats.filter(s => primaryLabels.includes(s.label));
+        const otherStats = stats.filter(s => !primaryLabels.includes(s.label));
+
+        // Primary stats stacked (single column)
+        const primaryStartY = statsAreaY;
+        const primarySpacing = 140; // increased spacing between primary stats
+        primaryStats.forEach((st, idx) => {
+          const statX = mapX + paddingX;
+          const statY = primaryStartY + idx * primarySpacing;
+
+          // value (primary large)
+          ctx.font = '900 92px Inter, system-ui, Arial';
+          ctx.fillStyle = '#ffffff';
+          ctx.textBaseline = 'top';
+          ctx.shadowColor = 'rgba(0,0,0,0.6)';
+          ctx.shadowBlur = 22;
+          ctx.fillText(st.value, statX, statY);
+          ctx.shadowBlur = 0;
+
+          // unit
+          if (st.unit) {
+            const valueW = ctx.measureText(st.value).width;
+            ctx.font = '700 28px Inter, system-ui, Arial';
+            ctx.fillStyle = 'rgba(255,255,255,0.86)';
+            ctx.fillText(st.unit, statX + valueW + 12, statY + 8);
+          }
+
+          // label
+          ctx.font = '700 28px Inter, system-ui, Arial';
+          ctx.fillStyle = 'rgba(255,255,255,0.82)';
+          ctx.fillText(st.label, statX, statY + 100);
+        });
+
+        // Other stats: stacked below primary row
+        let otherY = statsAreaY + primaryStats.length * primarySpacing + 32; // start below primary row
+        const otherX = mapX + paddingX;
+        const secondaryFontSize = 42; // uniform font size for all secondary stats
         
-        // large white value text
-        ctx.font = '900 72px Inter, system-ui, Arial';
-        ctx.fillStyle = '#ffffff';
-        ctx.textBaseline = 'top';
-        ctx.shadowColor = 'rgba(0,0,0,0.6)';
-        ctx.shadowBlur = 18;
-        ctx.fillText(stat.value, statX, statY);
-        ctx.shadowBlur = 0;
-        
-        // unit text (smaller, same line)
-        if (stat.unit) {
-          const valueWidth = ctx.measureText(stat.value).width;
-          ctx.font = '700 32px Inter, system-ui, Arial';
-          ctx.fillStyle = 'rgba(255,255,255,0.7)';
-          ctx.fillText(stat.unit, statX + valueWidth + 12, statY + 12);
+        for (let i = 0; i < otherStats.length; i++) {
+          const st = otherStats[i];
+          const isWeather = st.label === 'Weather';
+
+          // All secondary stats use uniform appearance (no special cases)
+          ctx.font = `700 ${secondaryFontSize}px Inter, system-ui, Arial`;
+          ctx.fillStyle = 'rgba(255,255,255,0.9)';
+          ctx.textBaseline = 'top';
+          ctx.shadowColor = 'rgba(0,0,0,0.45)';
+          ctx.shadowBlur = 12;
+          
+          if (isWeather && weatherIcon) {
+            // draw icon using consistent proportion
+            const iconSize = Math.floor(secondaryFontSize * 0.5); // 21px
+            ctx.font = `700 ${iconSize}px Inter, system-ui, Arial`;
+            ctx.fillText(weatherIcon, otherX, otherY + 4);
+            const iconW = ctx.measureText(weatherIcon).width;
+            ctx.font = `700 ${secondaryFontSize}px Inter, system-ui, Arial`;
+            ctx.fillText(st.value, otherX + iconW + 10, otherY);
+          } else {
+            ctx.fillText(st.value, otherX, otherY);
+          }
+          ctx.shadowBlur = 0;
+
+          // unit (uniform for all secondary stats)
+          if (st.unit) {
+            const vW = (isWeather && weatherIcon) 
+              ? ctx.measureText(st.value).width + ctx.measureText(weatherIcon).width + 10 
+              : ctx.measureText(st.value).width;
+            ctx.font = '700 18px Inter, system-ui, Arial';
+            ctx.fillStyle = 'rgba(255,255,255,0.76)';
+            ctx.fillText(st.unit, otherX + vW + 12, otherY + 12);
+          }
+
+          // label (closer to value like primary stats)
+          ctx.font = '600 18px Inter, system-ui, Arial';
+          ctx.fillStyle = 'rgba(255,255,255,0.74)';
+          ctx.fillText(st.label, otherX, otherY + 50);
+          
+          // reduced spacing increment for tighter layout
+          otherY += 96;
         }
-        
-        // label below value (increased size for readability)
-        ctx.font = '700 28px Inter, system-ui, Arial';
-        ctx.fillStyle = 'rgba(255,255,255,0.75)';
-        ctx.fillText(stat.label, statX, statY + 82);
-      });
+      } catch (e) {
+        // fallback: try simple stacked drawing
+        stats.forEach((stat, i) => {
+          const statY = statsAreaY + i * statSpacing;
+          const statX = mapX + 24;
+          ctx.font = '900 48px Inter, system-ui, Arial';
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(stat.value, statX, statY);
+          ctx.font = '700 20px Inter, system-ui, Arial';
+          ctx.fillStyle = 'rgba(255,255,255,0.75)';
+          ctx.fillText(stat.label, statX, statY + 56);
+        });
+      }
 
       // prefer Blob + object URL for more reliable downloads
       // apply final overlay (single configured overlay) across the whole canvas if enabled
@@ -508,6 +774,28 @@ export default function ShareImageGenerator({ ride }: Props) {
                   onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.12)'}
                 />
               </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 6 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 6, fontWeight: 500 }}>Weather</label>
+                <select value={weatherMode} onChange={(e) => setWeatherMode(e.target.value as any)} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.03)', color: '#fff' }}>
+                  <option value="auto">Auto (current)</option>
+                  <option value="manual">Manual</option>
+                  <option value="none">None</option>
+                </select>
+                {geoPermissionDenied && weatherMode === 'auto' && (
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.54)', marginTop: 8 }}>
+                    Geolocation denied — using ride start location for weather
+                  </div>
+                )}
+              </div>
+              {weatherMode === 'manual' && (
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 6, fontWeight: 500 }}>Manual weather</label>
+                  <input value={manualWeather} onChange={(e) => setManualWeather(e.target.value)} placeholder="e.g., Clear 24°C" style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.03)', color: '#fff' }} />
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -803,7 +1091,7 @@ export default function ShareImageGenerator({ ride }: Props) {
               alt="share preview" 
               style={{ 
                 width: '100%', 
-                borderRadius: 8, 
+                borderRadius: 0, 
                 boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
                 display: 'block'
               }} 

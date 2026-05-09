@@ -65,7 +65,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
     if (source === 'background') {
       lastUpdateRef.current = nextLocation;
       setLocation(nextLocation);
-      console.debug('[useLocationTracker] background location update', {
+      console.log('🔵 [BACKGROUND TRACKING] Location update received:', {
         lat: nextLocation.lat,
         lng: nextLocation.lng,
         speed: nextLocation.speed,
@@ -173,7 +173,11 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
     let isCancelled = false;
 
     App.addListener('appStateChange', async (state) => {
-      console.debug('[useLocationTracker] appStateChange', { state, activeProvider: activeProviderRef.current?.constructor?.name });
+      console.log(state.isActive ? '✅ [APP STATE] Foreground' : '🌙 [APP STATE] Background', { 
+        state, 
+        isTracking: isTrackingRef.current,
+        activeProvider: activeProviderRef.current?.constructor?.name 
+      });
       if (!state.isActive && isTrackingRef.current) {
         shouldResumeRef.current = true;
         // switch to background provider
@@ -182,18 +186,20 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
           if (activeProviderRef.current === background && providerUnsubRef.current) {
             console.debug('[useLocationTracker] background provider already active, skipping restart');
           } else {
+            console.log('🌙 [SWITCHING TO BACKGROUND] Starting background location tracking...');
             providerUnsubRef.current?.();
             providerUnsubRef.current = null;
             if (activeProviderRef.current) {
               try { activeProviderRef.current.stop(); } catch (_) {}
             }
             await background.start();
-            console.debug('[useLocationTracker] started background provider');
+            console.log('✅ [BACKGROUND STARTED] Background tracking active');
             providerUnsubRef.current = background.onLocation((pt) => updateLocation(pt, 'background'));
             activeProviderRef.current = background;
             setIsTracking(true);
           }
         } catch (err) {
+          console.error('❌ [BACKGROUND FAILED]', err);
           setError(err instanceof Error ? err.message : 'Failed to switch to background tracking.');
           setIsTracking(false);
         }
@@ -207,18 +213,20 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
           if (activeProviderRef.current === foreground && providerUnsubRef.current) {
             console.debug('[useLocationTracker] foreground provider already active, skipping restart');
           } else {
+            console.log('☀️ [SWITCHING TO FOREGROUND] Starting foreground location tracking...');
             providerUnsubRef.current?.();
             providerUnsubRef.current = null;
             if (activeProviderRef.current) {
               try { activeProviderRef.current.stop(); } catch (_) {}
             }
             await foreground.start();
-            console.debug('[useLocationTracker] started foreground provider');
+            console.log('✅ [FOREGROUND STARTED] Foreground tracking active');
             providerUnsubRef.current = foreground.onLocation((pt) => updateLocation(pt, 'foreground'));
             activeProviderRef.current = foreground;
             setIsTracking(true);
           }
         } catch (err) {
+          console.error('❌ [FOREGROUND FAILED]', err);
           setError(err instanceof Error ? err.message : 'Failed to switch to foreground tracking.');
           setIsTracking(false);
         }
