@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useHistory } from 'react-router-dom';
 import { IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent } from '@ionic/react';
 import ReplayIcon from '../components/Icons/ReplayIcon';
 import { fetchRideById } from '../api/ride';
 import MapView from '../components/RideMap/MapView';
 import StatsPanel from '../components/RideStats/StatsPanel';
 import GalleryGrid from '../components/Gallery/GalleryGrid';
-import ShareImageGenerator from '../components/ShareImage/ShareImageGenerator';
 import type { Ride } from '../types/ride';
 import '../styles/ride-history-styles.css';
 
@@ -19,6 +18,7 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
   const [mapCanvas, setMapCanvas] = useState<HTMLCanvasElement | null>(null);
   const [mapInstance, setMapInstance] = useState<any | null>(null);
   const location = useLocation();
+  const history = useHistory();
   const params = new URLSearchParams(location.search);
   const [replayMode, setReplayMode] = useState<boolean>(params.get('mode') === 'replay');
   const [playing, setPlaying] = useState(false);
@@ -52,6 +52,30 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
     }, 200);
     return () => clearTimeout(t);
   }, [mapInstance]);
+
+  // ensure map fits the route once both map and ride data are available
+  useEffect(() => {
+    if (!mapInstance || !ride) return;
+    try {
+      // extract lat-lng pairs from ride.polylineGeoJSON (convert [lng,lat] -> [lat,lng])
+      let latlngs: [number, number][] = [];
+      const geo = ride.polylineGeoJSON;
+      if ((geo as GeoJSON.Feature)?.type === 'Feature') {
+        const feat = geo as GeoJSON.Feature;
+        if (feat.geometry.type === 'LineString') latlngs = feat.geometry.coordinates.map((c: any) => [c[1], c[0]]);
+      } else if ((geo as GeoJSON.LineString)?.type === 'LineString') {
+        latlngs = (geo as GeoJSON.LineString).coordinates.map((c: any) => [c[1], c[0]]);
+      }
+      if (latlngs.length > 0) {
+        setTimeout(() => {
+          try {
+            mapInstance.invalidateSize && mapInstance.invalidateSize();
+            mapInstance.fitBounds && mapInstance.fitBounds(latlngs as any, { padding: [40, 40] });
+          } catch (e) { console.warn('fitBounds failed', e); }
+        }, 300);
+      }
+    } catch (e) { console.warn('fit route failed', e); }
+  }, [mapInstance, ride]);
 
   if (loading) return <div style={{ padding: 20 }}>Loading ride...</div>;
   if (error) return <div style={{ padding: 20, color: 'red' }}>Error: {error}</div>;
@@ -110,7 +134,14 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
 
               <div className="rh-card">
                 <div className="rh-section-title">Share</div>
-                <ShareImageGenerator ride={ride} />
+                <p style={{ marginBottom: 12, opacity: 0.7, fontSize: 14 }}>Create a customizable share image for social media</p>
+                <button 
+                  className="rh-generate-btn" 
+                  onClick={() => history.push(`/ride-history-stats/${rideId}/share`)}
+                  style={{ width: '100%' }}
+                >
+                  Create Share Image
+                </button>
               </div>
 
               <div className="rh-card">
