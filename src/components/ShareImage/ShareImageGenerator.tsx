@@ -70,60 +70,78 @@ export default function ShareImageGenerator({ ride }: Props) {
         ctx.fillRect(0, 0, outW, outH);
       }
 
-      // map area (rounded card)
+      // Redesigned layout with equal spacing between sections
+      const topPadding = 60;
+      const bottomPadding = 60;
+      const sectionGap = 50;  // gap between title/map/stats
       const mapPad = 48;
+      
+      // Title and locations area
+      const titleAreaY = topPadding;
+      const titleFontSize = 56;
+      const locationFontSize = 30;
+      const titleHeight = titleFontSize + 20;  // title + spacing below
+      const locationHeight = locationFontSize + 10;
+      const titleAreaHeight = titleHeight + locationHeight;
+      
+      // Map area
+      const mapY = titleAreaY + titleAreaHeight + sectionGap;
       const mapX = mapPad;
-      const mapY = 56;
       const mapW = outW - mapPad * 2;
-      const mapH = Math.floor(outH * 0.58) - mapY;
+      const mapH = 700;  // fixed height for map
+      
+      // Stats area
+      const statsAreaY = mapY + mapH + sectionGap;
+      const statsAreaH = outH - statsAreaY - bottomPadding;
+      
       const radius = 20;
-      // (removed rounded container fill so background is full-bleed)
 
       // route title and locations at top (if provided)
       if (routeTitle || startLocation || endLocation) {
-        const titleY = mapY - 20;
-        ctx.textBaseline = 'bottom';
+        ctx.textBaseline = 'top';
         
         if (routeTitle) {
-          ctx.font = '800 42px Inter, system-ui, Arial';
+          ctx.font = `800 ${titleFontSize}px Inter, system-ui, Arial`;
           ctx.fillStyle = '#ffffff';
           ctx.shadowColor = 'rgba(0,0,0,0.7)';
-          ctx.shadowBlur = 14;
-          ctx.fillText(routeTitle, mapX + 24, titleY);
+          ctx.shadowBlur = 16;
+          ctx.fillText(routeTitle, mapX + 24, titleAreaY);
           ctx.shadowBlur = 0;
         }
         
         if (startLocation && endLocation) {
-          const locY = titleY + (routeTitle ? 40 : 0);
-          ctx.font = '600 22px Inter, system-ui, Arial';
-          ctx.fillStyle = 'rgba(255,255,255,0.85)';
-          ctx.shadowColor = 'rgba(0,0,0,0.6)';
-          ctx.shadowBlur = 10;
+          const locTextY = titleAreaY + titleHeight;
+          ctx.font = `600 ${locationFontSize}px Inter, system-ui, Arial`;
+          ctx.textBaseline = 'middle';  // use middle for better dot alignment
+          const locCenterY = locTextY + locationFontSize / 2;
           
-          // start location with green dot
+          ctx.shadowColor = 'rgba(0,0,0,0.6)';
+          ctx.shadowBlur = 12;
+          
+          // start location with green dot (centered with text)
           ctx.fillStyle = '#34D399';
           ctx.beginPath();
-          ctx.arc(mapX + 24, locY - 8, 6, 0, Math.PI * 2);
+          ctx.arc(mapX + 24, locCenterY, 8, 0, Math.PI * 2);
           ctx.fill();
           
-          ctx.fillStyle = 'rgba(255,255,255,0.85)';
-          ctx.fillText(startLocation, mapX + 40, locY);
+          ctx.fillStyle = 'rgba(255,255,255,0.9)';
+          ctx.fillText(startLocation, mapX + 44, locCenterY);
           
           // end location with red dot
           const startWidth = ctx.measureText(startLocation).width;
-          const arrowX = mapX + 40 + startWidth + 20;
+          const arrowX = mapX + 44 + startWidth + 24;
           ctx.fillStyle = 'rgba(255,255,255,0.6)';
-          ctx.fillText('→', arrowX, locY);
+          ctx.fillText('→', arrowX, locCenterY);
           
           const arrowWidth = ctx.measureText('→').width;
-          const endX = arrowX + arrowWidth + 20;
-          ctx.fillStyle = '#FB7185';
+          const endX = arrowX + arrowWidth + 24;
+          ctx.fillStyle = '#EF4444';
           ctx.beginPath();
-          ctx.arc(endX, locY - 8, 6, 0, Math.PI * 2);
+          ctx.arc(endX, locCenterY, 8, 0, Math.PI * 2);
           ctx.fill();
           
-          ctx.fillStyle = 'rgba(255,255,255,0.85)';
-          ctx.fillText(endLocation, endX + 16, locY);
+          ctx.fillStyle = 'rgba(255,255,255,0.9)';
+          ctx.fillText(endLocation, endX + 20, locCenterY);
           ctx.shadowBlur = 0;
         }
       }
@@ -144,9 +162,16 @@ export default function ShareImageGenerator({ ride }: Props) {
         const worldW = maxX - minX || 1;
         const worldH = maxY - minY || 1;
         const scale = Math.min(w / worldW, h / worldH);
+        
+        // Calculate centered offsets
+        const scaledW = worldW * scale;
+        const scaledH = worldH * scale;
+        const offsetX = (w - scaledW) / 2;
+        const offsetY = (h - scaledH) / 2;
+        
         const toCanvas = (lon: number, lat: number) => {
-          const x = mapX + pad + (lon - minX) * scale;
-          const y = mapY + mapH - pad - (lat - minY) * scale;
+          const x = mapX + pad + offsetX + (lon - minX) * scale;
+          const y = mapY + mapH - pad - offsetY - (lat - minY) * scale;
           return [x, y];
         };
 
@@ -179,7 +204,7 @@ export default function ShareImageGenerator({ ride }: Props) {
         const s = toCanvas(coords[0][0], coords[0][1]);
         const e = toCanvas(coords[coords.length - 1][0], coords[coords.length - 1][1]);
         ctx.fillStyle = '#34D399'; ctx.beginPath(); ctx.arc(s[0], s[1], 8, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#FB7185'; ctx.beginPath(); ctx.arc(e[0], e[1], 8, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#EF4444'; ctx.beginPath(); ctx.arc(e[0], e[1], 8, 0, Math.PI * 2); ctx.fill();
       } else {
         // placeholder small map tiles-like pattern
         ctx.fillStyle = 'rgba(255,255,255,0.02)';
@@ -187,8 +212,6 @@ export default function ShareImageGenerator({ ride }: Props) {
       }
 
       // professional stats layout: vertically stacked at bottom with large white text
-      const statsAreaY = mapY + mapH + 40;
-      const statsAreaH = outH - statsAreaY - 80;
       const statSpacing = statsAreaH / 4;
       
       const avgSpeedKmh = ride.durationSeconds > 0 
@@ -270,11 +293,16 @@ export default function ShareImageGenerator({ ride }: Props) {
 
   async function download() {
     if (!pngUrl) return;
+    console.log('Download clicked, pngUrl:', pngUrl);
     try {
-      // If running in native (Capacitor) environment, write file to device (download semantics)
+      // Fetch the blob
+      const resp = await fetch(pngUrl);
+      const blob = await resp.blob();
+      
+      // If running in native (Capacitor) environment
       if (Capacitor.getPlatform && Capacitor.getPlatform() !== 'web') {
-        const resp = await fetch(pngUrl);
-        const arrayBuffer = await resp.arrayBuffer();
+        console.log('Native platform detected, writing to filesystem');
+        const arrayBuffer = await blob.arrayBuffer();
         const bytes = new Uint8Array(arrayBuffer);
         // convert to base64 in chunks
         let binary = '';
@@ -284,27 +312,47 @@ export default function ShareImageGenerator({ ride }: Props) {
           binary += String.fromCharCode.apply(null, Array.from(slice) as any);
         }
         const base64 = btoa(binary);
-        const fileName = `ride-${ride.id}.png`;
-        await Filesystem.writeFile({ path: fileName, data: base64, directory: Directory.External });
-        const uri = await Filesystem.getUri({ directory: Directory.External, path: fileName });
-        // set pngUrl to file uri so preview links to file on device
-        setPngUrl(uri.uri);
-        console.log('Saved file to', uri.uri);
+        const fileName = `ride_${ride.id}_${Date.now()}.png`;
+        
+        // Try to write to Downloads folder (public directory)
+        try {
+          const result = await Filesystem.writeFile({ 
+            path: fileName, 
+            data: base64, 
+            directory: Directory.Documents,
+            recursive: true
+          });
+          console.log('File written:', result);
+          
+          // Get the URI to verify
+          const uri = await Filesystem.getUri({ 
+            directory: Directory.Documents, 
+            path: fileName 
+          });
+          console.log('File URI:', uri.uri);
+          alert(`Image saved successfully!\nFile: ${fileName}`);
+        } catch (fsError) {
+          console.error('Filesystem error:', fsError);
+          // Fallback to share if write fails
+          alert('Could not save to Downloads. Opening share dialog...');
+          await share();
+        }
         return;
       }
 
       // Web fallback: fetch blob and trigger anchor download
-      const res = await fetch(pngUrl);
-      const blob = await res.blob();
+      console.log('Web platform, using anchor download');
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `ride-${ride.id}.png`;
       document.body.appendChild(a);
       a.click();
-      a.remove();
+      document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 2000);
+      console.log('Download triggered');
     } catch (e) {
+      console.error('Download error:', e);
       // fallback: open in new tab
       window.open(pngUrl, '_blank');
     }
@@ -699,7 +747,9 @@ export default function ShareImageGenerator({ ride }: Props) {
                   border: '1px solid rgba(52,211,153,0.3)',
                   borderRadius: 8,
                   color: '#34D399',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  outline: 'none',
+                  WebkitTapHighlightColor: 'transparent'
                 }}
               >
                 💾 Download
@@ -715,7 +765,9 @@ export default function ShareImageGenerator({ ride }: Props) {
                   border: '1px solid rgba(96,165,250,0.3)',
                   borderRadius: 8,
                   color: '#60A5FA',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  outline: 'none',
+                  WebkitTapHighlightColor: 'transparent'
                 }}
               >
                 📤 Share
