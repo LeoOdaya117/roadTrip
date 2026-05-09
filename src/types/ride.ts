@@ -11,6 +11,8 @@ export type LocationPoint = {
   speed: number | null;
   accuracy?: number | null;
   timestamp: string;
+  /** optional event marker (e.g. 'stopover') stored with track points */
+  event?: string;
 };
 
 export type Rider = LocationPoint & {
@@ -73,6 +75,8 @@ export interface Ride {
   avgSpeedMs?: number;
   maxSpeedMs?: number;
   elevationGainMeters?: number;
+  /** number of recorded stopovers for this ride */
+  stopoverCount?: number;
   startTimeISO: string;
   photoUrls: string[];
 }

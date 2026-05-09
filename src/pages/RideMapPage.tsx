@@ -18,6 +18,7 @@ import { useRideChannel } from '../hooks/useRideChannel';
 import { useRideLocationSync } from '../hooks/useRideLocationSync';
 import { useRideTimer } from '../hooks/useRideTimer';
 import { getLastLocation, addPhoto, getSession, saveRideSession, getTrackPoints } from '../services/offlineDb';
+import { appendTrackPoint, saveLastLocation } from '../services/offlineDb';
 import { useRideStore } from '../store/rideStore';
 import maleAvatar from '../assets/images/default/user_male.png';
 import streetPreview from '../assets/images/default/Map/street.png';
@@ -698,6 +699,14 @@ const RideMapPage: React.FC = () => {
       try {
         setTracking(false);
         stopTracking();
+        // save a stopover marker for stats
+        try {
+          if (rideId && location) {
+            appendTrackPoint(rideId, { ...location, event: 'stopover' }).catch(() => undefined);
+            // also persist last location
+            saveLastLocation(rideId, location).catch(() => undefined);
+          }
+        } catch (e) {}
         rideTimer.pause();
       } finally {
         setIsTogglingTracking(false);

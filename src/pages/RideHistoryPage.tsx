@@ -200,7 +200,7 @@ const RideHistoryPage: React.FC = () => {
                 <IonItem button className="glass-card history-card" routerLink={`/ride-history-stats/${s.rideId}`}>
                   <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                     <div className="history-mini-map" onMouseEnter={() => handleLoadTracks(s.rideId)}>
-                      <MapContainer key={`map-${s.rideId}-${(tracks && tracks.length) || 0}`} center={center as [number, number]} zoom={13} style={{ width: '100%', height: '100%' }} zoomControl={false} dragging={false} doubleClickZoom={false} touchZoom={false} scrollWheelZoom={false} attributionControl={false}>
+                      <MapContainer key={`map-${s.rideId}-${(tracks && tracks.length) || 0}`} center={center as [number, number]} zoom={13} maxZoom={22} style={{ width: '100%', height: '100%' }} zoomControl={false} dragging={false} doubleClickZoom={false} touchZoom={false} scrollWheelZoom={false} attributionControl={false}>
                         <TileLayer url={'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'} />
                         {tracks && tracks.length > 1 && (
                           <>

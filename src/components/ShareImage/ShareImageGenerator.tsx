@@ -415,8 +415,8 @@ export default function ShareImageGenerator({ ride }: Props) {
         })(), unit: '' },
         { label: 'Avg Speed', value: avgSpeedKmh, unit: 'km/h' },
         { label: 'Max Speed', value: `${ride.maxSpeedMs ? (ride.maxSpeedMs * 3.6).toFixed(1) : '-'}`, unit: 'km/h' },
-        // show elevation (sea level / gain) if available
-        { label: 'Elevation', value: ride.elevationGainMeters != null ? Math.round(ride.elevationGainMeters).toString() : '-', unit: 'm' },
+        // show stopovers (recorded pause events) if available
+        { label: 'Stop Overs', value: (typeof ride.stopoverCount === 'number') ? String(ride.stopoverCount) : '-', unit: '' },
         // place Date and Weather on the last row
         { label: 'Date', value: dateTimeVal || '-', unit: '' },
         { label: 'Weather', value: weatherText || '-', unit: '' }
