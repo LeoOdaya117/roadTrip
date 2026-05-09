@@ -151,8 +151,8 @@ const RideHistoryPage: React.FC = () => {
   };
 
   const handleOpen = async (s: RideSession) => {
-    // Always open ride replay from the history list
-    history.push(`/ride-replay/${s.rideId}`);
+    // Open the Stats page by default from the history list
+    history.push(`/ride-history-stats/${s.rideId}`);
   };
 
   const list = sessions.filter((s) => (filter === 'solo' ? s.isSolo : !s.isSolo));
@@ -197,7 +197,7 @@ const RideHistoryPage: React.FC = () => {
             const center = first ? [first.lat, first.lng] : [51.505, -0.09];
             return (
               <IonItemSliding key={s.rideId}>
-                <IonItem button className="glass-card history-card" onClick={() => handleOpen(s)}>
+                <IonItem button className="glass-card history-card" routerLink={`/ride-history-stats/${s.rideId}`}>
                   <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                     <div className="history-mini-map" onMouseEnter={() => handleLoadTracks(s.rideId)}>
                       <MapContainer key={`map-${s.rideId}-${(tracks && tracks.length) || 0}`} center={center as [number, number]} zoom={13} style={{ width: '100%', height: '100%' }} zoomControl={false} dragging={false} doubleClickZoom={false} touchZoom={false} scrollWheelZoom={false} attributionControl={false}>
@@ -224,7 +224,7 @@ const RideHistoryPage: React.FC = () => {
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <div />
+                          {/* buttons removed per request; row click opens Stats */}
                         </div>
                       </div>
                       {photosByRide[s.rideId] && photosByRide[s.rideId].length > 0 && (

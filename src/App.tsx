@@ -13,6 +13,7 @@ import RideMapPage from './pages/RideMapPage';
 import AccountPage from './pages/AccountPage';
 import RideHistoryPage from './pages/RideHistoryPage';
 import RideReplayPage from './pages/RideReplayPage';
+import RideHistoryStatsPage from './pages/RideHistoryStatsPage';
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
@@ -63,6 +64,12 @@ const App: React.FC = () => (
         <Route exact path="/ride-history">
           <RideHistoryPage />
         </Route>
+        <Route exact path="/ride-history-stats/:rideId" render={(props) => {
+          // react-router v5 match param extraction
+          // @ts-ignore
+          const id = props.match?.params?.rideId ?? 'demo1';
+          return <RideHistoryStatsPage rideId={id} />;
+        }} />
         <Route exact path="/ride-replay/:rideId">
           <RideReplayPage />
         </Route>
