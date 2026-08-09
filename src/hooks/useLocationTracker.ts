@@ -1,258 +1,220 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { App } from '@capacitor/app';
 import type { PluginListenerHandle } from '@capacitor/core';
-import { LocationPoint } from '../types/ride';
 import { createLocationProviders } from '../services/LocationProviderFactory';
 import type ILocationProvider from '../services/ILocationProvider';
+import {
+  LocationQualityFilter,
+  type LocationRejectionReason,
+} from '../services/locationFilter';
+import type {
+  AcceptedLocationPoint,
+  LocationPoint,
+  LocationSource,
+} from '../types/ride';
+import type { PermissionState } from '../services/ILocationProvider';
 
-type PermissionState = 'granted' | 'denied' | 'prompt' | 'prompt-with-rationale';
+export type LocationQualityState = {
+  acceptedCount: number;
+  rejectedCount: number;
+  lastRejectedReason: LocationRejectionReason | null;
+};
 
 type TrackerState = {
-  location: LocationPoint | null;
+  location: AcceptedLocationPoint | null;
   isTracking: boolean;
   permission: PermissionState;
   error: string | null;
+  quality: LocationQualityState;
   startTracking: () => Promise<void>;
   stopTracking: () => void;
+  startNewSegment: (segmentId?: string) => string;
 };
 
-// Filter GPS jitter while keeping near real-time updates.
-const MIN_UPDATE_INTERVAL_MS = 3000;
-const MIN_DISTANCE_METERS = 6;
-const GEOLOCATION_OPTIONS = {
-  enableHighAccuracy: true,
-  timeout: 10000,
-  maximumAge: 2000
+const createSegmentId = () => {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `segment-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 };
 
-const toRadians = (value: number) => (value * Math.PI) / 180;
-
-const distanceMeters = (a: LocationPoint, b: LocationPoint) => {
-  const earthRadius = 6371000;
-  const deltaLat = toRadians(b.lat - a.lat);
-  const deltaLng = toRadians(b.lng - a.lng);
-  const lat1 = toRadians(a.lat);
-  const lat2 = toRadians(b.lat);
-
-  const sinLat = Math.sin(deltaLat / 2);
-  const sinLng = Math.sin(deltaLng / 2);
-
-  const h =
-    sinLat * sinLat +
-    Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng;
-
-  return 2 * earthRadius * Math.asin(Math.sqrt(h));
+const initialQuality: LocationQualityState = {
+  acceptedCount: 0,
+  rejectedCount: 0,
+  lastRejectedReason: null,
 };
 
 export const useLocationTracker = (autoStart = false): TrackerState => {
-  const [location, setLocation] = useState<LocationPoint | null>(null);
+  const [location, setLocation] = useState<AcceptedLocationPoint | null>(null);
   const [isTracking, setIsTracking] = useState(false);
   const [permission, setPermission] = useState<PermissionState>('prompt');
   const [error, setError] = useState<string | null>(null);
+  const [quality, setQuality] = useState<LocationQualityState>(initialQuality);
 
-  const watchIdRef = useRef<string | null>(null);
-  const isStartingRef = useRef(false);
-  const lastUpdateRef = useRef<LocationPoint | null>(null);
-  const shouldResumeRef = useRef(false);
-  const isTrackingRef = useRef(false);
-  const { foreground, background } = createLocationProviders();
+  const providersRef = useRef(createLocationProviders());
+  const filterRef = useRef(new LocationQualityFilter());
+  const segmentIdRef = useRef(createSegmentId());
   const activeProviderRef = useRef<ILocationProvider | null>(null);
-  const providerUnsubRef = useRef<(() => void) | null>(null);
-
-  const updateLocation = useCallback((nextLocation: LocationPoint, source: 'foreground' | 'background' = 'foreground') => {
-    const previous = lastUpdateRef.current;
-    // If update came from background provider, always accept and log it
-    if (source === 'background') {
-      lastUpdateRef.current = nextLocation;
-      setLocation(nextLocation);
-      console.log('🔵 [BACKGROUND TRACKING] Location update received:', {
-        lat: nextLocation.lat,
-        lng: nextLocation.lng,
-        speed: nextLocation.speed,
-        accuracy: nextLocation.accuracy,
-        timestamp: nextLocation.timestamp
-      });
-      return;
-    }
-
-    if (previous) {
-      const timeDiff =
-        new Date(nextLocation.timestamp).getTime() -
-        new Date(previous.timestamp).getTime();
-      const distance = distanceMeters(previous, nextLocation);
-
-      if (timeDiff < MIN_UPDATE_INTERVAL_MS && distance < MIN_DISTANCE_METERS) {
-        console.debug('[useLocationTracker] skipped jitter', { timeDiff, distance, nextLocation });
-        return;
-      }
-    }
-
-    lastUpdateRef.current = nextLocation;
-    setLocation(nextLocation);
-    console.debug('[useLocationTracker] location update', {
-      lat: nextLocation.lat,
-      lng: nextLocation.lng,
-      speed: nextLocation.speed,
-      accuracy: nextLocation.accuracy,
-      timestamp: nextLocation.timestamp
-    });
-  }, []);
-
-  const stopTracking = useCallback(() => {
-    providerUnsubRef.current?.();
-    providerUnsubRef.current = null;
-    if (activeProviderRef.current) {
-      try {
-        activeProviderRef.current.stop();
-      } catch (_) {}
-      activeProviderRef.current = null;
-    }
-    setIsTracking(false);
-  }, []);
+  const providerUnsubscribeRef = useRef<(() => void) | null>(null);
+  const isStartingRef = useRef(false);
+  const isTrackingRef = useRef(false);
+  const shouldResumeRef = useRef(false);
+  const operationRef = useRef(0);
 
   useEffect(() => {
     isTrackingRef.current = isTracking;
   }, [isTracking]);
 
-  const startTracking = useCallback(async () => {
-    if (isStartingRef.current) {
-      console.debug('[useLocationTracker] startTracking already running, skipping');
-      return;
-    }
-    isStartingRef.current = true;
-
-      const switchToProvider = async (provider: ILocationProvider) => {
-      providerUnsubRef.current?.();
-      providerUnsubRef.current = null;
-      if (activeProviderRef.current && activeProviderRef.current !== provider) {
-        try {
-          activeProviderRef.current.stop();
-        } catch (_) {}
+  const acceptRawPoint = useCallback(
+    (rawPoint: LocationPoint, source: LocationSource) => {
+      const decision = filterRef.current.evaluate(
+        rawPoint,
+        source,
+        segmentIdRef.current,
+      );
+      if (!decision.accepted) {
+        setQuality((current) => ({
+          ...current,
+          rejectedCount: current.rejectedCount + 1,
+          lastRejectedReason: decision.reason,
+        }));
+        console.debug('[useLocationTracker] rejected location', decision.reason);
+        return;
       }
 
+      setLocation(decision.point);
+      setQuality((current) => ({
+        acceptedCount: current.acceptedCount + 1,
+        rejectedCount: current.rejectedCount,
+        lastRejectedReason: null,
+      }));
+    },
+    [],
+  );
+
+  const switchProvider = useCallback(
+    async (provider: ILocationProvider, source: LocationSource) => {
+      if (
+        activeProviderRef.current === provider &&
+        providerUnsubscribeRef.current
+      ) {
+        return;
+      }
+
+      const operation = ++operationRef.current;
+      providerUnsubscribeRef.current?.();
+      providerUnsubscribeRef.current = null;
+      if (activeProviderRef.current && activeProviderRef.current !== provider) {
+        activeProviderRef.current.stop();
+      }
+
+      const unsubscribe = provider.onLocation((point) =>
+        acceptRawPoint(point, source),
+      );
       try {
         await provider.start();
-        // Pass source hint so background updates bypass jitter filter
-        const isBackground = provider === background;
-        providerUnsubRef.current = provider.onLocation((pt) => updateLocation(pt, isBackground ? 'background' : 'foreground'));
+        if (operation !== operationRef.current) {
+          unsubscribe();
+          provider.stop();
+          return;
+        }
+        providerUnsubscribeRef.current = unsubscribe;
         activeProviderRef.current = provider;
-        setIsTracking(true);
-        const perm = await provider.getPermissionState();
-        setPermission(perm);
+        setPermission(await provider.getPermissionState());
         setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to start tracking.');
-        setIsTracking(false);
+        setIsTracking(true);
+      } catch (startError) {
+        unsubscribe();
+        if (operation === operationRef.current) {
+          activeProviderRef.current = null;
+          setIsTracking(false);
+          setError(
+            startError instanceof Error
+              ? startError.message
+              : 'Failed to start location tracking.',
+          );
+        }
+        throw startError;
       }
-    };
+    },
+    [acceptRawPoint],
+  );
 
+  const startTracking = useCallback(async () => {
+    if (isStartingRef.current) return;
+    isStartingRef.current = true;
     try {
       const state = await App.getState();
-      const provider = state.isActive ? foreground : background;
-      await switchToProvider(provider);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start tracking.');
-      setIsTracking(false);
+      const { foreground, background } = providersRef.current;
+      await switchProvider(
+        state.isActive ? foreground : background,
+        state.isActive ? 'foreground' : 'background',
+      );
     } finally {
       isStartingRef.current = false;
     }
-  }, [updateLocation]);
+  }, [switchProvider]);
+
+  const stopTracking = useCallback(() => {
+    operationRef.current += 1;
+    providerUnsubscribeRef.current?.();
+    providerUnsubscribeRef.current = null;
+    activeProviderRef.current?.stop();
+    activeProviderRef.current = null;
+    isTrackingRef.current = false;
+    setIsTracking(false);
+  }, []);
+
+  const startNewSegment = useCallback((segmentId = createSegmentId()) => {
+    segmentIdRef.current = segmentId;
+    filterRef.current.reset();
+    return segmentId;
+  }, []);
 
   useEffect(() => {
-    if (!autoStart) {
-      return;
-    }
-
-    startTracking();
-    return () => stopTracking();
+    if (!autoStart) return;
+    void startTracking();
+    return stopTracking;
   }, [autoStart, startTracking, stopTracking]);
 
   useEffect(() => {
-    // Register app state change listener once. Switch providers when app state changes.
     let listener: PluginListenerHandle | null = null;
-    let isCancelled = false;
+    let cancelled = false;
+    const { foreground, background } = providersRef.current;
 
-    App.addListener('appStateChange', async (state) => {
-      console.log(state.isActive ? '✅ [APP STATE] Foreground' : '🌙 [APP STATE] Background', { 
-        state, 
-        isTracking: isTrackingRef.current,
-        activeProvider: activeProviderRef.current?.constructor?.name 
-      });
+    void App.addListener('appStateChange', async (state) => {
       if (!state.isActive && isTrackingRef.current) {
         shouldResumeRef.current = true;
-        // switch to background provider
         try {
-          // If already using background provider and subscribed, skip restart
-          if (activeProviderRef.current === background && providerUnsubRef.current) {
-            console.debug('[useLocationTracker] background provider already active, skipping restart');
-          } else {
-            console.log('🌙 [SWITCHING TO BACKGROUND] Starting background location tracking...');
-            providerUnsubRef.current?.();
-            providerUnsubRef.current = null;
-            if (activeProviderRef.current) {
-              try { activeProviderRef.current.stop(); } catch (_) {}
-            }
-            await background.start();
-            console.log('✅ [BACKGROUND STARTED] Background tracking active');
-            providerUnsubRef.current = background.onLocation((pt) => updateLocation(pt, 'background'));
-            activeProviderRef.current = background;
-            setIsTracking(true);
-          }
-        } catch (err) {
-          console.error('❌ [BACKGROUND FAILED]', err);
-          setError(err instanceof Error ? err.message : 'Failed to switch to background tracking.');
-          setIsTracking(false);
+          await switchProvider(background, 'background');
+        } catch {
+          // switchProvider exposes the recoverable error state
         }
-      }
-
-      if (state.isActive && shouldResumeRef.current) {
+      } else if (state.isActive && shouldResumeRef.current) {
         shouldResumeRef.current = false;
-        // switch back to foreground provider
         try {
-          // If already using foreground provider and subscribed, skip restart
-          if (activeProviderRef.current === foreground && providerUnsubRef.current) {
-            console.debug('[useLocationTracker] foreground provider already active, skipping restart');
-          } else {
-            console.log('☀️ [SWITCHING TO FOREGROUND] Starting foreground location tracking...');
-            providerUnsubRef.current?.();
-            providerUnsubRef.current = null;
-            if (activeProviderRef.current) {
-              try { activeProviderRef.current.stop(); } catch (_) {}
-            }
-            await foreground.start();
-            console.log('✅ [FOREGROUND STARTED] Foreground tracking active');
-            providerUnsubRef.current = foreground.onLocation((pt) => updateLocation(pt, 'foreground'));
-            activeProviderRef.current = foreground;
-            setIsTracking(true);
-          }
-        } catch (err) {
-          console.error('❌ [FOREGROUND FAILED]', err);
-          setError(err instanceof Error ? err.message : 'Failed to switch to foreground tracking.');
-          setIsTracking(false);
+          await switchProvider(foreground, 'foreground');
+        } catch {
+          // switchProvider exposes the recoverable error state
         }
       }
     }).then((handle) => {
-      if (isCancelled) {
-        handle.remove();
-        return;
-      }
-      listener = handle;
+      if (cancelled) void handle.remove();
+      else listener = handle;
     });
 
     return () => {
-      isCancelled = true;
-      listener?.remove();
+      cancelled = true;
+      void listener?.remove();
     };
-  // only run once (providers and factory are stable)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [switchProvider]);
 
   return {
     location,
     isTracking,
     permission,
     error,
+    quality,
     startTracking,
-    stopTracking
+    stopTracking,
+    startNewSegment,
   };
 };

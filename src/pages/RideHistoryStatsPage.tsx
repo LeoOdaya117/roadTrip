@@ -7,6 +7,7 @@ import MapView from '../components/RideMap/MapView';
 import StatsPanel from '../components/RideStats/StatsPanel';
 import GalleryGrid from '../components/Gallery/GalleryGrid';
 import type { Ride } from '../types/ride';
+import type { LatLngBoundsExpression, Map as LeafletMap } from 'leaflet';
 import '../styles/ride-history-styles.css';
 
 type Props = { rideId: string };
@@ -15,8 +16,7 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
   const [ride, setRide] = useState<Ride | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [mapCanvas, setMapCanvas] = useState<HTMLCanvasElement | null>(null);
-  const [mapInstance, setMapInstance] = useState<any | null>(null);
+  const [mapInstance, setMapInstance] = useState<LeafletMap | null>(null);
   const location = useLocation();
   const history = useHistory();
   const params = new URLSearchParams(location.search);
@@ -42,13 +42,13 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
         setLoading(false);
       });
     return () => { mounted = false };
-  }, [rideId]);
+  }, [location.search, rideId]);
 
   useEffect(() => {
     if (!mapInstance) return;
     // allow layout to settle then invalidate size so Leaflet redraws properly
     const t = setTimeout(() => {
-      try { mapInstance.invalidateSize && mapInstance.invalidateSize(); } catch (e) { console.warn('invalidateSize failed', e); }
+      try { mapInstance.invalidateSize(); } catch (error) { console.warn('invalidateSize failed', error); }
     }, 200);
     return () => clearTimeout(t);
   }, [mapInstance]);
@@ -60,17 +60,15 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
       // extract lat-lng pairs from ride.polylineGeoJSON (convert [lng,lat] -> [lat,lng])
       let latlngs: [number, number][] = [];
       const geo = ride.polylineGeoJSON;
-      if ((geo as GeoJSON.Feature)?.type === 'Feature') {
-        const feat = geo as GeoJSON.Feature;
-        if (feat.geometry.type === 'LineString') latlngs = feat.geometry.coordinates.map((c: any) => [c[1], c[0]]);
-      } else if ((geo as GeoJSON.LineString)?.type === 'LineString') {
-        latlngs = (geo as GeoJSON.LineString).coordinates.map((c: any) => [c[1], c[0]]);
+      const geometry = geo.type === 'Feature' ? geo.geometry : geo;
+      if (geometry.type === 'LineString') {
+        latlngs = geometry.coordinates.map((coordinate) => [coordinate[1], coordinate[0]]);
       }
       if (latlngs.length > 0) {
         setTimeout(() => {
           try {
-            mapInstance.invalidateSize && mapInstance.invalidateSize();
-            mapInstance.fitBounds && mapInstance.fitBounds(latlngs as any, { padding: [40, 40] });
+            mapInstance.invalidateSize();
+            mapInstance.fitBounds(latlngs as LatLngBoundsExpression, { padding: [40, 40] });
           } catch (e) { console.warn('fitBounds failed', e); }
         }, 300);
       }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { Fragment, useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, useMap, Polyline } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import '../services/leafletConfig';
@@ -9,7 +9,7 @@ import type L from 'leaflet';
 type RideMapViewProps = {
   center: { lat: number; lng: number };
   riders: Rider[];
-  trackPoints?: { lat: number; lng: number }[];
+  trackPoints?: { lat: number; lng: number; segmentId?: string }[];
   currentUserId?: string;
   currentUserAccuracy?: number | null;
   onMapReady?: (map: L.Map) => void;
@@ -32,19 +32,19 @@ const MapReadyHandler = ({ onReady }: { onReady?: (map: L.Map) => void }) => {
     // Sometimes Leaflet needs an explicit invalidateSize when the container
     // becomes visible or its layout changes (Ionic containers, overlays).
     const t1 = setTimeout(() => {
-      try { map.invalidateSize(); } catch (e) { /* ignore */ }
+      try { map.invalidateSize(); } catch { /* Leaflet may be detaching. */ }
     }, 120);
 
     // Second pass for cases where Ionic finishes layout after a longer delay
     const t2 = setTimeout(() => {
-      try { map.invalidateSize(); } catch (e) { /* ignore */ }
+      try { map.invalidateSize(); } catch { /* Leaflet may be detaching. */ }
     }, 600);
 
     const onResize = () => {
       try {
         map.invalidateSize();
-      } catch (e) {
-        // ignore
+      } catch {
+        // Leaflet may be detaching while the resize event is delivered.
       }
     };
 
@@ -87,6 +87,24 @@ const RideMapView = ({
     [riders, currentUserId, currentUserAccuracy]
   );
 
+  const trackSegments = useMemo(() => {
+    const segments: Array<Array<{ lat: number; lng: number }>> = [];
+    let previousPoint: { segmentId?: string } | undefined;
+    for (const point of trackPoints ?? []) {
+      if (
+        segments.length === 0 ||
+        (previousPoint?.segmentId &&
+          point.segmentId &&
+          previousPoint.segmentId !== point.segmentId)
+      ) {
+        segments.push([]);
+      }
+      segments[segments.length - 1].push(point);
+      previousPoint = point;
+    }
+    return segments.filter((segment) => segment.length > 1);
+  }, [trackPoints]);
+
   return (
     <MapContainer
       center={[center.lat, center.lng]}
@@ -111,19 +129,19 @@ const RideMapView = ({
       )}
       <MapReadyHandler onReady={onMapReady} />
       {showRiders ? markers : null}
-      {showTrack && trackPoints && trackPoints.length > 1 && (
-        <>
-          {/* subtle shadow for contrast */}
-          <Polyline
-            positions={trackPoints.map((p) => [p.lat, p.lng] as [number, number])}
-            pathOptions={{ color: 'rgba(0,0,0,0.14)', weight: 6, opacity: 1, lineCap: 'round' }}
-          />
-          <Polyline
-            positions={trackPoints.map((p) => [p.lat, p.lng] as [number, number])}
-            pathOptions={{ color: '#ff6b2d', weight: 3, opacity: 0.72, lineCap: 'round' }}
-          />
-        </>
-      )}
+      {showTrack &&
+        trackSegments.map((segment, index) => (
+          <Fragment key={`track-segment-${index}`}>
+            <Polyline
+              positions={segment.map((point) => [point.lat, point.lng])}
+              pathOptions={{ color: 'rgba(0,0,0,0.14)', weight: 6, opacity: 1, lineCap: 'round' }}
+            />
+            <Polyline
+              positions={segment.map((point) => [point.lat, point.lng])}
+              pathOptions={{ color: '#ff6b2d', weight: 3, opacity: 0.72, lineCap: 'round' }}
+            />
+          </Fragment>
+        ))}
     </MapContainer>
   );
 };

@@ -1,21 +1,23 @@
 # Background Geolocation — Installation & Native Setup
 
-This document describes installing and configuring `@capacitor-community/background-geolocation` for the RoadTrip app. Follow these steps after merging the code changes that use the plugin.
+RoadTrip uses `@capacitor-community/background-geolocation` for inactive-screen
+tracking and `@capacitor/local-notifications` for the Android foreground-service
+notification permission. Both are committed dependencies.
 
-## 1) Install the plugin
+## Install and sync
 
-Run in your project root:
+From the project root:
 
 ```bash
-npm install @capacitor-community/background-geolocation
-npx cap sync
+npm ci
+npx cap sync android
 ```
 
-`npx cap sync` updates native projects (Android / iOS). Run it after installing or changing plugin versions.
+Run Capacitor sync after changing either plugin or native configuration.
 
-## 2) iOS configuration
+## iOS configuration
 
-Add the following keys to your `Info.plist` (copy into Xcode or the plist file used by the iOS project):
+No iOS project is currently committed. If one is added, its `Info.plist` needs:
 
 ```xml
 <key>NSLocationWhenInUseUsageDescription</key>
@@ -28,22 +30,22 @@ Add the following keys to your `Info.plist` (copy into Xcode or the plist file u
 </array>
 ```
 
-Also ensure the plugin is present in the Podfile / Swift package manager configuration after `npx cap sync`.
+Verify the plugin is included by CocoaPods or Swift Package Manager after sync.
 
-## 3) Android configuration
+## Android configuration
 
-- Add/verify the runtime permissions in `AndroidManifest.xml` (the plugin README contains the full list for your target Android SDK):
+The app and plugin manifests provide fine/coarse location, background location,
+foreground service/location, notification, internet, and wake-lock permissions.
+Do not remove them without testing the merged manifest on every supported SDK.
 
-```xml
-<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-<uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-```
+`capacitor.config.ts` sets `android.useLegacyBridge=true`, as required by the
+installed background plugin to prevent updates stopping after several minutes.
 
-- For Android 13+ you may need to request `POST_NOTIFICATIONS` at runtime to show the persistent notification used by the foreground service.
-- The plugin README recommends setting `android.useLegacyBridge = true` in `capacitor.config.json` to improve background reliability on some Android versions. Consult the plugin docs and Capacitor docs before changing this setting.
+Android 13+ notification permission is checked and requested through Capacitor
+Local Notifications before the background watcher starts. Denial is exposed as a
+recoverable tracking error; the app must not pretend background tracking is active.
 
-Example `strings.xml` entries (optional, controls notification appearance):
+Optional notification resources in `strings.xml` are:
 
 ```xml
 <string name="capacitor_background_geolocation_notification_channel_name">Background Tracking</string>
@@ -51,19 +53,35 @@ Example `strings.xml` entries (optional, controls notification appearance):
 <string name="capacitor_background_geolocation_notification_color">#FFEB3B</string>
 ```
 
-## 4) Runtime permission flow
+## Runtime behavior
 
-- The code in `ForegroundGeolocationProvider` and `BackgroundGeolocationProvider` uses the plugin's permission helpers. On iOS/Android the OS flow may prompt the user for `WhenInUse` first, then for `Always` (iOS) or `Background` (Android) later — test flows on real devices.
-- For Android 13+ the notification permission must be requested separately if you want the persistent notification shown.
+- Foreground permission state comes from Capacitor Geolocation.
+- The background plugin requests its supported location permissions when its
+  watcher starts and reports authorization errors through the callback.
+- Foreground and background fixes pass through the same mixed-adaptive accuracy,
+  time, distance, and speed filter. Rejected coordinates are not persisted.
+- Native background callbacks use a 5 m distance filter and reject stale fixes.
+- Provider switching retains the current filter baseline; a stopover resume starts
+  a new segment instead.
 
-## 5) Testing & validation
+## Device validation
 
-- Build and run the app on a device/emulator after `npx cap sync`.
-- Verify the app requests location permission when tracking starts in foreground.
-- Minimize the app and verify the background watcher continues to emit locations (watch logs or remote telemetry).
+After sync, build and run on a real Android device or prepared emulator:
 
-## 6) Notes and troubleshooting
+1. Test precise-location grant, approximate grant, denial, and later recovery.
+2. On Android 13+, test notification grant and denial independently.
+3. Start a ride, turn the screen off for at least 15 minutes, and verify accepted
+   points continue to appear in IndexedDB and the foreground notification remains.
+4. Resume the app and confirm one foreground watch replaces the background watch.
+5. Lose network connectivity and confirm local track persistence continues; when
+   batch sync is enabled, verify its durable queue flushes after reconnect/resume.
+6. Pause at a stopover, move the device, resume, and verify the paused movement is
+   not included in route distance.
+7. Kill and relaunch during an active ride and verify session/track recovery.
 
-- If background updates stop after a few minutes on Android, ensure `android.useLegacyBridge` is considered, and test native foreground-service behavior.
-- Network calls from the WebView may be throttled in background on Android after several minutes; use a native HTTP plugin for reliable background uploads.
-- Refer to the plugin repository for up-to-date platform instructions: https://github.com/capacitor-community/background-geolocation
+WebView HTTP can be throttled after several minutes in the background. The local
+track and optional outbox provide durability/eventual delivery; native live HTTP is
+not implemented in this phase.
+
+For plugin-specific troubleshooting, consult the installed package README and the
+plugin's upstream repository.

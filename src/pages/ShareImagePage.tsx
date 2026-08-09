@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { useHistory } from 'react-router-dom';
 import { IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent } from '@ionic/react';
 import { fetchRideById } from '../api/ride';
 import ShareImageGenerator from '../components/ShareImage/ShareImageGenerator';

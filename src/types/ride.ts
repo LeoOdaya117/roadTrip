@@ -15,6 +15,14 @@ export type LocationPoint = {
   event?: string;
 };
 
+export type LocationSource = 'foreground' | 'background';
+
+export type AcceptedLocationPoint = LocationPoint & {
+  pointId: string;
+  segmentId: string;
+  source: LocationSource;
+};
+
 export type Rider = LocationPoint & {
   id: string;
   name: string;
@@ -45,6 +53,8 @@ export type RideSession = {
   endedAt?: string;
   distanceMeters?: number;
   durationSeconds?: number;
+  elevationGainMeters?: number;
+  activeSegmentId?: string;
   /** session lifecycle status — e.g. 'active' | 'ended' */
   status?: 'active' | 'ended' | 'paused';
 };

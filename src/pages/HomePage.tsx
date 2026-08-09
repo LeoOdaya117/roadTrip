@@ -7,12 +7,10 @@ import {
   IonToolbar,
   IonToast,
   IonButtons,
-  IonSegment,
-  IonSegmentButton,
   IonIcon,
 } from '@ionic/react';
-import { people, person, key, add, play, refresh } from 'ionicons/icons';
-import { useEffect, useState } from 'react';
+import { people, key, add, play } from 'ionicons/icons';
+import { useCallback, useEffect, useState } from 'react';
 import { useIonViewWillEnter } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import { createRide, joinRide } from '../services/api';
@@ -20,7 +18,6 @@ import { createLocalUser, loadUserProfile } from '../services/user';
 import { getRideSession, getAllSessions, saveRideSession, deleteSession } from '../services/offlineDb';
 import { useRideStore } from '../store/rideStore';
 import { RideSession } from '../types/ride';
-import { useCallback } from 'react';
 
 const HomePage: React.FC = () => {
   const history = useHistory();
@@ -40,7 +37,7 @@ const HomePage: React.FC = () => {
 
   const currentUser = useRideStore((state) => state.currentUser);
 
-  const refreshSavedSession = async () => {
+  const refreshSavedSession = useCallback(async () => {
     try {
       const sessions = await getAllSessions();
       console.log('[HomePage] refreshSavedSession -> sessions (raw):', JSON.parse(JSON.stringify(sessions)));
@@ -50,7 +47,7 @@ const HomePage: React.FC = () => {
         // skip sessions the user explicitly hid after ending (keep for history)
         try {
           if (localStorage.getItem(`ride:hidden:${s.rideId}`) === '1') return false;
-        } catch (e) {
+        } catch {
           // ignore
         }
         return s.status ? s.status !== 'ended' : !s.endedAt;
@@ -58,20 +55,20 @@ const HomePage: React.FC = () => {
       console.log('[HomePage] active session after filter:', active);
       setSavedSession(active ?? null);
       console.log('[HomePage] savedSession set to:', JSON.parse(JSON.stringify(active ?? null)));
-    } catch (e) {
+    } catch {
       try {
         const session = await getRideSession();
         console.log('[HomePage] fallback getRideSession ->', session);
         setSavedSession(session ?? null);
-      } catch (err) {
+      } catch {
         setSavedSession(null);
       }
     }
-  };
+  }, []);
 
   useEffect(() => {
     refreshSavedSession();
-  }, []);
+  }, [refreshSavedSession]);
 
   useIonViewWillEnter(() => {
     refreshSavedSession();
@@ -83,8 +80,7 @@ const HomePage: React.FC = () => {
       refreshSavedSession();
     });
     return () => unlisten();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [history, refreshSavedSession]);
 
   // Listen for explicit events when a ride ends in another page
   useEffect(() => {
@@ -94,8 +90,7 @@ const HomePage: React.FC = () => {
     };
     window.addEventListener('ride:ended', handler as EventListener);
     return () => window.removeEventListener('ride:ended', handler as EventListener);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refreshSavedSession]);
 
   const handleCreateRide = async () => {
     try {
@@ -290,7 +285,7 @@ const HomePage: React.FC = () => {
                     try {
                       await deleteSession(savedSession.rideId);
                       setSavedSession(null);
-                    } catch (e) {
+                    } catch {
                       /* ignore */
                     }
                   }}

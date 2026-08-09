@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+
 .ride-theme {
   /* Link accents to Ionic theme variables */
   --bg: var(--ion-background-color);
@@ -8,9 +10,6 @@
   --glass: rgba(255,255,255,0.04);
   --glass-2: rgba(255,255,255,0.02);
 }
-
-/* Import a modern system font (Inter) for Strava-like aesthetic */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
 
 /* Ensure page-level tokens fallback to Ionic vars when included in app */
 :root {

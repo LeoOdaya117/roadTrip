@@ -25,7 +25,7 @@ export default function ShareImageGenerator({ ride }: Props) {
   const [routeTitle, setRouteTitle] = useState(() => {
     try {
       return ride.startTimeISO ? new Date(ride.startTimeISO).toLocaleDateString() : '';
-    } catch (e) {
+    } catch {
       return '';
     }
   });
@@ -36,8 +36,6 @@ export default function ShareImageGenerator({ ride }: Props) {
   const [geoPermissionDenied, setGeoPermissionDenied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // fixed constants (single configured setting)
-  const CARD_ALPHA = 0.62;
-  const SHADOW_BLUR = 28;
   const OVERLAY_OPACITY = 0.12;
 
   // revoke object URL when component unmounts
@@ -106,16 +104,13 @@ export default function ShareImageGenerator({ ride }: Props) {
       const statsAreaY = mapY + mapH + sectionGap;
       const statsAreaH = outH - statsAreaY - bottomPadding;
       
-      const radius = 20;
-
       // precompute small header values (date/time/weather) so stats can show them
-      let timeText = '';
       let weatherText = '';
       let weatherIcon = '';
 
       // route title and locations at top
       // Always render the header area (ride type should always show). Locations render only if provided.
-      if (true) {
+      if (routeTitle || ride.id) {
         // header layout constants (shared left padding and colors)
         const headerLeft = mapX + 24;
         const headerTextColor = 'rgba(255,255,255,0.95)';
@@ -138,9 +133,14 @@ export default function ShareImageGenerator({ ride }: Props) {
                 });
                 lat = pos.coords.latitude;
                 lon = pos.coords.longitude;
-              } catch (geoErr: any) {
+              } catch (geoError: unknown) {
                 // If permission denied, record state so UI can show a friendly hint
-                if (geoErr && (geoErr.code === 1 || geoErr.PERMISSION_DENIED)) {
+                if (
+                  typeof geoError === 'object' &&
+                  geoError !== null &&
+                  'code' in geoError &&
+                  geoError.code === 1
+                ) {
                   setGeoPermissionDenied(true);
                 }
               }
@@ -185,13 +185,12 @@ export default function ShareImageGenerator({ ride }: Props) {
           } else {
             weatherText = '';
           }
-        } catch (e) {
+        } catch {
           weatherText = '';
         }
 
         const rideTypeText = (ride.id && String(ride.id).startsWith('solo-')) ? 'Solo Ride' : 'Group Ride';
         // measured height of ride-type text (fallback to titleFontSize)
-        let rtHeight = titleFontSize;
         // declare header layout vars so they are available outside the try block
         let rideTypeFontSize = Math.round(titleFontSize * 0.78);
         let headerLineGap = 8;
@@ -221,10 +220,11 @@ export default function ShareImageGenerator({ ride }: Props) {
           const rtY = titleAreaY + titleFontSize + headerLineGap;
           ctx.fillText(rideTypeText, rtX, rtY);
           // measure ride type height to position locations reliably
-          const rtMetrics = ctx.measureText(rideTypeText);
-          rtHeight = ((rtMetrics.actualBoundingBoxAscent || 0) + (rtMetrics.actualBoundingBoxDescent || 0)) || rideTypeFontSize;
+          ctx.measureText(rideTypeText);
           ctx.shadowBlur = 0;
-        } catch (e) {}
+        } catch {
+          ctx.shadowBlur = 0;
+        }
 
         // header shows only the ride type (weather/time moved to stats)
         
@@ -400,7 +400,7 @@ export default function ShareImageGenerator({ ride }: Props) {
           const date = d.toLocaleDateString();
           const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           return `${date} ${time}`;
-        } catch (e) {
+        } catch {
           return '-';
         }
       })();
@@ -426,8 +426,6 @@ export default function ShareImageGenerator({ ride }: Props) {
       // Responsive stats layout: primary row (Distance + Duration) side-by-side, others stacked below
       try {
         const paddingX = 24;
-        const availableW = mapW - paddingX * 2;
-
         // split out primary (Distance, Duration) and the rest
         const primaryLabels = ['Distance', 'Duration'];
         const primaryStats = stats.filter(s => primaryLabels.includes(s.label));
@@ -510,7 +508,7 @@ export default function ShareImageGenerator({ ride }: Props) {
           // reduced spacing increment for tighter layout
           otherY += 96;
         }
-      } catch (e) {
+      } catch {
         // fallback: try simple stacked drawing
         stats.forEach((stat, i) => {
           const statY = statsAreaY + i * statSpacing;
@@ -575,7 +573,7 @@ export default function ShareImageGenerator({ ride }: Props) {
         const chunkSize = 0x8000;
         for (let i = 0; i < bytes.length; i += chunkSize) {
           const slice = bytes.subarray(i, i + chunkSize);
-          binary += String.fromCharCode.apply(null, Array.from(slice) as any);
+          binary += String.fromCharCode(...slice);
         }
         const base64 = btoa(binary);
         const fileName = `ride_${ride.id}_${Date.now()}.png`;
@@ -635,7 +633,7 @@ export default function ShareImageGenerator({ ride }: Props) {
         const chunkSize = 0x8000;
         for (let i = 0; i < bytes.length; i += chunkSize) {
           const slice = bytes.subarray(i, i + chunkSize);
-          binary += String.fromCharCode.apply(null, Array.from(slice) as any);
+          binary += String.fromCharCode(...slice);
         }
         const base64 = btoa(binary);
         const fileName = `ride-${ride.id}.png`;
@@ -779,7 +777,10 @@ export default function ShareImageGenerator({ ride }: Props) {
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 6 }}>
               <div style={{ flex: 1 }}>
                 <label style={{ display: 'block', fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 6, fontWeight: 500 }}>Weather</label>
-                <select value={weatherMode} onChange={(e) => setWeatherMode(e.target.value as any)} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.03)', color: '#fff' }}>
+                <select value={weatherMode} onChange={(event) => {
+                  const value = event.target.value;
+                  if (value === 'auto' || value === 'manual' || value === 'none') setWeatherMode(value);
+                }} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.03)', color: '#fff' }}>
                   <option value="auto">Auto (current)</option>
                   <option value="manual">Manual</option>
                   <option value="none">None</option>

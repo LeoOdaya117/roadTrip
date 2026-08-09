@@ -9,8 +9,8 @@ rule in [CONVENTIONS.md](CONVENTIONS.md).
 RoadTrip is an offline-capable ride tracker with two operating modes:
 
 - **Group rides** use an external REST API to create or join a ride, Laravel
-  Echo/Pusher to receive rider updates, and periodic REST calls to publish the
-  current rider's location.
+  Echo/Pusher to receive rider updates, periodic REST calls to publish the current
+  rider's location, and the same local filtered track history as solo rides.
 - **Solo rides** create a local `solo-*` session, skip backend synchronization,
   and append the full GPS track to IndexedDB for history and replay.
 
@@ -132,8 +132,13 @@ selects the newest non-ended session not hidden by `ride:hidden:<rideId>`.
   6 metres from the previously accepted point.
 - The background provider registers the community plugin with permission requests,
   no distance filter, and a persistent-notification title/message.
-- Background points bypass the foreground jitter filter and update
-  `bg_last_location_ts` for diagnostics.
+- Both sources pass through one mixed-adaptive filter. It rejects fixes outside
+  coordinate, 50 m accuracy, 30-second age, monotonic timestamp, adaptive
+  time/distance, and 70 m/s plausibility limits.
+- Accepted points carry a stable point ID, tracking segment, and source. Provider
+  switches retain the filter baseline; stopover resume resets it for a new segment.
+- Background callbacks update `bg_last_location_ts` for diagnostics without
+  storing rejected coordinates.
 - A Capacitor `appStateChange` listener switches an active ride to the background
   provider when inactive and back to the foreground provider on resume.
 - Stopping or switching must unsubscribe listeners and stop the previous watch.
@@ -146,8 +151,9 @@ wants tracking but the watch is unavailable.
 
 `useRideLocationSync` has two independent responsibilities:
 
-1. For every point with a ride and rider, save the last known location locally.
-   In solo mode, also append the full point to the track log.
+1. For every accepted point with a ride and rider, atomically save the last known
+   location and append the full point to the owner's local track. When feature-
+   gated batch sync is enabled for a group ride, enqueue the same point atomically.
 2. For an active non-solo ride, publish the newest point every 4 seconds while
    online. While offline, retain a waiting status; when connectivity returns,
    flush the stored last point once.
@@ -155,6 +161,12 @@ wants tracking but the watch is unavailable.
 Realtime is receive-only in this client. `useRideChannel` listens for backend
 `RiderLocationUpdated` events and merges the supplied rider into Zustand. Topic
 messages/flags currently live only in memory and are not sent through the backend.
+
+The durable outbox is gated by `VITE_ENABLE_LOCATION_BATCH_SYNC`. It flushes up to
+50 same-ride/rider points on new data, reconnect, foreground resume, or a 15-second
+interval. Explicit acknowledgements delete records; retriable failures use bounded
+exponential backoff and permanent validation failures remain diagnosable. Existing
+single-location publishing continues during the rollout.
 
 ### Pause, resume, and end a ride
 
@@ -222,18 +234,20 @@ values are metres unless a UI formatter explicitly converts them.
 
 ### IndexedDB
 
-Database name: `rideTrackerDb`. The current schema is version 4.
+Database name: `rideTrackerDb`. The current schema is version 5.
 
 | Table | Key/indexes | Purpose |
 | --- | --- | --- |
 | `sessions` | Primary key `rideId`; index `createdAt` | Lifecycle, user, mode, duration, distance |
 | `locations` | Primary key `rideId` | One latest normalized location per ride |
-| `tracks` | Auto key `id`; index `rideId` | Append-only track and stopover points |
+| `tracks` | Auto key `id`; indexes `rideId`, `timestamp`, unique `pointId`, `segmentId` | Filtered owner track and stopovers |
 | `photos` | Auto key `id`; indexes `rideId`, `timestamp` | Full/thumbnail blobs and metadata |
+| `outbox` | Unique key `pointId`; indexes ride, status, retry time, timestamp | Durable feature-gated group batches |
 
 Schema history is meaningful: v1 created sessions/locations, v2 added tracks, v3
-indexed session creation time, and v4 added photos. A schema change requires a new
-Dexie version and an explicit compatibility/migration decision.
+indexed session creation time, v4 added photos, and v5 added point/segment metadata
+plus the outbox. The v5 upgrade backfills legacy tracks deterministically. A schema
+change requires a new Dexie version and an explicit compatibility/migration decision.
 
 ### Local storage
 
@@ -264,6 +278,7 @@ Base URL: `VITE_API_URL`, default `http://localhost:8000/api`. Axios uses a
 | `POST /rides` | `{ userId, name }` | `{ rideId, rider, riders? }` |
 | `POST /rides/:rideCode/join` | `{ userId, name }` | `{ rideId, rider, riders? }` |
 | `POST /rides/:rideId/location` | `{ riderId, lat, lng, speed }` | Success body is ignored |
+| `POST /rides/:rideId/locations/batch` | `{ riderId, points[] }` with point ID, timestamp, coordinates, speed, accuracy, source | Explicit accepted IDs and rejected point reasons |
 
 These shapes are client expectations, not a backend specification. Coordinate any
 contract change with the separately maintained backend.
@@ -291,6 +306,7 @@ present. Initialization assigns `Pusher` to `window.Pusher`, as required by Echo
 | `VITE_PUSHER_FORCE_TLS` | String `true` enables TLS; otherwise false |
 | `VITE_PUSHER_AUTH_ENDPOINT` | Derived from API origin plus `/broadcasting/auth` |
 | `VITE_ENABLE_REALTIME` | If set, only string `true` enables; if unset, a key enables |
+| `VITE_ENABLE_LOCATION_BATCH_SYNC` | Default `false`; enable only after the idempotent batch backend is deployed |
 
 Vite exposes all of these to the browser. Values may identify public endpoints or
 public Pusher application settings, but must not contain private credentials.
@@ -304,6 +320,7 @@ focused native boundary, check web behavior, and clean every listener/watch.
 Android permissions for internet, fine/coarse/background location, foreground
 service, notifications, and wake lock are declared in `AndroidManifest.xml`. Read
 [BACKGROUND_GEO_SETUP.md](BACKGROUND_GEO_SETUP.md) before changing location setup.
+Capacitor uses the background plugin's required legacy bridge, and Android 13+
+notification permission is requested before the background watcher starts.
 Run Capacitor sync after plugin or native configuration changes and verify behavior
 on a real device; browser success cannot validate background tracking.
-

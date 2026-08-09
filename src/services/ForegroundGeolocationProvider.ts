@@ -1,11 +1,19 @@
 import { Geolocation } from '@capacitor/geolocation';
+import type { PositionOptions } from '@capacitor/geolocation';
 import { LocationPoint } from '../types/ride';
 import ILocationProvider, { PermissionState } from './ILocationProvider';
 
-const GEOLOCATION_OPTIONS = {
+const CURRENT_POSITION_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
   timeout: 10000,
-  maximumAge: 2000
+  maximumAge: 0,
+};
+
+const WATCH_POSITION_OPTIONS: PositionOptions = {
+  enableHighAccuracy: true,
+  timeout: 5000,
+  maximumAge: 0,
+  minimumUpdateInterval: 2000,
 };
 
 export class ForegroundGeolocationProvider implements ILocationProvider {
@@ -13,6 +21,7 @@ export class ForegroundGeolocationProvider implements ILocationProvider {
   private listeners = new Set<(p: LocationPoint) => void>();
 
   async start(): Promise<void> {
+    if (this.watchId) return;
     const permissionStatus = await Geolocation.checkPermissions();
     const perm = permissionStatus.location ?? permissionStatus.coarseLocation ?? 'prompt';
 
@@ -25,7 +34,7 @@ export class ForegroundGeolocationProvider implements ILocationProvider {
     }
 
     try {
-      const current = await Geolocation.getCurrentPosition(GEOLOCATION_OPTIONS as any);
+      const current = await Geolocation.getCurrentPosition(CURRENT_POSITION_OPTIONS);
       this.emit({
         lat: current.coords.latitude,
         lng: current.coords.longitude,
@@ -33,12 +42,12 @@ export class ForegroundGeolocationProvider implements ILocationProvider {
         accuracy: current.coords.accuracy ?? null,
         timestamp: new Date(current.timestamp).toISOString()
       });
-    } catch (e) {
-      // ignore
+    } catch {
+      // The watch below remains authoritative when an immediate fix times out.
     }
 
     try {
-      const id = await Geolocation.watchPosition(GEOLOCATION_OPTIONS as any, (position, error) => {
+      const id = await Geolocation.watchPosition(WATCH_POSITION_OPTIONS, (position, error) => {
         if (error || !position) return;
 
         this.emit({
@@ -59,7 +68,7 @@ export class ForegroundGeolocationProvider implements ILocationProvider {
 
   stop(): void {
     if (this.watchId) {
-      Geolocation.clearWatch({ id: this.watchId });
+      void Geolocation.clearWatch({ id: this.watchId });
       this.watchId = null;
     }
   }

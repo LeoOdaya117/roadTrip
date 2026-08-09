@@ -48,7 +48,7 @@ const BottomSheet: React.FC<Props> = ({ isOpen, onDidDismiss, centered = false, 
     setTranslateY(delta);
   };
 
-  const onPointerUp = (ev: React.PointerEvent) => {
+  const onPointerUp = () => {
     if (!draggingRef.current) return;
     draggingRef.current = false;
     const delta = translateY;

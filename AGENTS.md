@@ -125,13 +125,14 @@ Before completing:
 
 - `rideId` identifies a session across routes, Zustand, REST/realtime, Dexie, and
   local-storage markers. Do not translate it differently between layers.
-- Solo IDs use the `solo-` prefix and must remain backend-independent. Solo points
-  are appended to the local track log; group locations are periodically sent to
-  the backend and the last known point is retained locally.
+- Solo IDs use the `solo-` prefix and must remain backend-independent. The device
+  owner's filtered track is stored locally for both solo and group rides; only
+  group rides publish locations to the backend.
 - GPS watches, Capacitor listeners, timers, browser listeners, Leaflet instances,
   object URLs, and realtime channels must be cleaned up on stop or unmount.
-- Foreground updates are jitter-filtered. Background updates are accepted directly
-  and the active provider switches with Capacitor app state.
+- Foreground and background updates pass through the same accuracy, time, distance,
+  and speed filter. Provider switches preserve its baseline; stopover resumes start
+  a new segment so paused movement is not counted.
 - Pausing tracking records a `stopover` point. Ending a ride persists final stats,
   marks the session ended and hidden from resume, dispatches `ride:ended`, clears
   transient state, and resets the persisted timer.
@@ -139,6 +140,8 @@ Before completing:
   Add a new database version for schema changes; never rewrite an old version.
 - Realtime is optional and must remain disabled when no Pusher key is configured
   or `VITE_ENABLE_REALTIME=false`.
+- Durable batch upload is optional and must remain disabled until
+  `VITE_ENABLE_LOCATION_BATCH_SYNC=true` and the idempotent backend contract is
+  deployed. Local track persistence must not depend on upload success.
 - Leaflet/GeoJSON coordinates are `[longitude, latitude]`; React Leaflet positions
   are `[latitude, longitude]`. Convert only at explicit boundaries.
-

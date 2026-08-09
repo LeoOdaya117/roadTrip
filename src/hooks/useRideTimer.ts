@@ -24,23 +24,24 @@ const format = (totalSeconds: number): string => {
   return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 };
 
+const STORAGE_KEY = 'ride_timer_state_v1';
+
 export const useRideTimer = (): RideTimerState => {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const STORAGE_KEY = 'ride_timer_state_v1';
   const lastSavedRef = useRef<number | null>(null);
   const elapsedRef = useRef<number>(0);
   const ignoreLoadRef = useRef<boolean>(false);
 
-  const clearTimer = () => {
+  const clearTimer = useCallback(() => {
     if (intervalRef.current !== null) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-  };
+  }, []);
 
-  const saveState = (opts?: { elapsed?: number; running?: boolean }) => {
+  const saveState = useCallback((opts?: { elapsed?: number; running?: boolean }) => {
     try {
       const payload = {
         elapsedSeconds: typeof opts?.elapsed === 'number' ? opts.elapsed : elapsedRef.current,
@@ -50,10 +51,12 @@ export const useRideTimer = (): RideTimerState => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
       lastSavedRef.current = payload.lastTs;
       console.debug('[useRideTimer] saved state', payload);
-    } catch (_) {}
-  };
+    } catch {
+      // Persistence is best-effort; the in-memory timer remains authoritative.
+    }
+  }, [isRunning]);
 
-  const loadState = (): { elapsedSeconds: number; isRunning: boolean; lastTs: number | null } | null => {
+  const loadState = useCallback((): { elapsedSeconds: number; isRunning: boolean; lastTs: number | null } | null => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return null;
@@ -63,46 +66,50 @@ export const useRideTimer = (): RideTimerState => {
         isRunning: !!parsed.isRunning,
         lastTs: typeof parsed.lastTs === 'number' ? parsed.lastTs : null
       };
-    } catch (_) {
+    } catch {
       return null;
     }
-  };
+  }, []);
 
   const start = useCallback(() => {
     setElapsedSeconds(0);
     setIsRunning(true);
     // persist start immediately
-    try { saveState({ elapsed: 0, running: true }); } catch (_) {}
+    saveState({ elapsed: 0, running: true });
     // briefly ignore reloads triggered immediately after starting
     try {
       ignoreLoadRef.current = true;
       setTimeout(() => { ignoreLoadRef.current = false; }, 2000);
-    } catch (_) {}
-  }, []);
+    } catch {
+      ignoreLoadRef.current = false;
+    }
+  }, [saveState]);
 
   const pause = useCallback(() => {
     setIsRunning(false);
-    try { saveState({ running: false }); } catch (_) {}
-  }, []);
+    saveState({ running: false });
+  }, [saveState]);
 
   const resume = useCallback(() => {
     setIsRunning(true);
-    try { saveState({ running: true }); } catch (_) {}
-  }, []);
+    saveState({ running: true });
+  }, [saveState]);
 
   const reset = useCallback(() => {
     // stop interval immediately and clear persisted state
-    try { clearTimer(); } catch (_) {}
+    clearTimer();
     setIsRunning(false);
     setElapsedSeconds(0);
-    try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
-  }, []);
+    try { localStorage.removeItem(STORAGE_KEY); } catch {
+      // Persistence is best-effort.
+    }
+  }, [clearTimer]);
 
   // Ensure external 'ride:ended' events force a reset of the timer
   useEffect(() => {
-    const handler = (e: Event) => {
+    const handler = () => {
       console.debug('[useRideTimer] received ride:ended event, resetting timer');
-      try { reset(); } catch (_) {}
+      reset();
     };
     window.addEventListener('ride:ended', handler as EventListener);
     return () => window.removeEventListener('ride:ended', handler as EventListener);
@@ -125,13 +132,14 @@ export const useRideTimer = (): RideTimerState => {
       clearTimer();
     }
     return clearTimer;
-  }, [isRunning]);
+  }, [clearTimer, isRunning]);
 
   // Persist elapsedSeconds on change
   useEffect(() => {
     // keep ref in sync and persist using the freshest value
-    try { elapsedRef.current = elapsedSeconds; saveState(); } catch (_) {}
-  }, [elapsedSeconds]);
+    elapsedRef.current = elapsedSeconds;
+    saveState();
+  }, [elapsedSeconds, saveState]);
 
   // Handle app background/resume to account for paused timers
   useEffect(() => {
@@ -162,7 +170,7 @@ export const useRideTimer = (): RideTimerState => {
       console.debug('[useRideTimer] appStateChange', state);
       if (!state.isActive) {
         // app going to background — save current state with timestamp
-        try { saveState(); } catch (_) {}
+        saveState();
       } else {
         // app resumed — attempt to reload and reconcile
         try {
@@ -193,7 +201,7 @@ export const useRideTimer = (): RideTimerState => {
     }).then((h) => (listener = h));
 
     return () => { listener?.remove(); };
-  }, []);
+  }, [loadState, saveState]);
 
   return {
     elapsedSeconds,

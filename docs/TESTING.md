@@ -208,7 +208,9 @@ location/provider boundary with stable coordinates and timestamps.
 | Ride lifecycle/timer | Fake-timer hook tests and solo E2E | Background/resume and legacy session |
 | Foreground location | Provider/hook tests for permission, jitter, cleanup | Browser fallback and device GPS |
 | Background location | Provider/app-state tests | Real Android lock/background test |
+| Coordinate filter | Every accuracy/time/speed band boundary, noise floor, provider switch, segment reset | Poor GPS, tunnel, stationary drift |
 | Location REST sync | Interval, offline, reconnect, overlap tests | Stubbed request cadence in E2E |
+| Batch location outbox | Flag off/on, 50-point cap, partial acknowledgement, retry/auth/permanent policy, restart recovery | Backend deduplication and reconnect delivery |
 | Realtime | Configuration, event, channel cleanup tests | Disabled and configured manual modes |
 | Dexie schema/queries | Fresh DB, upgrade, CRUD, ordering tests | Existing-device data retained |
 | History/stats/replay | Empty/full/error tests and Cypress navigation | Long/short/one-point tracks |
@@ -240,30 +242,29 @@ For location/lifecycle releases, use a real Android device where possible:
 Record device model, Android version, permission state, network state, and relevant
 logs when reporting a native failure.
 
-## Known baseline blockers
+## Validated baseline
 
-Observed on **August 9, 2026** in the Windows workspace:
+Validated on **August 9, 2026** in the Windows workspace after the background
+tracking hardening work:
 
-- `npm.cmd run test.unit -- --run` passes: 2 files and 3 tests.
-- `npm.cmd run build` passes TypeScript and Vite bundling, but warns that a CSS
-  `@import` is not first and that modern/legacy chunks exceed 500 kB. Browserslist
-  data is also reported as stale.
-- `npm.cmd run lint` fails with 203 errors and 20 warnings in the observed run.
-  Problems include source `any`/unused/hook issues and generated
-  `android/app/build/.../native-bridge.js`, because ESLint currently ignores only
-  `dist` and `cypress.config.ts`.
-- Cypress cannot reach the spec in this environment because verification receives
-  `EPERM` while reading the cached `Cypress.exe`. Independently, the sole committed
-  spec asserts the removed Ionic starter text `Tab 1 page`, so it is stale.
+- `npm.cmd run lint` passes without source or generated-output findings.
+- `npm.cmd run test.unit -- --run` passes the filter, schema migration,
+  transactional persistence, outbox policy, provider, realtime, and application
+  suites. Record the current test count from the command output in the completion
+  report rather than hard-coding it here.
+- `npm.cmd run build` passes TypeScript and Vite production bundling without the
+  previous CSS import-order, stale Browserslist, or oversized-chunk warnings.
+- `npm.cmd run test.e2e` passes the RoadTrip home-to-history Cypress flow when a
+  Vite server is running. On sandboxed Windows agents the cached Cypress executable
+  may require an approved external run because it lives below the user profile.
+- Capacitor Android sync, `gradlew.bat testDebugUnitTest`, and
+  `gradlew.bat assembleDebug` pass after syncing the Local Notifications plugin.
 
-These are blockers, not approved exclusions. Work needed for an all-green baseline
-includes narrowing lint inputs to source (without hiding source failures), fixing
-the remaining lint findings, resolving build warnings, repairing the Cypress
-installation/cache permission, and replacing the starter spec with RoadTrip flows.
-
-Documentation-only work must report these facts accurately and validate its links
-and commands. It must not claim the project is green until the commands above have
-actually passed.
+The Gradle Android plugin still reports its standard `flatDir` repository advisory,
+and the Local Notifications dependency emits a Java deprecation note. These come
+from Capacitor-generated/plugin build files, not application source failures.
+Physical-device background scenarios remain mandatory for a release candidate and
+must be reported as not run when no device or emulator is attached.
 
 ## Completion report
 
@@ -277,4 +278,3 @@ When handing off a change, state:
 
 Do not say "tests pass" when only unit tests ran, or when a command exited zero but
 its tool reported an executable/verification failure in the output.
-

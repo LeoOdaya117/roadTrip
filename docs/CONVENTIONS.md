@@ -98,6 +98,10 @@ Choose the narrowest correct owner:
   coordinates/errors before emitting `LocationPoint`.
 - Keep foreground/background switching in the tracking hook. A page controls ride
   intent but must not register a second competing geolocation watch.
+- Apply `LocationQualityFilter` once after provider normalization. Do not add a
+  source-specific bypass or persist/send a rejected raw coordinate.
+- Persist accepted locations through the transactional service so the latest fix,
+  owner track, and optional outbox record cannot diverge.
 - Avoid overlapping async operations. Use refs, cancellation flags, or abort
   support where repeated effects/actions can race.
 - Errors that block user action must become user-visible state. Log diagnostic
@@ -210,4 +214,3 @@ Choose the narrowest correct owner:
 
 Do not create a new folder or abstraction for one trivial use. Introduce structure
 when it expresses a stable responsibility or removes meaningful duplication.
-

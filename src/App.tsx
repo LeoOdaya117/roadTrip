@@ -1,4 +1,4 @@
-import { Redirect, Route } from 'react-router-dom';
+import { Redirect, Route, type RouteComponentProps } from 'react-router-dom';
 import {
   IonApp,
   IonRouterOutlet,
@@ -7,14 +7,16 @@ import {
 import { IonReactRouter } from '@ionic/react-router';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { Capacitor } from '@capacitor/core';
-import HomePage from './pages/HomePage';
-import RideLobbyPage from './pages/RideLobbyPage';
-import RideMapPage from './pages/RideMapPage';
-import AccountPage from './pages/AccountPage';
-import RideHistoryPage from './pages/RideHistoryPage';
-import RideReplayPage from './pages/RideReplayPage';
-import RideHistoryStatsPage from './pages/RideHistoryStatsPage';
-import ShareImagePage from './pages/ShareImagePage';
+import { lazy, Suspense } from 'react';
+
+const HomePage = lazy(() => import('./pages/HomePage'));
+const RideLobbyPage = lazy(() => import('./pages/RideLobbyPage'));
+const RideMapPage = lazy(() => import('./pages/RideMapPage'));
+const AccountPage = lazy(() => import('./pages/AccountPage'));
+const RideHistoryPage = lazy(() => import('./pages/RideHistoryPage'));
+const RideReplayPage = lazy(() => import('./pages/RideReplayPage'));
+const RideHistoryStatsPage = lazy(() => import('./pages/RideHistoryStatsPage'));
+const ShareImagePage = lazy(() => import('./pages/ShareImagePage'));
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
@@ -49,7 +51,8 @@ if (Capacitor.isNativePlatform()) {
 const App: React.FC = () => (
   <IonApp>
     <IonReactRouter>
-      <IonRouterOutlet>
+      <Suspense fallback={null}>
+        <IonRouterOutlet>
         <Route exact path="/home">
           <HomePage />
         </Route>
@@ -65,15 +68,12 @@ const App: React.FC = () => (
         <Route exact path="/ride-history">
           <RideHistoryPage />
         </Route>
-        <Route exact path="/ride-history-stats/:rideId" render={(props) => {
-          // react-router v5 match param extraction
-          // @ts-ignore
-          const id = props.match?.params?.rideId ?? 'demo1';
+        <Route exact path="/ride-history-stats/:rideId" render={(props: RouteComponentProps<{ rideId: string }>) => {
+          const id = props.match.params.rideId ?? 'demo1';
           return <RideHistoryStatsPage rideId={id} />;
         }} />
-        <Route exact path="/ride-history-stats/:rideId/share" render={(props) => {
-          // @ts-ignore
-          const id = props.match?.params?.rideId ?? 'demo1';
+        <Route exact path="/ride-history-stats/:rideId/share" render={(props: RouteComponentProps<{ rideId: string }>) => {
+          const id = props.match.params.rideId ?? 'demo1';
           return <ShareImagePage rideId={id} />;
         }} />
         <Route exact path="/ride-replay/:rideId">
@@ -82,7 +82,8 @@ const App: React.FC = () => (
         <Route exact path="/">
           <Redirect to="/home" />
         </Route>
-      </IonRouterOutlet>
+        </IonRouterOutlet>
+      </Suspense>
     </IonReactRouter>
   </IonApp>
 );

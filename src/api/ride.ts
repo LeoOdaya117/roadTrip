@@ -1,5 +1,6 @@
 import { Ride } from '../types/ride';
 import { getSession, getTrackPoints, getPhotos } from '../services/offlineDb';
+import { calculateTrackDistanceMeters } from '../services/locationFilter';
 
 /**
  * Load a ride by id. Prefer the offline Dexie DB session and track points.
@@ -13,7 +14,8 @@ export async function fetchRideById(rideId: string): Promise<Ride> {
       const coords = (points || []).map(p => [p.lng, p.lat] as [number, number]);
 
       // derive stats when missing
-      const distanceMeters = session.distanceMeters ?? 0;
+      const distanceMeters =
+        session.distanceMeters ?? calculateTrackDistanceMeters(points);
       let durationSeconds = session.durationSeconds ?? 0;
       if (!durationSeconds && points && points.length > 1) {
         const first = new Date(points[0].timestamp).getTime();
@@ -21,7 +23,12 @@ export async function fetchRideById(rideId: string): Promise<Ride> {
         durationSeconds = Math.max(0, Math.round((last - first) / 1000));
       }
 
-      const speeds = (points || []).map(p => p.speed ?? 0).filter(s => s !== null && s !== undefined);
+      const speeds = points
+        .filter((point) => !point.event)
+        .map((point) => point.speed)
+        .filter((speed): speed is number =>
+          typeof speed === 'number' && Number.isFinite(speed) && speed >= 0
+        );
       const avgSpeedMs = speeds.length ? (speeds.reduce((a, b) => a + b, 0) / speeds.length) : undefined;
       const maxSpeedMs = speeds.length ? Math.max(...speeds) : undefined;
 
@@ -31,12 +38,12 @@ export async function fetchRideById(rideId: string): Promise<Ride> {
           if (ph.thumb) return URL.createObjectURL(ph.thumb);
           if (ph.data) return URL.createObjectURL(ph.data);
           return '';
-        } catch (e) {
+        } catch {
           return '';
         }
       }).filter(Boolean);
 
-      const stopoverCount = (points || []).filter((p: any) => (p as any).event === 'stopover').length;
+      const stopoverCount = points.filter((point) => point.event === 'stopover').length;
 
       const ride: Ride = {
         id: rideId,
@@ -52,7 +59,7 @@ export async function fetchRideById(rideId: string): Promise<Ride> {
         durationSeconds: durationSeconds,
         avgSpeedMs,
         maxSpeedMs,
-        elevationGainMeters: (session as any).elevationGainMeters ?? 0,
+        elevationGainMeters: session.elevationGainMeters ?? 0,
         stopoverCount,
         startTimeISO: session.createdAt,
         photoUrls
@@ -102,7 +109,7 @@ export async function fetchRideById(rideId: string): Promise<Ride> {
   };
   try {
     localStorage.setItem(key, JSON.stringify(mock));
-  } catch (err) {
+  } catch {
     // ignore storage errors
   }
   return mock;

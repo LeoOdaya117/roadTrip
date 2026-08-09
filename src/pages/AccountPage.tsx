@@ -26,7 +26,7 @@ const AccountPage: React.FC = () => {
     const profile = loadUserProfile();
     setName(profile.name ?? currentUser?.name ?? '');
     setAvatarUrl(profile.avatarUrl ?? currentUser?.avatarUrl);
-  }, []);
+  }, [currentUser?.avatarUrl, currentUser?.name]);
 
   const handleAvatarClick = () => fileInputRef.current?.click();
 

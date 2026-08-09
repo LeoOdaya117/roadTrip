@@ -1,35 +1,36 @@
 import React, { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Polyline, CircleMarker, useMap } from 'react-leaflet';
+import type { LatLngBoundsExpression, Map as LeafletMap } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 type Props = {
   polylineGeoJSON: GeoJSON.GeoJSON;
   height?: number;
   className?: string;
-  onMapReady?: (map: any) => void;
+  onMapReady?: (map: LeafletMap) => void;
+};
+
+const getLatLngs = (geo: GeoJSON.GeoJSON): [number, number][] => {
+  const geometry = geo.type === 'Feature' ? geo.geometry : geo;
+  if (geometry.type !== 'LineString') return [];
+  return geometry.coordinates.map((coordinate) => [coordinate[1], coordinate[0]]);
 };
 
 function FitBounds({ geo }: { geo: GeoJSON.GeoJSON }) {
   const map = useMap();
   useEffect(() => {
     try {
-      let coords: [number, number][] = [];
-      if ((geo as GeoJSON.Feature)?.type === 'Feature') {
-        const feat = geo as GeoJSON.Feature;
-        if (feat.geometry.type === 'LineString') coords = feat.geometry.coordinates.map((c: any) => [c[1], c[0]]);
-      } else if ((geo as GeoJSON.LineString)?.type === 'LineString') {
-        coords = (geo as GeoJSON.LineString).coordinates.map((c: any) => [c[1], c[0]]);
-      }
+      const coords = getLatLngs(geo);
       if (coords.length === 0) return;
-      map.fitBounds(coords as any, { padding: [40, 40] });
-    } catch (e) {
-      // ignore
+      map.fitBounds(coords as LatLngBoundsExpression, { padding: [40, 40] });
+    } catch {
+      // Ignore malformed legacy GeoJSON.
     }
   }, [map, geo]);
   return null;
 }
 
-function OnMapReady({ onMapReady, setInternalMap }: { onMapReady?: (m: any) => void; setInternalMap?: (m: any) => void }) {
+function OnMapReady({ onMapReady, setInternalMap }: { onMapReady?: (map: LeafletMap) => void; setInternalMap?: (map: LeafletMap) => void }) {
   const map = useMap();
   useEffect(() => {
     if (setInternalMap) setInternalMap(map);
@@ -40,17 +41,11 @@ function OnMapReady({ onMapReady, setInternalMap }: { onMapReady?: (m: any) => v
 
 export default function MapView({ polylineGeoJSON, height = 460, className, onMapReady }: Props) {
   // Extract Leaflet-friendly lat-lng pairs
-  let latlngs: [number, number][] = [];
-  if ((polylineGeoJSON as GeoJSON.Feature)?.type === 'Feature') {
-    const feat = polylineGeoJSON as GeoJSON.Feature;
-    if (feat.geometry.type === 'LineString') latlngs = feat.geometry.coordinates.map((c: any) => [c[1], c[0]]);
-  } else if ((polylineGeoJSON as GeoJSON.LineString)?.type === 'LineString') {
-    latlngs = (polylineGeoJSON as GeoJSON.LineString).coordinates.map((c: any) => [c[1], c[0]]);
-  }
+  const latlngs = getLatLngs(polylineGeoJSON);
 
   const start = latlngs[0];
   const end = latlngs[latlngs.length - 1];
-  const [mapRef, setMapRef] = useState<any | null>(null);
+  const [mapRef, setMapRef] = useState<LeafletMap | null>(null);
 
   return (
     <div className={className} style={{ height, position: 'relative' }}>
@@ -72,7 +67,7 @@ export default function MapView({ polylineGeoJSON, height = 460, className, onMa
         className="map-center-btn"
         onClick={() => {
           try {
-            if (mapRef && latlngs.length > 0) mapRef.fitBounds(latlngs as any, { padding: [40, 40] });
+            if (mapRef && latlngs.length > 0) mapRef.fitBounds(latlngs as LatLngBoundsExpression, { padding: [40, 40] });
           } catch (e) { console.warn('center map failed', e); }
         }}
         title="Center route"
