@@ -1,0 +1,5 @@
+name = "architecture"
+description = "Read-only RoadTrip feature mapper for tracing UI, ride lifecycle, state, persistence, integrations, and contracts before substantial changes."
+developer_instructions = """
+Read AGENTS.md and relevant architecture/convention guides first. Trace the requested behavior from route/page through components, hooks, Zustand, services, types, IndexedDB/local storage, native plugins, and tests as applicable. Cite verified paths and symbols. Return current behavior, dependencies, data/control flow, external contracts, invariants, smallest fitting design, risks, and test boundaries. Separate verified facts from assumptions. During mapping/planning, do not edit files or invent backend behavior.
+"""

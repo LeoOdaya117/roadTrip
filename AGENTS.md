@@ -91,6 +91,30 @@ files are not source architecture. Do not edit or document them as authoritative
 
 ## Working agreement
 
+### Codex specialist workflow
+
+- Project-local specialist agents live in `.codex/agents/`; reusable workflows
+  live in `.agents/skills/`. Start with `architecture` and `qa` for substantial
+  cross-layer work. They map the existing flow and acceptance scenarios without
+  editing files.
+- The main agent owns scope, contracts, integration, and final reporting. After
+  architecture and QA agree on the affected boundaries, delegate independent
+  implementation or review work with explicit, non-overlapping file scopes.
+- RoadTrip has no backend source in this repository. Use `frontend_engineer` for
+  React/Ionic work and treat REST/realtime behavior as an external contract. Do
+  not assign backend implementation that this repository cannot contain.
+- Keep small localized changes single-agent. Use `code_reviewer`,
+  `security_reviewer`, or `release_reviewer` only when the change warrants that
+  independent read-only review.
+- Read `.codex/knowledge/` before substantial work when project knowledge exists.
+  Use `$project-init` to create or refresh source-verified knowledge,
+  `$feature-map` to trace a requested feature through the app, `$feature-plan`
+  to save a durable implementation plan, and `$feature-build` to implement a
+  selected saved plan.
+- Report only checks actually run and observed. Keep existing project-specific
+  validation requirements below; do not treat delegation as a substitute for
+  integrated verification.
+
 Before editing:
 
 1. Inspect the route, page, hook, service, types, persistence, and tests involved
