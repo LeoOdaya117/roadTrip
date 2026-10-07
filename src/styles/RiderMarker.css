@@ -1,0 +1,81 @@
+.rider-div-icon {
+  pointer-events: auto;
+  overflow: visible !important;
+}
+
+.rider-me-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: inline-block;
+}
+
+/* small avatar circle */
+.rider-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: inline-block;
+  border: 2px solid rgba(255,255,255,0.12);
+  box-shadow: 0 6px 18px rgba(2,6,23,0.45);
+  background: linear-gradient(135deg,#111217,#1b1d29);
+  position: relative;
+  z-index: 2; /* sit above the pulse */
+}
+
+.rider-icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.rider-icon .rider-fallback { width:100%; height:100%; background: linear-gradient(135deg,#FF6B35,#FF8255); display:none; }
+
+/* Current-user border and subtle elevation */
+.rider-icon--me {
+  border: 2px solid #FF6B35 !important;
+  box-shadow: 0 6px 20px rgba(2,6,23,0.55) !important;
+}
+
+.rider-me-pulse {
+  --pulse-duration: 3000ms;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 0; /* ensure rings are below the avatar */
+  pointer-events: none;
+}
+
+.rider-me-pulse .ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(0.3);
+  width: var(--pulse-size, 100px);
+  height: var(--pulse-size, 100px);
+  border-radius: 50%;
+  background: rgba(255,107,53, var(--ring-alpha, 0.32));
+  box-shadow: 0 0 0 1px rgba(255,107,53,0.06) inset;
+  opacity: 0;
+  transform-origin: center center;
+  animation: rider-beat var(--pulse-duration) linear infinite;
+}
+
+.rider-me-pulse .ring.ring-2 {
+  animation-delay: calc(-1 * var(--pulse-duration) / 2);
+}
+
+@keyframes rider-beat {
+  0% {
+    transform: translate(-50%, -50%) scale(0.3);
+    opacity: 0.9;
+  }
+  60% {
+    transform: translate(-50%, -50%) scale(0.9);
+    opacity: 0.45;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.6);
+    opacity: 0;
+  }
+}
+
+/* Ensure small YOU label is hidden when using compact marker */
+.rider-you-label { display: none; }

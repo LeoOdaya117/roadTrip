@@ -1,0 +1,101 @@
+export type CurrentUser = {
+  id: string;
+  name: string;
+  isHost: boolean;
+  avatarUrl?: string;
+};
+
+export type LocationPoint = {
+  lat: number;
+  lng: number;
+  speed: number | null;
+  accuracy?: number | null;
+  timestamp: string;
+  /** optional event marker (e.g. 'stopover') stored with track points */
+  event?: string;
+};
+
+export type LocationSource = 'foreground' | 'background';
+
+export type AcceptedLocationPoint = LocationPoint & {
+  pointId: string;
+  segmentId: string;
+  source: LocationSource;
+};
+
+export type Rider = LocationPoint & {
+  id: string;
+  name: string;
+  isHost?: boolean;
+  /** Optional avatar image URL to display on the map marker */
+  avatarUrl?: string;
+  /** Optional additional photos to show in the popup */
+  photos?: string[];
+  /** Active lightweight topic flags (e.g. ['fuel', 'help']) */
+  activeTopics?: string[];
+};
+
+export type ChatMessage = {
+  id: string;
+  topic: string;
+  text: string;
+  senderId: string;
+  timestamp: string;
+};
+
+export type RideSession = {
+  rideId: string;
+  userId: string;
+  userName: string;
+  isHost: boolean;
+  createdAt: string;
+  isSolo?: boolean;
+  endedAt?: string;
+  distanceMeters?: number;
+  durationSeconds?: number;
+  elevationGainMeters?: number;
+  activeSegmentId?: string;
+  /** session lifecycle status — e.g. 'active' | 'ended' */
+  status?: 'active' | 'ended' | 'paused';
+};
+
+export type PhotoRecord = {
+  id?: number;
+  rideId: string;
+  // full-size image blob
+  data?: Blob;
+  // thumbnail image blob
+  thumb?: Blob;
+  lat?: number;
+  lng?: number;
+  timestamp: string;
+  note?: string;
+};
+
+export type RiderLocationEvent = {
+  rider: Rider;
+};
+
+// --- Ride feature types (added for ride-history-stats feature) ---
+export interface Ride {
+  id: string;
+  polylineGeoJSON: GeoJSON.GeoJSON;
+  distanceMeters: number;
+  durationSeconds: number;
+  avgSpeedMs?: number;
+  maxSpeedMs?: number;
+  elevationGainMeters?: number;
+  /** number of recorded stopovers for this ride */
+  stopoverCount?: number;
+  startTimeISO: string;
+  photoUrls: string[];
+}
+
+export function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}

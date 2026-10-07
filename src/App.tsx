@@ -1,147 +1,90 @@
-import { Redirect, Route } from 'react-router-dom';
+import { lazy, Suspense, useEffect } from 'react';
+import { Redirect, Route, type RouteComponentProps } from 'react-router-dom';
 import {
   IonApp,
-  IonIcon,
-  IonLabel,
-  IonFab,
-  IonFabButton,
   IonRouterOutlet,
-  IonTabBar,
-  IonTabButton,
-  IonTabs,
-  setupIonicReact
+  setupIonicReact,
 } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
-import { ellipse, home, person, square, triangle, add, settings } from 'ionicons/icons';
-import Tab1 from './features/home/Tab1';
-import Tab2 from './features/home/Tab2';
-import Tab3 from './features/home/Tab3';
-import AppRoutes from './routes';
+import { StatusBar, Style } from '@capacitor/status-bar';
+import { Capacitor } from '@capacitor/core';
 
-/* Core CSS required for Ionic components to work properly */
+const HomePage = lazy(() => import('./pages/HomePage'));
+const RideLobbyPage = lazy(() => import('./pages/RideLobbyPage'));
+const RideMapPage = lazy(() => import('./pages/RideMapPage'));
+const AccountPage = lazy(() => import('./pages/AccountPage'));
+const RideHistoryPage = lazy(() => import('./pages/RideHistoryPage'));
+const RideReplayPage = lazy(() => import('./pages/RideReplayPage'));
+const RideHistoryStatsPage = lazy(() => import('./pages/RideHistoryStatsPage'));
+const ShareImagePage = lazy(() => import('./pages/ShareImagePage'));
+
 import '@ionic/react/css/core.css';
-
-/* Basic CSS for apps built with Ionic */
 import '@ionic/react/css/normalize.css';
 import '@ionic/react/css/structure.css';
 import '@ionic/react/css/typography.css';
-
-/* Optional CSS utils that can be commented out */
 import '@ionic/react/css/padding.css';
 import '@ionic/react/css/float-elements.css';
 import '@ionic/react/css/text-alignment.css';
 import '@ionic/react/css/text-transformation.css';
 import '@ionic/react/css/flex-utils.css';
 import '@ionic/react/css/display.css';
-
-/**
- * Ionic Dark Mode
- * -----------------------------------------------------
- * For more info, please see:
- * https://ionicframework.com/docs/theming/dark-mode
- */
-
-/* import '@ionic/react/css/palettes/dark.always.css'; */
-/* import '@ionic/react/css/palettes/dark.class.css'; */
 import '@ionic/react/css/palettes/dark.system.css';
-
-/* Theme variables */
 import './theme/variables.css';
 import './App.css';
-import { StatusBar, Style } from '@capacitor/status-bar';
-import { Filesystem } from '@capacitor/filesystem';
-import React, { useEffect, useState } from 'react';
 
 setupIonicReact();
 
 const App: React.FC = () => {
-  const [isAppInitialized, setIsAppInitialized] = useState(false);
-
   useEffect(() => {
-    console.log('[App] Initializing application...');
-
-    const checkAndRequestFilesystemPermission = async () => {
-      try {
-        const permissionStatus = await Filesystem.checkPermissions();
-        console.log('Current permission:', permissionStatus);
-
-        if (permissionStatus.publicStorage !== 'granted') {
-          const requestStatus = await Filesystem.requestPermissions();
-          console.log('Request result:', requestStatus);
-
-          if (requestStatus.publicStorage === 'granted') {
-            console.log('Filesystem permission granted!');
-          } else {
-            console.warn('Filesystem permission denied by user.');
-          }
-        } else {
-          console.log('Filesystem permission already granted.');
-        }
-      } catch (err) {
-        console.error('Error checking/requesting permission:', err);
-      }
-    };
-
-    const configureStatusBarAndNotifications = async () => {
-      try {
-        await StatusBar.setStyle({ style: Style.Light });
-        await StatusBar.setBackgroundColor({ color: '#ffffff' });
-        await StatusBar.setOverlaysWebView({ overlay: false });
-      } catch (e) {
-        console.log('StatusBar not available on this platform');
-      }
-    };
-
-    
-
-    const initializeApp = async () => {
-      try {
-        await checkAndRequestFilesystemPermission();
-        await configureStatusBarAndNotifications();
-
-    
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        console.log('[App] App initialization complete');
-        setIsAppInitialized(true);
-      } catch (error) {
-        console.error('[App] Error during initialization:', error);
-        setIsAppInitialized(true);
-      }
-    };
-
-    initializeApp();
+    if (!Capacitor.isNativePlatform()) return;
+    void StatusBar.setOverlaysWebView({ overlay: true });
+    void StatusBar.setStyle({ style: Style.Dark });
   }, []);
 
   return (
     <IonApp>
-    <IonReactRouter>
-      <IonTabs>
-        <AppRoutes />
-        <IonTabBar slot="bottom" className="floating-tab-bar">
-          <IonTabButton tab="tab1" href="/tab1">
-            <IonIcon aria-hidden="true" icon={home} />
-            <IonLabel>Home</IonLabel>
-          </IonTabButton>
-
-          <IonTabButton tab="tab2" href="/tab2">
-            <IonLabel>Create Trip</IonLabel>
-          </IonTabButton>
-          <IonTabButton tab="tab3" href="/tab3">
-            <IonIcon aria-hidden="true" icon={settings} />
-            <IonLabel>Settings</IonLabel>
-          </IonTabButton>
-
-        </IonTabBar>
-      </IonTabs>
-      {/* Floating FAB placed outside the tabs so it won't be clipped by tab bar */}
-      <IonFab className="create-fab">
-        <IonFabButton routerLink="/tab2" className="create-fab-button">
-          <IonIcon icon={add} />
-        </IonFabButton>
-      </IonFab>
-    </IonReactRouter>
-  </IonApp>
+      <IonReactRouter>
+        <Suspense fallback={null}>
+          <IonRouterOutlet>
+            <Route exact path="/home">
+              <HomePage />
+            </Route>
+            <Route exact path="/ride-lobby/:rideId">
+              <RideLobbyPage />
+            </Route>
+            <Route exact path="/ride-map/:rideId">
+              <RideMapPage />
+            </Route>
+            <Route exact path="/account">
+              <AccountPage />
+            </Route>
+            <Route exact path="/ride-history">
+              <RideHistoryPage />
+            </Route>
+            <Route
+              exact
+              path="/ride-history-stats/:rideId/share"
+              render={(props: RouteComponentProps<{ rideId: string }>) => (
+                <ShareImagePage rideId={props.match.params.rideId ?? 'demo1'} />
+              )}
+            />
+            <Route
+              exact
+              path="/ride-history-stats/:rideId"
+              render={(props: RouteComponentProps<{ rideId: string }>) => (
+                <RideHistoryStatsPage rideId={props.match.params.rideId ?? 'demo1'} />
+              )}
+            />
+            <Route exact path="/ride-replay/:rideId">
+              <RideReplayPage />
+            </Route>
+            <Route exact path="/">
+              <Redirect to="/home" />
+            </Route>
+          </IonRouterOutlet>
+        </Suspense>
+      </IonReactRouter>
+    </IonApp>
   );
 };
 
