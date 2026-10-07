@@ -292,7 +292,10 @@ const RideReplayPage: React.FC = () => {
       </IonHeader>
       <IonContent className="app-page page-content replay-screen">
         <div className="replay-heading">
-          <div style={{ fontWeight: 800 }}>{sessionLabel}</div>
+          <div className="replay-session-row">
+            <div className="replay-session-title">{sessionLabel}</div>
+            <span className="replay-ride-type">{rideId.startsWith('solo-') ? 'Solo route' : 'Group ride'}</span>
+          </div>
           {(!points || points.length === 0) && (
             <div style={{ marginTop: 8, color: '#94A3B8' }}>No recorded track points available for this session.</div>
           )}
@@ -302,7 +305,10 @@ const RideReplayPage: React.FC = () => {
           {mapReady && (
             <MapContainer ref={mapRef} center={center} zoom={13} maxZoom={22} style={{ width: '100%', height: '100%' }}>
             
-            <TileLayer url={'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'} />
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution="&copy; OpenStreetMap contributors"
+            />
               {points && points.length > 0 && (
               <>
                 {splitTrackSegments(points)
@@ -311,13 +317,13 @@ const RideReplayPage: React.FC = () => {
                     <Polyline
                       key={`segment-${segmentIndex}`}
                       positions={segment.map((point) => [point.lat, point.lng])}
-                      pathOptions={{ color: '#FF6B35', weight: 3, opacity: 0.9 }}
+                      pathOptions={{ color: '#285E7A', weight: 4, opacity: 0.95 }}
                     />
                   ))}
-                {points[0] && <CircleMarker center={[points[0].lat, points[0].lng]} radius={5} pathOptions={{ color: '#34D399', fillColor: '#34D399' }} />}
-                {points[points.length - 1] && <CircleMarker center={[points[points.length - 1].lat, points[points.length - 1].lng]} radius={5} pathOptions={{ color: '#FB7185', fillColor: '#FB7185' }} />}
+                {points[0] && <CircleMarker center={[points[0].lat, points[0].lng]} radius={5} pathOptions={{ color: '#285E7A', fillColor: '#285E7A' }} />}
+                {points[points.length - 1] && <CircleMarker center={[points[points.length - 1].lat, points[points.length - 1].lng]} radius={5} pathOptions={{ color: '#285E7A', fillColor: '#285E7A' }} />}
                 {current && (
-                  <CircleMarker center={[current.lat, current.lng]} radius={8} pathOptions={{ color: '#FF6B35', fillColor: '#FF6B35' }} />
+                  <CircleMarker center={[current.lat, current.lng]} radius={8} pathOptions={{ color: '#285E7A', fillColor: '#285E7A' }} />
                 )}
               </>
                 )}

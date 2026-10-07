@@ -116,8 +116,8 @@ const RideMapView = ({
     >
       <TileLayer
         key={tileUrl ?? 'default'}
-        attribution={attribution ?? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; CARTO'}
-        url={tileUrl ?? 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'}
+        attribution={attribution ?? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}
+        url={tileUrl ?? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'}
       />
       {labelsTileUrl && (
         <TileLayer
@@ -138,7 +138,7 @@ const RideMapView = ({
             />
             <Polyline
               positions={segment.map((point) => [point.lat, point.lng])}
-              pathOptions={{ color: '#ff6b2d', weight: 3, opacity: 0.72, lineCap: 'round' }}
+              pathOptions={{ color: '#285E7A', weight: 4, opacity: 0.92, lineCap: 'round' }}
             />
           </Fragment>
         ))}

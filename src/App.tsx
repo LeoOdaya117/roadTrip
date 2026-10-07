@@ -33,7 +33,7 @@ import '@ionic/react/css/display.css';
 import '@ionic/react/css/palettes/dark.system.css';
 import './theme/variables.css';
 import './App.css';
-import './styles/route-cockpit.css';
+import './styles/crew-board.css';
 
 setupIonicReact();
 

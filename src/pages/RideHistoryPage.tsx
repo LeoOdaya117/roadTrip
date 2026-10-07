@@ -57,7 +57,7 @@ const fmtDate = (iso?: string) => {
 
 const RideHistoryPage: React.FC = () => {
   const [sessions, setSessions] = useState<RideSession[]>([]);
-  const [filter, setFilter] = useState<'solo' | 'group'>('solo');
+  const [filter, setFilter] = useState<'solo' | 'group'>('group');
   const [tracksByRide, setTracksByRide] = useState<Record<string, TrackPoint[]>>({});
   const [photosByRide, setPhotosByRide] = useState<Record<string, PhotoRecord[]>>({});
   const [photoUrlsByRide, setPhotoUrlsByRide] = useState<Record<string, string[]>>({});
@@ -169,7 +169,11 @@ const RideHistoryPage: React.FC = () => {
         </IonToolbar>
       </IonHeader>
       <IonContent className="app-page page-content history-screen">
-        <div style={{ padding: '8px 0 16px' }}>
+        <div className="history-intro">
+          <h1>Every ride has its people.</h1>
+          <p>Find a route, revisit a photo, or see which rides you shared.</p>
+        </div>
+        <div className="history-screen-filter">
           <IonSegment value={filter} onIonChange={(event) => {
             if (event.detail.value === 'solo' || event.detail.value === 'group') {
               setFilter(event.detail.value);
@@ -202,7 +206,10 @@ const RideHistoryPage: React.FC = () => {
                   <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                     <div className="history-mini-map" onMouseEnter={() => handleLoadTracks(s.rideId)}>
                       <MapContainer key={`map-${s.rideId}-${(tracks && tracks.length) || 0}`} center={center as [number, number]} zoom={13} maxZoom={22} style={{ width: '100%', height: '100%' }} zoomControl={false} dragging={false} doubleClickZoom={false} touchZoom={false} scrollWheelZoom={false} attributionControl={false}>
-                        <TileLayer url={'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'} />
+                        <TileLayer
+                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                          attribution="&copy; OpenStreetMap contributors"
+                        />
                         {tracks && tracks.length > 1 && (
                           <>
                             {splitTrackSegments(tracks)
@@ -211,11 +218,11 @@ const RideHistoryPage: React.FC = () => {
                                 <Polyline
                                   key={`segment-${segmentIndex}`}
                                   positions={segment.map((point) => [point.lat, point.lng])}
-                                  pathOptions={{ color: '#FF6B35', weight: 3 }}
+                                  pathOptions={{ color: '#285E7A', weight: 3 }}
                                 />
                               ))}
-                            <CircleMarker center={[tracks[0].lat, tracks[0].lng]} radius={5} pathOptions={{ color: '#34D399', fillColor: '#34D399' }} />
-                            <CircleMarker center={[tracks[tracks.length - 1].lat, tracks[tracks.length - 1].lng]} radius={5} pathOptions={{ color: '#FB7185', fillColor: '#FB7185' }} />
+                            <CircleMarker center={[tracks[0].lat, tracks[0].lng]} radius={5} pathOptions={{ color: '#285E7A', fillColor: '#285E7A' }} />
+                            <CircleMarker center={[tracks[tracks.length - 1].lat, tracks[tracks.length - 1].lng]} radius={5} pathOptions={{ color: '#285E7A', fillColor: '#285E7A' }} />
                           </>
                         )}
                       </MapContainer>
@@ -224,11 +231,12 @@ const RideHistoryPage: React.FC = () => {
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <div style={{ fontWeight: 800 }}>{fmtDate(s.createdAt)}</div>
+                          <div className="history-date">{fmtDate(s.createdAt)}</div>
+                          <span className="history-ride-mode">{s.isSolo ? 'Solo ride' : 'Group ride'}</span>
                           {filter !== 'solo' && (
-                            <div style={{ color: '#94A3B8', fontSize: 13 }}>{s.userName}</div>
+                            <div className="history-owner">Hosted by {s.userName}</div>
                           )}
-                          <div style={{ color: '#94A3B8', fontSize: 12, marginTop: 4 }}>
+                          <div className="history-duration">
                             Duration: {fmtDuration(s.durationSeconds)}
                           </div>
                         </div>

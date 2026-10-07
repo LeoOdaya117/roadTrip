@@ -1,4 +1,6 @@
 import React, { useState, useRef } from 'react';
+import { IonIcon } from '@ionic/react';
+import { imageOutline } from 'ionicons/icons';
 import type { Ride } from '../../types/ride';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
@@ -19,7 +21,7 @@ function extractCoords(geo: GeoJSON.GeoJSON): [number, number][] {
 export default function ShareImageGenerator({ ride }: Props) {
   const [generating, setGenerating] = useState(false);
   const [pngUrl, setPngUrl] = useState<string | null>(null);
-  const [overlayColor, setOverlayColor] = useState('#000000');
+  const [overlayColor, setOverlayColor] = useState('#285E7A');
   const [bgImageUrl, setBgImageUrl] = useState<string | null>(null);
   const [overlayEnabled, setOverlayEnabled] = useState(true);
   const [routeTitle, setRouteTitle] = useState(() => {
@@ -71,8 +73,8 @@ export default function ShareImageGenerator({ ride }: Props) {
         ctx.drawImage(img, ix, iy, iw, ih);
       } else {
         const bg = ctx.createLinearGradient(0, 0, 0, outH);
-        bg.addColorStop(0, '#06111a');
-        bg.addColorStop(1, '#041017');
+        bg.addColorStop(0, '#285E7A');
+        bg.addColorStop(1, '#17242B');
         ctx.fillStyle = bg;
         ctx.fillRect(0, 0, outW, outH);
       }
@@ -199,7 +201,7 @@ export default function ShareImageGenerator({ ride }: Props) {
         try {
           // Title (if provided)
           if (routeTitle) {
-            ctx.font = `800 ${titleFontSize}px Inter, system-ui, Arial`;
+            ctx.font = `600 ${titleFontSize}px Georgia, 'Times New Roman', serif`;
             ctx.fillStyle = headerTextColor;
             ctx.shadowColor = headerShadowColor;
             ctx.shadowBlur = headerShadowBlur;
@@ -211,7 +213,7 @@ export default function ShareImageGenerator({ ride }: Props) {
           // Make the ride type smaller than title but still prominent
           rideTypeFontSize = Math.round(titleFontSize * 0.78); // ~37px if title is 48px
           headerLineGap = 8; // uniform gap between header lines
-          ctx.font = `700 ${rideTypeFontSize}px Inter, system-ui, Arial`;
+          ctx.font = `700 ${rideTypeFontSize}px system-ui, 'Segoe UI', Arial`;
           ctx.fillStyle = headerTextColor;
           ctx.textBaseline = 'top';
           ctx.shadowColor = headerShadowColor;
@@ -232,7 +234,7 @@ export default function ShareImageGenerator({ ride }: Props) {
           // place the location line below the ride-type label, aligned with headerLeft
           const rtY = titleAreaY + titleFontSize + headerLineGap; // same rtY used earlier for ride-type
           const locTextTopY = rtY + rideTypeFontSize + headerLineGap; // top-aligned under ride-type using font size and uniform gap
-          ctx.font = `600 ${locationFontSize}px Inter, system-ui, Arial`;
+          ctx.font = `600 ${locationFontSize}px system-ui, 'Segoe UI', Arial`;
           ctx.textBaseline = 'top';
           const locCenterY = locTextTopY + locationFontSize / 2;
 
@@ -245,14 +247,14 @@ export default function ShareImageGenerator({ ride }: Props) {
           
           // start dot positioned at headerLeft + radius (so left edge starts at headerLeft)
           const startDotX = headerLeft + locDotRadius;
-          ctx.fillStyle = '#34D399';
+          ctx.fillStyle = '#D9E5DD';
           ctx.beginPath();
           ctx.arc(startDotX, dotOffsetY, locDotRadius, 0, Math.PI * 2);
           ctx.fill();
 
           // start location text after dot with small gap
           const startTextX = startDotX + locDotRadius + 8;
-          ctx.font = `600 ${locationFontSize}px Inter, system-ui, Arial`;
+          ctx.font = `600 ${locationFontSize}px system-ui, 'Segoe UI', Arial`;
           ctx.fillStyle = headerTextColor;
           ctx.textBaseline = 'top';
           ctx.fillText(startLocation, startTextX, locTextTopY);
@@ -268,7 +270,7 @@ export default function ShareImageGenerator({ ride }: Props) {
           const endDotX = arrowX + arrowWidth + 12;
 
           // end location dot
-          ctx.fillStyle = '#EF4444';
+          ctx.fillStyle = '#6F9DB4';
           ctx.beginPath();
           ctx.arc(endDotX, dotOffsetY, locDotRadius, 0, Math.PI * 2);
           ctx.fill();
@@ -355,8 +357,8 @@ export default function ShareImageGenerator({ ride }: Props) {
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
         const trackGrad = ctx.createLinearGradient(mapX, 0, mapX + mapW, 0);
-        trackGrad.addColorStop(0, '#FF6B35');
-        trackGrad.addColorStop(1, '#FFB58A');
+        trackGrad.addColorStop(0, '#6F9DB4');
+        trackGrad.addColorStop(1, '#B6D0DA');
         ctx.strokeStyle = trackGrad;
         ctx.globalAlpha = 0.92;
         ctx.beginPath();
@@ -377,8 +379,8 @@ export default function ShareImageGenerator({ ride }: Props) {
         ctx.beginPath(); ctx.arc(s[0], s[1], 11, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fill();
         ctx.beginPath(); ctx.arc(e[0], e[1], 11, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fill();
         // inner colored
-        ctx.beginPath(); ctx.arc(s[0], s[1], 7, 0, Math.PI * 2); ctx.fillStyle = '#34D399'; ctx.fill();
-        ctx.beginPath(); ctx.arc(e[0], e[1], 7, 0, Math.PI * 2); ctx.fillStyle = '#EF4444'; ctx.fill();
+        ctx.beginPath(); ctx.arc(s[0], s[1], 7, 0, Math.PI * 2); ctx.fillStyle = '#D9E5DD'; ctx.fill();
+        ctx.beginPath(); ctx.arc(e[0], e[1], 7, 0, Math.PI * 2); ctx.fillStyle = '#6F9DB4'; ctx.fill();
       } else {
         // placeholder small map tiles-like pattern
         ctx.fillStyle = 'rgba(255,255,255,0.02)';
@@ -439,7 +441,7 @@ export default function ShareImageGenerator({ ride }: Props) {
           const statY = primaryStartY + idx * primarySpacing;
 
           // value (primary large)
-          ctx.font = '900 92px Inter, system-ui, Arial';
+          ctx.font = '900 92px system-ui, "Segoe UI", Arial';
           ctx.fillStyle = '#ffffff';
           ctx.textBaseline = 'top';
           ctx.shadowColor = 'rgba(0,0,0,0.6)';
@@ -450,13 +452,13 @@ export default function ShareImageGenerator({ ride }: Props) {
           // unit
           if (st.unit) {
             const valueW = ctx.measureText(st.value).width;
-            ctx.font = '700 28px Inter, system-ui, Arial';
+            ctx.font = '700 28px system-ui, "Segoe UI", Arial';
             ctx.fillStyle = 'rgba(255,255,255,0.86)';
             ctx.fillText(st.unit, statX + valueW + 12, statY + 8);
           }
 
           // label
-          ctx.font = '700 28px Inter, system-ui, Arial';
+          ctx.font = '700 28px system-ui, "Segoe UI", Arial';
           ctx.fillStyle = 'rgba(255,255,255,0.82)';
           ctx.fillText(st.label, statX, statY + 100);
         });
@@ -471,7 +473,7 @@ export default function ShareImageGenerator({ ride }: Props) {
           const isWeather = st.label === 'Weather';
 
           // All secondary stats use uniform appearance (no special cases)
-          ctx.font = `700 ${secondaryFontSize}px Inter, system-ui, Arial`;
+          ctx.font = `700 ${secondaryFontSize}px system-ui, 'Segoe UI', Arial`;
           ctx.fillStyle = 'rgba(255,255,255,0.9)';
           ctx.textBaseline = 'top';
           ctx.shadowColor = 'rgba(0,0,0,0.45)';
@@ -480,10 +482,10 @@ export default function ShareImageGenerator({ ride }: Props) {
           if (isWeather && weatherIcon) {
             // draw icon using consistent proportion
             const iconSize = Math.floor(secondaryFontSize * 0.5); // 21px
-            ctx.font = `700 ${iconSize}px Inter, system-ui, Arial`;
+            ctx.font = `700 ${iconSize}px system-ui, 'Segoe UI', Arial`;
             ctx.fillText(weatherIcon, otherX, otherY + 4);
             const iconW = ctx.measureText(weatherIcon).width;
-            ctx.font = `700 ${secondaryFontSize}px Inter, system-ui, Arial`;
+            ctx.font = `700 ${secondaryFontSize}px system-ui, 'Segoe UI', Arial`;
             ctx.fillText(st.value, otherX + iconW + 10, otherY);
           } else {
             ctx.fillText(st.value, otherX, otherY);
@@ -495,13 +497,13 @@ export default function ShareImageGenerator({ ride }: Props) {
             const vW = (isWeather && weatherIcon) 
               ? ctx.measureText(st.value).width + ctx.measureText(weatherIcon).width + 10 
               : ctx.measureText(st.value).width;
-            ctx.font = '700 18px Inter, system-ui, Arial';
+            ctx.font = '700 18px system-ui, "Segoe UI", Arial';
             ctx.fillStyle = 'rgba(255,255,255,0.76)';
             ctx.fillText(st.unit, otherX + vW + 12, otherY + 12);
           }
 
           // label (closer to value like primary stats)
-          ctx.font = '600 18px Inter, system-ui, Arial';
+          ctx.font = '600 18px system-ui, "Segoe UI", Arial';
           ctx.fillStyle = 'rgba(255,255,255,0.74)';
           ctx.fillText(st.label, otherX, otherY + 50);
           
@@ -513,10 +515,10 @@ export default function ShareImageGenerator({ ride }: Props) {
         stats.forEach((stat, i) => {
           const statY = statsAreaY + i * statSpacing;
           const statX = mapX + 24;
-          ctx.font = '900 48px Inter, system-ui, Arial';
+          ctx.font = '900 48px system-ui, "Segoe UI", Arial';
           ctx.fillStyle = '#ffffff';
           ctx.fillText(stat.value, statX, statY);
-          ctx.font = '700 20px Inter, system-ui, Arial';
+          ctx.font = '700 20px system-ui, "Segoe UI", Arial';
           ctx.fillStyle = 'rgba(255,255,255,0.75)';
           ctx.fillText(stat.label, statX, statY + 56);
         });
@@ -711,7 +713,7 @@ export default function ShareImageGenerator({ ride }: Props) {
                   outline: 'none',
                   transition: 'border-color 0.2s'
                 }}
-                onFocus={(e) => e.target.style.borderColor = 'rgba(255,107,53,0.5)'}
+                onFocus={(e) => e.target.style.borderColor = 'rgb(40 94 122 / .5)'}
                 onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.12)'}
               />
             </div>
@@ -839,8 +841,8 @@ export default function ShareImageGenerator({ ride }: Props) {
               marginBottom: 12
             }}
             onMouseOver={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(255,107,53,0.5)';
-              e.currentTarget.style.background = 'rgba(255,107,53,0.1)';
+              e.currentTarget.style.borderColor = 'rgb(40 94 122 / .5)';
+              e.currentTarget.style.background = 'rgb(40 94 122 / .1)';
             }}
             onMouseOut={(e) => {
               e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)';
@@ -873,9 +875,9 @@ export default function ShareImageGenerator({ ride }: Props) {
                       cursor: 'pointer',
                       borderRadius: 8,
                       overflow: 'hidden',
-                      border: bgImageUrl === p ? '3px solid #FF6B35' : '2px solid rgba(255,255,255,0.1)',
+                      border: bgImageUrl === p ? '3px solid #285E7A' : '2px solid rgba(255,255,255,0.1)',
                       transition: 'all 0.2s',
-                      boxShadow: bgImageUrl === p ? '0 4px 12px rgba(255,107,53,0.3)' : 'none'
+                      boxShadow: bgImageUrl === p ? '0 4px 12px rgba(184,75,45,0.24)' : 'none'
                     }}
                   >
                     <img 
@@ -898,7 +900,7 @@ export default function ShareImageGenerator({ ride }: Props) {
                         width: 20,
                         height: 20,
                         borderRadius: '50%',
-                        background: '#FF6B35',
+                        background: '#285E7A',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -962,7 +964,7 @@ export default function ShareImageGenerator({ ride }: Props) {
                   width: 18, 
                   height: 18, 
                   cursor: 'pointer',
-                  accentColor: '#FF6B35'
+                  accentColor: '#285E7A'
                 }}
               />
               <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.8)' }}>
@@ -1010,14 +1012,14 @@ export default function ShareImageGenerator({ ride }: Props) {
               padding: '14px',
               fontSize: 16,
               fontWeight: 600,
-              background: 'linear-gradient(135deg, #FF6B35 0%, #FF8A5A 100%)',
+              background: '#285E7A',
               border: 'none',
               borderRadius: 10,
               color: '#fff',
               cursor: generating ? 'not-allowed' : 'pointer',
               opacity: generating ? 0.6 : 1,
               transition: 'all 0.2s',
-              boxShadow: '0 4px 12px rgba(255,107,53,0.3)'
+              boxShadow: '0 5px 14px rgba(40,94,122,0.24)'
             }}
           >
             {generating ? 'Generating…' : 'Generate Image'}
@@ -1032,10 +1034,10 @@ export default function ShareImageGenerator({ ride }: Props) {
                   padding: '12px',
                   fontSize: 14,
                   fontWeight: 600,
-                  background: 'rgba(52,211,153,0.15)',
-                  border: '1px solid rgba(52,211,153,0.3)',
-                  borderRadius: 8,
-                  color: '#34D399',
+                  background: '#E9E2D8',
+                  border: '1px solid #DFD1C1',
+                  borderRadius: 10,
+                  color: '#285E7A',
                   cursor: 'pointer',
                   outline: 'none',
                   WebkitTapHighlightColor: 'transparent'
@@ -1050,10 +1052,10 @@ export default function ShareImageGenerator({ ride }: Props) {
                   padding: '12px',
                   fontSize: 14,
                   fontWeight: 600,
-                  background: 'rgba(96,165,250,0.15)',
-                  border: '1px solid rgba(96,165,250,0.3)',
-                  borderRadius: 8,
-                  color: '#60A5FA',
+                  background: '#285E7A',
+                  border: '1px solid #285E7A',
+                  borderRadius: 10,
+                  color: '#F4EDE4',
                   cursor: 'pointer',
                   outline: 'none',
                   WebkitTapHighlightColor: 'transparent'
@@ -1107,7 +1109,7 @@ export default function ShareImageGenerator({ ride }: Props) {
             textAlign: 'center',
             color: 'rgba(255,255,255,0.4)'
           }}>
-            <div style={{ fontSize: 48, marginBottom: 12 }}>🖼️</div>
+            <IonIcon icon={imageOutline} aria-hidden="true" style={{ fontSize: 42, marginBottom: 12 }} />
             <div style={{ fontSize: 14 }}>
               Click "Generate Image" to see your<br />customized share image here
             </div>

@@ -11,8 +11,8 @@
 }
 
 .map-style-card {
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--rt-line);
+  background: var(--rt-surface);
   border-radius: 12px;
   width: 74px;
   padding: 6px;
@@ -20,7 +20,7 @@
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  color: #CBD5E1;
+  color: var(--rt-muted);
   cursor: pointer;
   transition: transform 0.12s ease, border-color 0.18s ease, background 0.18s ease;
   flex-shrink: 0;
@@ -31,16 +31,16 @@
 }
 
 .map-style-card-active {
-  border-color: rgba(255, 107, 53, 0.55);
-  background: rgba(255, 107, 53, 0.12);
-  color: #F8FAFC;
+  border-color: rgb(40 94 122 / .55);
+  background: var(--rt-sage);
+  color: var(--rt-primary);
 }
 
 .map-style-thumb {
   width: 100%;
   height: 42px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid var(--rt-line);
   background-size: cover;
   background-position: center;
   overflow: hidden;
@@ -69,9 +69,9 @@
 .map-overlay-chip {
   padding: 8px 12px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.04);
-  color: #cbd5e1;
+  border: 1px solid var(--rt-line);
+  background: var(--rt-surface);
+  color: var(--rt-text);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -79,9 +79,9 @@
 }
 
 .map-overlay-chip-active {
-  border-color: rgba(56, 189, 248, 0.46);
-  background: rgba(56, 189, 248, 0.16);
-  color: #e0f2fe;
+  border-color: var(--rt-primary);
+  background: var(--rt-sage);
+  color: var(--rt-primary);
 }
 
 .map-style-thumb-carto-light {

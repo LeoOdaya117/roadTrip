@@ -7,7 +7,9 @@ import {
   IonButtons,
   IonBackButton,
   IonToast,
+  IonIcon,
 } from '@ionic/react';
+import { pencilOutline } from 'ionicons/icons';
 import { useRef, useState, useEffect } from 'react';
 import { useRideStore } from '../store/rideStore';
 import { loadUserProfile, saveUserProfile } from '../services/user';
@@ -115,7 +117,7 @@ const AccountPage: React.FC = () => {
             ) : (
               <span className="account-avatar-initials">{initials}</span>
             )}
-            <span className="account-avatar-edit-badge">✎</span>
+            <span className="account-avatar-edit-badge"><IonIcon icon={pencilOutline} aria-hidden="true" /></span>
           </button>
           <p className="account-avatar-hint">Tap to change photo</p>
           {avatarUrl && (

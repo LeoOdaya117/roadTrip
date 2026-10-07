@@ -36,7 +36,7 @@ export default function ShareImagePage({ rideId }: Props) {
   return (
     <IonPage>
       <IonHeader>
-        <IonToolbar>
+        <IonToolbar className="app-toolbar">
           <IonButtons slot="start">
             <IonBackButton defaultHref={`/ride-history-stats/${rideId}`} />
           </IonButtons>

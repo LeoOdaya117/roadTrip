@@ -256,8 +256,8 @@ const HomePage: React.FC = () => {
 
         <div className="page-hero">
           <div className="hero-inner">
-            <h1>Ready for your<br /><span>next ride?</span></h1>
-            <p className="hero-sub">Start a solo route or bring your group onto one map.</p>
+            <h1>Bring your crew<br /><span>together.</span></h1>
+            <p className="hero-sub">Create a shared ride, join with an invite, or head out on your own.</p>
           </div>
         </div>
 
@@ -267,7 +267,7 @@ const HomePage: React.FC = () => {
 
         <div className="home-grid">
           {savedSession && (
-            <div className="glass-card resume-card">
+            <div className="glass-card resume-card crew-resume-card">
               <div className="card-head">
                 <div className="card-head-left">
                   <IonIcon icon={play} className="card-icon" />
@@ -295,18 +295,18 @@ const HomePage: React.FC = () => {
             </div>
           )}
 
-          <div className="glass-card card-feature card-hero">
+          <div className="glass-card card-feature card-hero crew-create-card">
             <div className="card-head">
               <div className="card-head-left">
                 <IonIcon icon={add} className="card-icon large" />
-                <span className="card-label">Start ride</span>
+                <span className="card-label">Plan a ride</span>
               </div>
             </div>
-            <p className="card-description">Choose whether this ride is a group session or a solo route.</p>
+            <p className="card-description">Bring everyone onto the same map, or switch to a solo route.</p>
 
-            <div className="start-mode-toggle" style={{ display: 'flex', gap: 8, marginTop: 8, marginBottom: 12 }}>
-              <button aria-pressed={startMode === 'group'} className={startMode === 'group' ? 'chip chip-active' : 'chip'} onClick={() => setStartMode('group')}>Group</button>
-              <button aria-pressed={startMode === 'solo'} className={startMode === 'solo' ? 'chip chip-active' : 'chip'} onClick={() => setStartMode('solo')}>Solo</button>
+            <div className="start-mode-toggle" role="group" aria-label="Ride type" style={{ display: 'flex', gap: 8, marginTop: 8, marginBottom: 12 }}>
+              <button type="button" aria-pressed={startMode === 'group'} className={startMode === 'group' ? 'chip chip-active' : 'chip'} onClick={() => setStartMode('group')}>Group ride</button>
+              <button type="button" aria-pressed={startMode === 'solo'} className={startMode === 'solo' ? 'chip chip-active' : 'chip'} onClick={() => setStartMode('solo')}>Solo ride</button>
             </div>
 
             <button
@@ -325,13 +325,13 @@ const HomePage: React.FC = () => {
                   <IonSpinner name="dots" style={{ width: 18, height: 18 }} />
                   Starting…
                 </span>
-              ) : (startMode === 'group' ? 'Create Ride' : 'Start Solo')}
+              ) : (startMode === 'group' ? 'Create group ride' : 'Start solo ride')}
             </button>
           </div>
 
-          <div className="glass-card join-card">
+          <div className="glass-card join-card crew-join-card">
             <div className="quick-header">
-              <div className="quick-title">Join Ride</div>
+              <div className="quick-title">Have an invite?</div>
               <div className="quick-divider" />
             </div>
             <div className="quick-row">
@@ -339,8 +339,8 @@ const HomePage: React.FC = () => {
                 <div className="card-head-left">
                   <IonIcon icon={people} className="card-icon" />
                   <div>
-                    <div className="card-label">Join</div>
-                    <div className="card-sub">Code</div>
+                    <div className="card-label">Join your crew</div>
+                    <div className="card-sub">Enter the ride code shared by your host.</div>
                   </div>
                 </div>
                 <div className="input-group" style={{ marginTop: 8 }}>
@@ -348,7 +348,7 @@ const HomePage: React.FC = () => {
                     id="ride-code"
                     className="custom-input"
                     type="text"
-                    placeholder="Enter code"
+                    placeholder="Ride code"
                     value={joinCode}
                     onChange={(e) => setJoinCode(e.target.value)}
                     autoComplete="off"

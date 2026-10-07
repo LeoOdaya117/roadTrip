@@ -368,6 +368,18 @@ const RideMapPage: React.FC = () => {
   }, [persistenceError]);
 
   const riders = useMemo(() => Object.values(ridersMap), [ridersMap]);
+  const crewMembers = useMemo(() => {
+    const members = riders.map(({ id, name, avatarUrl, isHost }) => ({ id, name, avatarUrl, isHost }));
+    if (currentUser && !members.some((rider) => rider.id === currentUser.id)) {
+      members.unshift({
+        id: currentUser.id,
+        name: currentUser.name,
+        avatarUrl: currentUser.avatarUrl,
+        isHost: currentUser.isHost
+      });
+    }
+    return members;
+  }, [currentUser, riders]);
 
   const center = location
     ? { lat: location.lat, lng: location.lng }
@@ -421,13 +433,14 @@ const RideMapPage: React.FC = () => {
   ];
 
   const MAP_OVERLAYS = [
-    { id: 'labels', label: 'Labels' },
     { id: 'riders', label: 'Riders' },
     { id: 'track', label: 'Ride Path' }
   ];
 
-  const [activeLayer, setActiveLayer] = useState(MAP_LAYERS[0]);
-  const [enabledOverlays, setEnabledOverlays] = useState<string[]>(['labels', 'riders', 'track']);
+  const [activeLayer, setActiveLayer] = useState(
+    () => MAP_LAYERS.find((layer) => layer.id === 'osm') ?? MAP_LAYERS[0]
+  );
+  const [enabledOverlays, setEnabledOverlays] = useState<string[]>(['riders', 'track']);
 
 
   const elapsedRef = useRef<number>(elapsedSeconds);
@@ -558,18 +571,6 @@ const RideMapPage: React.FC = () => {
         : [...prev, overlayId]
     );
   };
-
-  const labelsTileUrl = useMemo(() => {
-    if (!enabledOverlays.includes('labels')) {
-      return undefined;
-    }
-
-    if (activeLayer.id === 'carto-dark') {
-      return 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png';
-    }
-
-    return 'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png';
-  }, [activeLayer.id, enabledOverlays]);
 
   const handlePhotoClick = () => {
     fileInputRef.current?.click();
@@ -790,15 +791,13 @@ const RideMapPage: React.FC = () => {
             }}
             tileUrl={activeLayer.url}
             attribution={activeLayer.attribution}
-            labelsTileUrl={labelsTileUrl}
-            labelsAttribution="&copy; OpenStreetMap contributors &copy; CARTO"
             showRiders={enabledOverlays.includes('riders')}
             showTrack={enabledOverlays.includes('track')}
           />
 
           {/* ── Top bar: title + live badge only ── */}
           <div className="map-top-bar">
-            <span className="map-title">Live Ride</span>
+            <span className="map-title">{isSoloMode ? 'Solo ride' : 'Group ride'}</span>
             <div style={{ marginLeft: 'auto' }}>
               <span
                 className={topRideBadgeClass}
@@ -892,6 +891,25 @@ const RideMapPage: React.FC = () => {
                   </span>
                 </div>
               </div>
+
+              {!isSoloMode && (
+                <div className="sheet-crew-row" aria-label={`${crewMembers.length} riders in this group ride`}>
+                  <div className="sheet-crew-copy">
+                    <span className="sheet-crew-title">Your crew · {crewMembers.length}</span>
+                    <span className="sheet-crew-caption">
+                      {crewMembers.length > 1 ? 'Riders connected to this route' : 'Waiting for rider updates'}
+                    </span>
+                  </div>
+                  <div className="sheet-crew-list">
+                    {crewMembers.slice(0, 4).map((rider) => (
+                      <span className="sheet-crew-avatar" key={rider.id} title={rider.name}>
+                        {rider.avatarUrl ? <img src={rider.avatarUrl} alt="" /> : rider.name.slice(0, 1).toUpperCase()}
+                      </span>
+                    ))}
+                    {crewMembers.length > 4 && <span className="sheet-crew-avatar">+{crewMembers.length - 4}</span>}
+                  </div>
+                </div>
+              )}
 
               {/* Topics row */}
               <div className="sheet-section-label">Quick Message</div>

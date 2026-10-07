@@ -4,9 +4,10 @@ import {
   IonPage,
   IonSpinner,
   IonTitle,
-  IonToolbar
+  IonToolbar,
+  IonToast
 } from '@ionic/react';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useHistory, useParams } from 'react-router-dom';
 import { useRideChannel } from '../hooks/useRideChannel';
 import { useRideStore } from '../store/rideStore';
@@ -19,6 +20,7 @@ const RideLobbyPage: React.FC = () => {
   const currentUser = useRideStore((state) => state.currentUser);
   const setRide = useRideStore((state) => state.setRide);
   const riders = useRideStore((state) => state.riders);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (routeRideId) {
@@ -49,6 +51,16 @@ const RideLobbyPage: React.FC = () => {
     history.push(`/ride-map/${rideId}`);
   };
 
+  const handleCopyRideCode = async () => {
+    if (!rideId) return;
+    try {
+      await navigator.clipboard.writeText(rideId);
+      setCopyMessage('Ride code copied. Send it to your crew.');
+    } catch {
+      setCopyMessage('Copy is unavailable here. You can select the code above.');
+    }
+  };
+
   return (
     <IonPage>
       <IonHeader>
@@ -60,19 +72,24 @@ const RideLobbyPage: React.FC = () => {
 
         <div className="page-hero">
           <h1>Your ride<br /><span>is waiting.</span></h1>
-          <p>Give this code to your group so they can join.</p>
+          <p>Invite your riders with this code, then start when everyone is ready.</p>
         </div>
 
         {/* Ride code */}
         <div className="ride-code-display">
           <p className="ride-code-label">Ride code</p>
-          <span className="ride-code-value">{rideId ?? '---'}</span>
+          <div className="lobby-code-row">
+            <span className="ride-code-value">{rideId ?? '---'}</span>
+            <button className="lobby-copy-code" type="button" onClick={handleCopyRideCode} disabled={!rideId}>
+              Copy invite
+            </button>
+          </div>
         </div>
 
         {/* Participants */}
         <div className="glass-card">
           <span className="card-label">
-            Participants{riderList.length > 0 ? ` · ${riderList.length}` : ''}
+            Riders in this group{riderList.length > 0 ? ` · ${riderList.length}` : ''}
           </span>
           <div className="rider-list">
             {riderList.length === 0 && (
@@ -102,6 +119,13 @@ const RideLobbyPage: React.FC = () => {
         ) : (
           <p className="waiting-text">Waiting for the host to start the ride.</p>
         )}
+
+        <IonToast
+          isOpen={copyMessage !== null}
+          message={copyMessage ?? ''}
+          duration={2200}
+          onDidDismiss={() => setCopyMessage(null)}
+        />
 
       </IonContent>
     </IonPage>

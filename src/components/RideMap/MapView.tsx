@@ -47,17 +47,32 @@ export default function MapView({ polylineGeoJSON, height = 460, className, onMa
   const end = latlngs[latlngs.length - 1];
   const [mapRef, setMapRef] = useState<LeafletMap | null>(null);
 
+  if (latlngs.length === 0) {
+    return (
+      <div
+        className={`map-empty-state${className ? ` ${className}` : ''}`}
+        style={{ height, position: 'relative' }}
+        role="status"
+      >
+        No route points were recorded for this ride.
+      </div>
+    );
+  }
+
   return (
     <div className={className} style={{ height, position: 'relative' }}>
       <MapContainer center={start || [0, 0]} zoom={13} maxZoom={22} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false} zoomControl={false}>
-        <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution="&copy; OpenStreetMap contributors"
+        />
         {latlngs.length > 0 && (
           <>
             {/* subtle shadow beneath the route for better contrast on photos */}
             <Polyline positions={latlngs} pathOptions={{ color: 'rgba(0,0,0,0.12)', weight: 8, opacity: 1, lineCap: 'round' }} />
-            <Polyline positions={latlngs} pathOptions={{ color: '#ff6b2d', weight: 4, opacity: 0.75, lineCap: 'round' }} />
-            {start && <CircleMarker center={start} radius={6} pathOptions={{ color: '#34D399', fillColor: '#34D399' }} />}
-            {end && <CircleMarker center={end} radius={6} pathOptions={{ color: '#FB7185', fillColor: '#FB7185' }} />}
+            <Polyline positions={latlngs} pathOptions={{ color: '#285E7A', weight: 4, opacity: 0.9, lineCap: 'round' }} />
+            {start && <CircleMarker center={start} radius={6} pathOptions={{ color: '#285E7A', fillColor: '#285E7A' }} />}
+            {end && <CircleMarker center={end} radius={6} pathOptions={{ color: '#285E7A', fillColor: '#285E7A' }} />}
             <FitBounds geo={polylineGeoJSON} />
             <OnMapReady onMapReady={onMapReady} setInternalMap={setMapRef} />
           </>
@@ -74,7 +89,7 @@ export default function MapView({ polylineGeoJSON, height = 460, className, onMa
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M12 2v2M12 20v2M4 12H2M22 12h-2M6.34 6.34L4.93 4.93M19.07 19.07l-1.41-1.41M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke="#08101a" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          <circle cx="12" cy="12" r="3" fill="#ff6b35" />
+          <circle cx="12" cy="12" r="3" fill="#285E7A" />
         </svg>
       </button>
     </div>
