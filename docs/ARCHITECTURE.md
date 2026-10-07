@@ -255,6 +255,7 @@ change requires a new Dexie version and an explicit compatibility/migration deci
 | --- | --- | --- |
 | `rt_profile_name` | `services/user.ts` | Optional saved display name |
 | `rt_profile_avatar` | `services/user.ts` | Optional resized avatar data URL |
+| `roadtrip:theme-preference` | `ThemeProvider` | `system`, `light`, or `dark` appearance preference |
 | `ride_timer_state_v1` | `useRideTimer` | Elapsed seconds, running state, save timestamp |
 | `bg_last_location_ts` | Background provider | Timestamp of latest background point |
 | `ride:hidden:<rideId>` | Home/map lifecycle | Suppress an ended ride from resume |

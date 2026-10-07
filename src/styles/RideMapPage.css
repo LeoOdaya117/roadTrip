@@ -29,9 +29,9 @@
 .map-fab:hover { background: rgba(255,255,255,0.06); color: #F1F5F9; }
 
 .map-fab.fab-active {
-  background: rgba(255, 107, 53, 0.18);
-  border-color: rgba(255, 107, 53, 0.4);
-  color: #FF8255;
+  background: rgb(40 94 122 / .18);
+  border-color: rgb(40 94 122 / .4);
+  color: var(--rt-route);
 }
 
 .map-fab.fab-stopover {

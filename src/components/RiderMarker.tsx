@@ -46,8 +46,8 @@ const createPhotoIcon = (photoUrl?: string, size = 46, isCurrentUser = false, ac
     const html = `
       <div class="rider-me-wrapper" style="width:${compactSize}px;height:${compactSize}px; --pulse-size: ${pulseSize}px; --pulse-opacity: ${pulseOpacity}; --ring-alpha: ${ringBaseOpacity}; --pulse-duration: 3000ms;">
         <div class="rider-me-pulse" aria-hidden="true">
-          <div class="ring ring-1" style="background: rgba(255,107,53, var(--ring-alpha));"></div>
-          <div class="ring ring-2" style="background: rgba(255,107,53, var(--ring-alpha)); animation-delay: calc(-1 * var(--pulse-duration) / 2);"></div>
+          <div class="ring ring-1" style="background: rgb(40 94 122 / var(--ring-alpha));"></div>
+          <div class="ring ring-2" style="background: rgb(40 94 122 / var(--ring-alpha)); animation-delay: calc(-1 * var(--pulse-duration) / 2);"></div>
         </div>
         <div class="rider-icon rider-icon--me" style="width:${compactSize}px;height:${compactSize}px;">
           ${imgHtml}

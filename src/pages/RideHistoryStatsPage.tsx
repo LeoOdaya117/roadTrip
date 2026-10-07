@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation, useHistory } from 'react-router-dom';
 import { IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent } from '@ionic/react';
 import ReplayIcon from '../components/Icons/ReplayIcon';
@@ -22,6 +22,9 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
   const params = new URLSearchParams(location.search);
   const [replayMode, setReplayMode] = useState<boolean>(params.get('mode') === 'replay');
   const [playing, setPlaying] = useState(false);
+  const handleMapReady = useCallback((map: LeafletMap) => {
+    setMapInstance(map);
+  }, []);
 
   useEffect(() => {
     // update replay mode if query changes
@@ -65,30 +68,21 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
         latlngs = geometry.coordinates.map((coordinate) => [coordinate[1], coordinate[0]]);
       }
       if (latlngs.length > 0) {
-        setTimeout(() => {
+        const timeout = window.setTimeout(() => {
           try {
             mapInstance.invalidateSize();
             mapInstance.fitBounds(latlngs as LatLngBoundsExpression, { padding: [40, 40] });
           } catch (e) { console.warn('fitBounds failed', e); }
         }, 300);
+        return () => window.clearTimeout(timeout);
       }
+      return undefined;
     } catch (e) { console.warn('fit route failed', e); }
   }, [mapInstance, ride]);
 
-  if (loading) return <div style={{ padding: 20 }}>Loading ride...</div>;
-  if (error) return <div style={{ padding: 20, color: 'red' }}>Error: {error}</div>;
-  if (!ride) return <div style={{ padding: 20 }}>Ride not found.</div>;
-
-  const saveSampleToLocal = () => {
-    const key = `ride:${rideId}`;
-    try {
-      localStorage.setItem(key, JSON.stringify(ride));
-      alert('Saved sample ride to localStorage under ' + key);
-    } catch (err) {
-      console.warn(err);
-      alert('Failed to save to localStorage');
-    }
-  };
+  if (loading) return <IonPage><IonContent className="app-page"><div className="screen-state" role="status">Loading ride summary…</div></IonContent></IonPage>;
+  if (error) return <IonPage><IonContent className="app-page"><div className="screen-state" role="alert">Couldn’t load this ride. {error}</div></IonContent></IonPage>;
+  if (!ride) return <IonPage><IonContent className="app-page"><div className="screen-state" role="status">Ride not found.</div></IonContent></IonPage>;
 
   const togglePlay = () => {
     setPlaying((v) => !v);
@@ -97,14 +91,19 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
   return (
     <IonPage>
       <IonHeader>
-        <IonToolbar>
+        <IonToolbar className="app-toolbar">
           <IonButtons slot="start">
             <IonBackButton defaultHref="/ride-history" />
           </IonButtons>
           <IonTitle>Ride Summary</IonTitle>
         </IonToolbar>
       </IonHeader>
-      <IonContent>
+      <IonContent className="summary-screen app-page">
+        <div className="summary-heading">
+          <h1>Ride complete</h1>
+          <p>{new Date(ride.startTimeISO).toLocaleDateString(undefined, { dateStyle: 'full' })}</p>
+          <span className="summary-ride-type">{rideId.startsWith('solo-') ? 'Solo route' : 'Shared group ride'}</span>
+        </div>
         <div className="ride-history-page">
           {replayMode && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, margin: '12px 12px 0 12px' }}>
@@ -138,7 +137,14 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
 
               <div className="rh-card">
                 <div className="rh-section-title">Customize</div>
-                <p style={{ marginBottom: 12, opacity: 0.7, fontSize: 14 }}>Create a customizable share image for social media</p>
+                <p style={{ marginBottom: 12, opacity: 0.7, fontSize: 14 }}>Replay the route or create an image to share this ride.</p>
+                <button
+                  className="rh-generate-btn"
+                  onClick={() => history.push(`/ride-replay/${rideId}`)}
+                  style={{ width: '100%', marginBottom: 8 }}
+                >
+                  Replay ride
+                </button>
                 <button 
                   className="rh-generate-btn" 
                   onClick={() => history.push(`/ride-history-stats/${rideId}/share`)}
@@ -150,13 +156,10 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
 
               
 
-              <div>
-                <button className="rh-small-btn" onClick={saveSampleToLocal} style={{ marginTop: 8 }}>Save sample ride to localStorage</button>
-              </div>
             </div>
 
             <div className="rh-card rh-map">
-              <MapView polylineGeoJSON={ride.polylineGeoJSON} height={420} onMapReady={m => setMapInstance(m)} />
+              <MapView polylineGeoJSON={ride.polylineGeoJSON} height={420} onMapReady={handleMapReady} />
             </div>
           </div>
         </div>

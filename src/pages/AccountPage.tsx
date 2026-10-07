@@ -7,14 +7,19 @@ import {
   IonButtons,
   IonBackButton,
   IonToast,
+  IonIcon,
 } from '@ionic/react';
+import { pencilOutline } from 'ionicons/icons';
 import { useRef, useState, useEffect } from 'react';
 import { useRideStore } from '../store/rideStore';
 import { loadUserProfile, saveUserProfile } from '../services/user';
+import { useThemePreference } from '../context/useThemePreference';
+import type { ThemePreference } from '../context/themePreference';
 
 const AccountPage: React.FC = () => {
   const currentUser = useRideStore((s) => s.currentUser);
   const updateCurrentUser = useRideStore((s) => s.updateCurrentUser);
+  const { preference, setPreference } = useThemePreference();
 
   const [name, setName] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
@@ -103,7 +108,7 @@ const AccountPage: React.FC = () => {
         </IonToolbar>
       </IonHeader>
 
-      <IonContent className="app-page page-content">
+      <IonContent className="app-page page-content account-screen">
         {/* Avatar */}
         <div className="account-avatar-section">
           <button className="account-avatar-btn" onClick={handleAvatarClick} aria-label="Change profile photo">
@@ -112,7 +117,7 @@ const AccountPage: React.FC = () => {
             ) : (
               <span className="account-avatar-initials">{initials}</span>
             )}
-            <span className="account-avatar-edit-badge">✎</span>
+            <span className="account-avatar-edit-badge"><IonIcon icon={pencilOutline} aria-hidden="true" /></span>
           </button>
           <p className="account-avatar-hint">Tap to change photo</p>
           {avatarUrl && (
@@ -147,8 +152,26 @@ const AccountPage: React.FC = () => {
           </div>
         </div>
 
+        <section className="theme-choice" aria-labelledby="theme-choice-title">
+          <h2 id="theme-choice-title">Appearance</h2>
+          <p>Choose how RoadTrip looks on this device.</p>
+          <div className="theme-choice-options" role="group" aria-label="Color theme">
+            {(['system', 'light', 'dark'] as ThemePreference[]).map((option) => (
+              <button
+                key={option}
+                type="button"
+                className="theme-choice-option"
+                aria-pressed={preference === option}
+                onClick={() => setPreference(option)}
+              >
+                {option === 'system' ? 'System' : option === 'light' ? 'Light' : 'Dark'}
+              </button>
+            ))}
+          </div>
+        </section>
+
         <button
-          className="btn-primary"
+          className="btn-primary account-save"
           onClick={handleSave}
           disabled={!name.trim()}
         >

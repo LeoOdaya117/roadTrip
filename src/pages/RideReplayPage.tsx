@@ -290,19 +290,25 @@ const RideReplayPage: React.FC = () => {
           <IonTitle>Replay</IonTitle>
         </IonToolbar>
       </IonHeader>
-      <IonContent className="app-page page-content">
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ fontWeight: 800 }}>{sessionLabel}</div>
+      <IonContent className="app-page page-content replay-screen">
+        <div className="replay-heading">
+          <div className="replay-session-row">
+            <div className="replay-session-title">{sessionLabel}</div>
+            <span className="replay-ride-type">{rideId.startsWith('solo-') ? 'Solo route' : 'Group ride'}</span>
+          </div>
           {(!points || points.length === 0) && (
             <div style={{ marginTop: 8, color: '#94A3B8' }}>No recorded track points available for this session.</div>
           )}
         </div>
 
-        <div style={{ height: 320, borderRadius: 12, overflow: 'hidden' }}>
+        <div className="replay-map">
           {mapReady && (
             <MapContainer ref={mapRef} center={center} zoom={13} maxZoom={22} style={{ width: '100%', height: '100%' }}>
             
-            <TileLayer url={'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'} />
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution="&copy; OpenStreetMap contributors"
+            />
               {points && points.length > 0 && (
               <>
                 {splitTrackSegments(points)
@@ -311,13 +317,13 @@ const RideReplayPage: React.FC = () => {
                     <Polyline
                       key={`segment-${segmentIndex}`}
                       positions={segment.map((point) => [point.lat, point.lng])}
-                      pathOptions={{ color: '#FF6B35', weight: 3, opacity: 0.9 }}
+                      pathOptions={{ color: '#285E7A', weight: 4, opacity: 0.95 }}
                     />
                   ))}
-                {points[0] && <CircleMarker center={[points[0].lat, points[0].lng]} radius={5} pathOptions={{ color: '#34D399', fillColor: '#34D399' }} />}
-                {points[points.length - 1] && <CircleMarker center={[points[points.length - 1].lat, points[points.length - 1].lng]} radius={5} pathOptions={{ color: '#FB7185', fillColor: '#FB7185' }} />}
+                {points[0] && <CircleMarker center={[points[0].lat, points[0].lng]} radius={5} pathOptions={{ color: '#285E7A', fillColor: '#285E7A' }} />}
+                {points[points.length - 1] && <CircleMarker center={[points[points.length - 1].lat, points[points.length - 1].lng]} radius={5} pathOptions={{ color: '#285E7A', fillColor: '#285E7A' }} />}
                 {current && (
-                  <CircleMarker center={[current.lat, current.lng]} radius={8} pathOptions={{ color: '#FF6B35', fillColor: '#FF6B35' }} />
+                  <CircleMarker center={[current.lat, current.lng]} radius={8} pathOptions={{ color: '#285E7A', fillColor: '#285E7A' }} />
                 )}
               </>
                 )}
@@ -337,19 +343,20 @@ const RideReplayPage: React.FC = () => {
           
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
-          <IonButton onClick={() => { setIndex(0); setPlaying(false); }} disabled={points.length === 0}>
+        <div className="replay-controls">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+          <IonButton aria-label="Restart replay" onClick={() => { setIndex(0); setPlaying(false); }} disabled={points.length === 0}>
             <IonIcon icon={playSkipBack} />
           </IonButton>
-          <IonButton onClick={() => setPlaying((p) => !p)} disabled={points.length === 0}>
+          <IonButton aria-label={playing ? 'Pause replay' : 'Play replay'} onClick={() => setPlaying((p) => !p)} disabled={points.length === 0}>
             <IonIcon icon={playing ? pause : play} />
           </IonButton>
-          <IonButton onClick={() => setIndex((i) => Math.min(points.length - 1, i + 1))} disabled={points.length === 0}>
+          <IonButton aria-label="Skip forward" onClick={() => setIndex((i) => Math.min(points.length - 1, i + 1))} disabled={points.length === 0}>
             <IonIcon icon={playSkipForward} />
           </IonButton>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 12, color: '#94A3B8', marginBottom: 6 }}>Playback speed: {speedFactor}x</div>
-            <IonRange min={0.25} max={4} step={0.25} value={speedFactor} onIonChange={(event) => {
+            <IonRange aria-label="Playback speed" min={0.25} max={4} step={0.25} value={speedFactor} onIonChange={(event) => {
               if (typeof event.detail.value === 'number') setSpeedFactor(event.detail.value);
             }}>
             </IonRange>
@@ -357,7 +364,7 @@ const RideReplayPage: React.FC = () => {
         </div>
 
         <div style={{ marginTop: 8 }}>
-          <IonRange min={0} max={Math.max(0, points.length - 1)} step={1} value={safeIndex} onIonChange={(event) => {
+          <IonRange aria-label="Replay position" min={0} max={Math.max(0, points.length - 1)} step={1} value={safeIndex} onIonChange={(event) => {
             if (typeof event.detail.value === 'number') setIndex(event.detail.value);
           }}>
           </IonRange>
@@ -411,6 +418,7 @@ const RideReplayPage: React.FC = () => {
                 </div>
           </div>
         </IonModal>
+        </div>
 
       </IonContent>
     </IonPage>

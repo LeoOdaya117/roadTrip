@@ -29,22 +29,22 @@ export default function ShareImagePage({ rideId }: Props) {
     return () => { mounted = false };
   }, [rideId]);
 
-  if (loading) return <div style={{ padding: 20 }}>Loading ride...</div>;
-  if (error) return <div style={{ padding: 20, color: 'red' }}>Error: {error}</div>;
-  if (!ride) return <div style={{ padding: 20 }}>Ride not found.</div>;
+  if (loading) return <IonPage><IonContent className="app-page"><div className="screen-state" role="status">Loading ride details…</div></IonContent></IonPage>;
+  if (error) return <IonPage><IonContent className="app-page"><div className="screen-state" role="alert">Couldn’t load this ride. {error}</div></IonContent></IonPage>;
+  if (!ride) return <IonPage><IonContent className="app-page"><div className="screen-state" role="status">Ride not found.</div></IonContent></IonPage>;
 
   return (
     <IonPage>
       <IonHeader>
-        <IonToolbar>
+        <IonToolbar className="app-toolbar">
           <IonButtons slot="start">
             <IonBackButton defaultHref={`/ride-history-stats/${rideId}`} />
           </IonButtons>
           <IonTitle>Create Share Image</IonTitle>
         </IonToolbar>
       </IonHeader>
-      <IonContent>
-        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '20px' }}>
+      <IonContent className="app-page page-content share-screen">
+        <div className="screen-shell">
           <ShareImageGenerator ride={ride} />
         </div>
       </IonContent>
