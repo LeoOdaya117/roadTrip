@@ -56,12 +56,11 @@ const RideLobbyPage: React.FC = () => {
           <IonTitle>Lobby</IonTitle>
         </IonToolbar>
       </IonHeader>
-      <IonContent className="app-page page-content">
+      <IonContent className="app-page page-content lobby-page">
 
         <div className="page-hero">
-          <p className="hero-eyebrow">Ready to roll</p>
           <h1>Your ride<br /><span>is waiting.</span></h1>
-          <p>Share the code below with your group.</p>
+          <p>Give this code to your group so they can join.</p>
         </div>
 
         {/* Ride code */}

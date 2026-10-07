@@ -1,10 +1,18 @@
 /* RoadTrip Live — Design Tokens */
 :root {
+  color-scheme: dark;
+  --rt-bg: #0b0f12;
+  --rt-surface: #141a1f;
+  --rt-surface-raised: #1b2329;
+  --rt-line: #303940;
+  --rt-text: #f3f5f4;
+  --rt-muted: #aeb9bd;
+  --rt-accent: #ff713b;
   /* Brand: Energetic Orange */
   --ion-color-primary: #FF6B35;
   --ion-color-primary-rgb: 255, 107, 53;
-  --ion-color-primary-contrast: #ffffff;
-  --ion-color-primary-contrast-rgb: 255, 255, 255;
+  --ion-color-primary-contrast: #171b1d;
+  --ion-color-primary-contrast-rgb: 23, 27, 29;
   --ion-color-primary-shade: #E05A28;
   --ion-color-primary-tint: #FF8255;
 
@@ -107,4 +115,50 @@
   --ion-toolbar-background:    rgba(8, 10, 18, 0.96);
   --ion-toolbar-color:         #F1F5F9;
   --ion-toolbar-border-color:  rgba(255, 255, 255, 0.07);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --ion-background-color: #f4f5f2;
+  --ion-background-color-rgb: 244, 245, 242;
+  --ion-text-color: #1c2529;
+  --ion-text-color-rgb: 28, 37, 41;
+  --ion-color-light: #e9ece8;
+  --ion-color-light-rgb: 233, 236, 232;
+  --ion-color-light-contrast: #1c2529;
+  --ion-color-dark: #202a2e;
+  --ion-color-dark-rgb: 32, 42, 46;
+  --ion-color-dark-contrast: #ffffff;
+  --ion-color-step-50: #eef0ed;
+  --ion-color-step-100: #e5e8e5;
+  --ion-color-step-150: #dce0dd;
+  --ion-color-step-200: #d1d7d4;
+  --ion-color-step-250: #c7cfcc;
+  --ion-color-step-300: #bcc6c3;
+  --ion-color-step-350: #aeb9b6;
+  --ion-color-step-400: #9eaaa7;
+  --ion-color-step-450: #8c9996;
+  --ion-color-step-500: #778582;
+  --ion-color-step-550: #64716e;
+  --ion-color-step-600: #53605d;
+  --ion-color-step-650: #45514e;
+  --ion-color-step-700: #384441;
+  --ion-color-step-750: #2d3835;
+  --ion-color-step-800: #252f2c;
+  --ion-color-step-850: #202a27;
+  --ion-color-step-900: #1c2522;
+  --ion-color-step-950: #171f1c;
+  --ion-card-background: #ffffff;
+  --ion-item-color: #1c2529;
+  --ion-border-color: #d9dfdb;
+  --ion-placeholder-color: #6c7a77;
+  --ion-toolbar-background: #f4f5f2;
+  --ion-toolbar-color: #1c2529;
+  --ion-toolbar-border-color: #d9dfdb;
+  --rt-bg: #f4f5f2;
+  --rt-surface: #ffffff;
+  --rt-surface-raised: #edf0ed;
+  --rt-line: #d9dfdb;
+  --rt-text: #1c2529;
+  --rt-muted: #586764;
 }

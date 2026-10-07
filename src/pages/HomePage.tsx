@@ -252,13 +252,12 @@ const HomePage: React.FC = () => {
           {/* last-session pill removed from header — moved into page content */}
         </IonToolbar>
       </IonHeader>
-      <IonContent className="app-page page-content home-minimal">
+      <IonContent className="app-page page-content home-minimal home-page">
 
         <div className="page-hero">
           <div className="hero-inner">
-            <p className="hero-eyebrow">Live tracking</p>
-            <h1>Ride together,<br /><span>stay connected.</span></h1>
-            <p className="hero-sub">Create or join a trip and track everyone on one map.</p>
+            <h1>Ready for your<br /><span>next ride?</span></h1>
+            <p className="hero-sub">Start a solo route or bring your group onto one map.</p>
           </div>
         </div>
 
@@ -306,8 +305,8 @@ const HomePage: React.FC = () => {
             <p className="card-description">Choose whether this ride is a group session or a solo route.</p>
 
             <div className="start-mode-toggle" style={{ display: 'flex', gap: 8, marginTop: 8, marginBottom: 12 }}>
-              <button className={startMode === 'group' ? 'chip chip-active' : 'chip'} onClick={() => setStartMode('group')}>Group</button>
-              <button className={startMode === 'solo' ? 'chip chip-active' : 'chip'} onClick={() => setStartMode('solo')}>Solo</button>
+              <button aria-pressed={startMode === 'group'} className={startMode === 'group' ? 'chip chip-active' : 'chip'} onClick={() => setStartMode('group')}>Group</button>
+              <button aria-pressed={startMode === 'solo'} className={startMode === 'solo' ? 'chip chip-active' : 'chip'} onClick={() => setStartMode('solo')}>Solo</button>
             </div>
 
             <button

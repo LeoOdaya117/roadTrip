@@ -17,6 +17,8 @@ import {
   IonItemOption,
   IonInfiniteScroll,
   IonInfiniteScrollContent,
+  IonAlert,
+  IonButton,
 } from '@ionic/react';
 import { MapContainer, TileLayer, Polyline, CircleMarker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -60,6 +62,7 @@ const RideHistoryPage: React.FC = () => {
   const [photosByRide, setPhotosByRide] = useState<Record<string, PhotoRecord[]>>({});
   const [photoUrlsByRide, setPhotoUrlsByRide] = useState<Record<string, string[]>>({});
   const [toast, setToast] = useState<string | null>(null);
+  const [rideToDelete, setRideToDelete] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const pageSize = 8;
   const [loadingMore, setLoadingMore] = useState(false);
@@ -137,10 +140,9 @@ const RideHistoryPage: React.FC = () => {
   };
 
   const handleDelete = async (rideId: string) => {
-    const ok = window.confirm('Delete this session and its track points?');
-    if (!ok) return;
     await deleteSession(rideId);
     setSessions((s) => s.filter((x) => x.rideId !== rideId));
+    setRideToDelete(null);
     setToast('Session deleted');
   };
 
@@ -166,7 +168,7 @@ const RideHistoryPage: React.FC = () => {
           <IonTitle>Ride History</IonTitle>
         </IonToolbar>
       </IonHeader>
-      <IonContent className="app-page page-content">
+      <IonContent className="app-page page-content history-screen">
         <div style={{ padding: '8px 0 16px' }}>
           <IonSegment value={filter} onIonChange={(event) => {
             if (event.detail.value === 'solo' || event.detail.value === 'group') {
@@ -183,7 +185,13 @@ const RideHistoryPage: React.FC = () => {
         </div>
 
         <div className="history-list">
-          {list.length === 0 && <p className="waiting-text">No sessions found.</p>}
+          {list.length === 0 && (
+            <div className="history-empty">
+              <h2>No {filter} rides yet</h2>
+              <p>Completed rides will appear here with their route, stats, and photos.</p>
+              <IonButton routerLink="/home">Start a ride</IonButton>
+            </div>
+          )}
           {list.map((s) => {
             const tracks = tracksByRide[s.rideId] || [];
             const first = tracks && tracks.length ? tracks[0] : undefined;
@@ -239,7 +247,7 @@ const RideHistoryPage: React.FC = () => {
                   </div>
                 </IonItem>
                 <IonItemOptions side="end">
-                  <IonItemOption color="danger" onClick={() => handleDelete(s.rideId)}>Delete</IonItemOption>
+                  <IonItemOption color="danger" onClick={() => setRideToDelete(s.rideId)}>Delete</IonItemOption>
                 </IonItemOptions>
               </IonItemSliding>
             );
@@ -250,6 +258,16 @@ const RideHistoryPage: React.FC = () => {
         </div>
 
         <IonToast isOpen={toast !== null} message={toast ?? ''} duration={1600} onDidDismiss={() => setToast(null)} />
+        <IonAlert
+          isOpen={rideToDelete !== null}
+          header="Delete this ride?"
+          message="This removes the ride session and its recorded track from this device."
+          buttons={[
+            { text: 'Cancel', role: 'cancel', handler: () => setRideToDelete(null) },
+            { text: 'Delete', role: 'destructive', handler: () => { if (rideToDelete) void handleDelete(rideToDelete); } },
+          ]}
+          onDidDismiss={() => setRideToDelete(null)}
+        />
       </IonContent>
     </IonPage>
   );

@@ -75,9 +75,9 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
     } catch (e) { console.warn('fit route failed', e); }
   }, [mapInstance, ride]);
 
-  if (loading) return <div style={{ padding: 20 }}>Loading ride...</div>;
-  if (error) return <div style={{ padding: 20, color: 'red' }}>Error: {error}</div>;
-  if (!ride) return <div style={{ padding: 20 }}>Ride not found.</div>;
+  if (loading) return <IonPage><IonContent className="app-page"><div className="screen-state" role="status">Loading ride summary…</div></IonContent></IonPage>;
+  if (error) return <IonPage><IonContent className="app-page"><div className="screen-state" role="alert">Couldn’t load this ride. {error}</div></IonContent></IonPage>;
+  if (!ride) return <IonPage><IonContent className="app-page"><div className="screen-state" role="status">Ride not found.</div></IonContent></IonPage>;
 
   const saveSampleToLocal = () => {
     const key = `ride:${rideId}`;
@@ -104,7 +104,7 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
           <IonTitle>Ride Summary</IonTitle>
         </IonToolbar>
       </IonHeader>
-      <IonContent>
+      <IonContent className="summary-screen app-page">
         <div className="ride-history-page">
           {replayMode && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, margin: '12px 12px 0 12px' }}>
@@ -138,7 +138,14 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
 
               <div className="rh-card">
                 <div className="rh-section-title">Customize</div>
-                <p style={{ marginBottom: 12, opacity: 0.7, fontSize: 14 }}>Create a customizable share image for social media</p>
+                <p style={{ marginBottom: 12, opacity: 0.7, fontSize: 14 }}>Replay the route or create an image to share this ride.</p>
+                <button
+                  className="rh-generate-btn"
+                  onClick={() => history.push(`/ride-replay/${rideId}`)}
+                  style={{ width: '100%', marginBottom: 8 }}
+                >
+                  Replay ride
+                </button>
                 <button 
                   className="rh-generate-btn" 
                   onClick={() => history.push(`/ride-history-stats/${rideId}/share`)}

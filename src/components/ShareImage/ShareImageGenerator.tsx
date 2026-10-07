@@ -663,7 +663,7 @@ export default function ShareImageGenerator({ ride }: Props) {
   };
 
   return (
-    <div style={{ 
+    <div className="share-layout" style={{
       display: 'grid', 
       gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 400px), 1fr))', 
       gap: 20, 
@@ -847,7 +847,7 @@ export default function ShareImageGenerator({ ride }: Props) {
               e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
             }}
           >
-            📁 Choose from Gallery
+            Choose from Gallery
           </button>
           
           {ride.photoUrls && ride.photoUrls.length > 0 && (
@@ -1020,7 +1020,7 @@ export default function ShareImageGenerator({ ride }: Props) {
               boxShadow: '0 4px 12px rgba(255,107,53,0.3)'
             }}
           >
-            {generating ? '⏳ Generating…' : '✨ Generate Image'}
+            {generating ? 'Generating…' : 'Generate Image'}
           </button>
           
           {pngUrl && (
@@ -1041,7 +1041,7 @@ export default function ShareImageGenerator({ ride }: Props) {
                   WebkitTapHighlightColor: 'transparent'
                 }}
               >
-                💾 Download
+                Download
               </button>
               <button 
                 className="rh-generate-btn" 
@@ -1059,7 +1059,7 @@ export default function ShareImageGenerator({ ride }: Props) {
                   WebkitTapHighlightColor: 'transparent'
                 }}
               >
-                📤 Share
+                Share
               </button>
             </div>
           )}

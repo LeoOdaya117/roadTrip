@@ -8,6 +8,8 @@ import {
 import { IonReactRouter } from '@ionic/react-router';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { Capacitor } from '@capacitor/core';
+import ThemeProvider from './context/ThemeProvider';
+import AppNavigation from './components/AppNavigation';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
 const RideLobbyPage = lazy(() => import('./pages/RideLobbyPage'));
@@ -31,6 +33,7 @@ import '@ionic/react/css/display.css';
 import '@ionic/react/css/palettes/dark.system.css';
 import './theme/variables.css';
 import './App.css';
+import './styles/route-cockpit.css';
 
 setupIonicReact();
 
@@ -42,9 +45,10 @@ const App: React.FC = () => {
   }, []);
 
   return (
-    <IonApp>
-      <IonReactRouter>
-        <Suspense fallback={null}>
+    <ThemeProvider>
+      <IonApp>
+        <IonReactRouter>
+          <Suspense fallback={null}>
           <IonRouterOutlet>
             <Route exact path="/home">
               <HomePage />
@@ -82,9 +86,11 @@ const App: React.FC = () => {
               <Redirect to="/home" />
             </Route>
           </IonRouterOutlet>
-        </Suspense>
-      </IonReactRouter>
-    </IonApp>
+            <AppNavigation />
+          </Suspense>
+        </IonReactRouter>
+      </IonApp>
+    </ThemeProvider>
   );
 };
 

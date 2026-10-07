@@ -1,11 +1,5 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-
-interface AppState {
-  ready: boolean;
-  setReady: (v: boolean) => void;
-}
-
-const AppContext = createContext<AppState | undefined>(undefined);
+import React, { useState, type ReactNode } from 'react';
+import { AppContext } from './appContext';
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
@@ -15,10 +9,4 @@ export function AppProvider({ children }: { children: ReactNode }) {
       {children}
     </AppContext.Provider>
   );
-}
-
-export function useApp() {
-  const ctx = useContext(AppContext);
-  if (!ctx) throw new Error('useApp must be used within AppProvider');
-  return ctx;
 }

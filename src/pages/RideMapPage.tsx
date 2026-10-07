@@ -66,9 +66,9 @@ const RideMapPage: React.FC = () => {
   const currentTopic = useRideStore((state) => state.currentTopic);
 
   const QUICK_TOPICS = [
-    { id: 'fuel', label: '⛽ Fuel Stop' },
-    { id: 'help', label: '🆘 Help' },
-    { id: 'eta',  label: '🕐 ETA' },
+    { id: 'fuel', label: 'Fuel Stop' },
+    { id: 'help', label: 'Help' },
+    { id: 'eta',  label: 'ETA' },
   ];
 
   const [composeText, setComposeText] = useState('');
@@ -103,6 +103,7 @@ const RideMapPage: React.FC = () => {
   const [isTogglingTracking, setIsTogglingTracking] = useState(false);
   const [topRideStatus, setTopRideStatus] = useState<'Live' | 'Paused' | 'Resuming...' | 'Pausing...' | 'Resumed'>('Live');
   const [showMapStyleSheet, setShowMapStyleSheet] = useState(false);
+  const [isSheetExpanded, setIsSheetExpanded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
@@ -840,8 +841,14 @@ const RideMapPage: React.FC = () => {
           </div>
 
           {/* ── Bottom sheet ── */}
-          <div className="bottom-sheet">
-            <div className="sheet-handle" />
+          <div className={`bottom-sheet${isSheetExpanded ? ' is-expanded' : ' is-collapsed'}`}>
+            <button
+              type="button"
+              className="sheet-handle"
+              aria-label={isSheetExpanded ? 'Collapse ride controls' : 'Expand ride controls'}
+              aria-expanded={isSheetExpanded}
+              onClick={() => setIsSheetExpanded((expanded) => !expanded)}
+            />
             <div className="sheet-content">
 
               {/* Stats row */}
