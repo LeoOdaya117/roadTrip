@@ -18,6 +18,8 @@ import { createLocalUser, loadUserProfile } from '../services/user';
 import { getRideSession, getAllSessions, saveRideSession, deleteSession } from '../services/offlineDb';
 import { useRideStore } from '../store/rideStore';
 import { RideSession } from '../types/ride';
+import type { NavigationDestination } from '../types/ride';
+import RideSetupWizard from '../components/RideSetupWizard';
 
 const HomePage: React.FC = () => {
   const history = useHistory();
@@ -32,6 +34,7 @@ const HomePage: React.FC = () => {
     null
   );
   const [startMode, setStartMode] = useState<'group' | 'solo'>('group');
+  const [isPlanningRide, setIsPlanningRide] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedSession, setSavedSession] = useState<RideSession | null>(null);
 
@@ -92,7 +95,7 @@ const HomePage: React.FC = () => {
     return () => window.removeEventListener('ride:ended', handler as EventListener);
   }, [refreshSavedSession]);
 
-  const handleCreateRide = async () => {
+  const handleCreateRide = async (destination: NavigationDestination, routeIndex: number) => {
     try {
       setLoadingAction('create');
       const user = createLocalUser(true);
@@ -117,10 +120,13 @@ const HomePage: React.FC = () => {
         userName: user.name,
         isHost: true,
         createdAt: new Date().toISOString(),
-        status: 'active'
+        status: 'active',
+        navigationDestination: destination,
+        navigationRouteIndex: routeIndex,
       };
       await saveRideSession(session);
       setSavedSession(session);
+      setIsPlanningRide(false);
 
       history.push(`/ride-lobby/${rideId}`);
     } catch (err) {
@@ -197,7 +203,7 @@ const HomePage: React.FC = () => {
     }
   };
 
-  const handleSoloRide = async () => {
+  const handleSoloRide = async (destination: NavigationDestination, routeIndex: number) => {
     try {
       setLoadingAction('solo');
       const user = createLocalUser(true);
@@ -216,10 +222,13 @@ const HomePage: React.FC = () => {
         isHost: true,
         isSolo: true,
         createdAt: new Date().toISOString(),
-        status: 'active'
+        status: 'active',
+        navigationDestination: destination,
+        navigationRouteIndex: routeIndex,
       };
       await saveRideSession(session);
       setSavedSession(session);
+      setIsPlanningRide(false);
 
       history.push(`/ride-map/${rideId}`);
     } catch (err) {
@@ -304,29 +313,30 @@ const HomePage: React.FC = () => {
             </div>
             <p className="card-description">Bring everyone onto the same map, or switch to a solo route.</p>
 
-            <div className="start-mode-toggle" role="group" aria-label="Ride type" style={{ display: 'flex', gap: 8, marginTop: 8, marginBottom: 12 }}>
-              <button type="button" aria-pressed={startMode === 'group'} className={startMode === 'group' ? 'chip chip-active' : 'chip'} onClick={() => setStartMode('group')}>Group ride</button>
-              <button type="button" aria-pressed={startMode === 'solo'} className={startMode === 'solo' ? 'chip chip-active' : 'chip'} onClick={() => setStartMode('solo')}>Solo ride</button>
-            </div>
-
-            <button
-              className="btn-primary btn-primary-lg"
-              onClick={async () => {
-                if (startMode === 'group') {
-                  await handleCreateRide();
-                } else {
-                  await handleSoloRide();
-                }
-              }}
-              disabled={loadingAction !== null}
-            >
-              {loadingAction === 'create' || loadingAction === 'solo' ? (
-                <span className="btn-inner">
-                  <IonSpinner name="dots" style={{ width: 18, height: 18 }} />
-                  Starting…
-                </span>
-              ) : (startMode === 'group' ? 'Create group ride' : 'Start solo ride')}
-            </button>
+            {isPlanningRide ? (
+              <RideSetupWizard
+                mode={startMode}
+                busy={loadingAction !== null}
+                onCancel={() => setIsPlanningRide(false)}
+                onContinue={(destination, routeIndex) => startMode === 'group'
+                  ? void handleCreateRide(destination, routeIndex)
+                  : void handleSoloRide(destination, routeIndex)}
+              />
+            ) : (
+              <>
+                <div className="start-mode-toggle" role="group" aria-label="Ride type" style={{ display: 'flex', gap: 8, marginTop: 8, marginBottom: 12 }}>
+                  <button type="button" aria-pressed={startMode === 'group'} className={startMode === 'group' ? 'chip chip-active' : 'chip'} onClick={() => setStartMode('group')}>Group ride</button>
+                  <button type="button" aria-pressed={startMode === 'solo'} className={startMode === 'solo' ? 'chip chip-active' : 'chip'} onClick={() => setStartMode('solo')}>Solo ride</button>
+                </div>
+                <button
+                  className="btn-primary btn-primary-lg"
+                  onClick={() => setIsPlanningRide(true)}
+                  disabled={loadingAction !== null}
+                >
+                  {startMode === 'group' ? 'Plan group ride' : 'Plan solo ride'}
+                </button>
+              </>
+            )}
           </div>
 
           <div className="glass-card join-card crew-join-card">

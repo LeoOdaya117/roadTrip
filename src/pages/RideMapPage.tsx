@@ -6,7 +6,7 @@ import {
   IonInput,
   IonButton
 } from '@ionic/react';
-import { locate, pause, play, send, close, stopCircle, camera, layersOutline } from 'ionicons/icons';
+import { locate, pause, play, send, close, stopCircle, camera, layersOutline, navigate, add, remove } from 'ionicons/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { useHistory, useParams } from 'react-router-dom';
@@ -31,8 +31,9 @@ import {
   calculateTrackDistanceMeters,
   haversineDistanceMeters,
 } from '../services/locationFilter';
-import type { AcceptedLocationPoint, PhotoRecord } from '../types/ride';
-import { PLACE_SEARCH_ATTRIBUTION, searchPlaces, type PlaceSearchResult } from '../services/placeSearch';
+import type { AcceptedLocationPoint, MapMarkerStyle, PhotoRecord } from '../types/ride';
+import { searchPlaces, type PlaceSearchResult } from '../services/placeSearch';
+import { loadMapMarkerStyle, saveMapMarkerStyle } from '../services/mapPreferences';
 import { useRideStore } from '../store/rideStore';
 import maleAvatar from '../assets/images/default/user_male.png';
 import streetPreview from '../assets/images/default/Map/street.png';
@@ -41,6 +42,7 @@ import satellitePreview from '../assets/images/default/Map/satellite.png';
 import darkPreview from '../assets/images/default/Map/dark.png';
 import BottomSheet from '../components/BottomSheet';
 import MapStyleSwitcher from '../components/MapStyleSwitcher';
+import NavigationPanel from '../components/RideMap/NavigationPanel';
 import '../styles/RideMapPage.css';
 
 const FALLBACK_CENTER = { lat: 37.7749, lng: -122.4194 };
@@ -106,6 +108,7 @@ const RideMapPage: React.FC = () => {
   const [isTogglingTracking, setIsTogglingTracking] = useState(false);
   const [topRideStatus, setTopRideStatus] = useState<'Live' | 'Paused' | 'Resuming...' | 'Pausing...' | 'Resumed'>('Live');
   const [showMapStyleSheet, setShowMapStyleSheet] = useState(false);
+  const [currentUserMarkerStyle, setCurrentUserMarkerStyle] = useState<MapMarkerStyle>(loadMapMarkerStyle);
   const [isSheetExpanded, setIsSheetExpanded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
@@ -160,24 +163,36 @@ const RideMapPage: React.FC = () => {
   const [placeQuery, setPlaceQuery] = useState('');
   const [placeResults, setPlaceResults] = useState<PlaceSearchResult[]>([]);
   const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
+  const [isDebouncingPlaces, setIsDebouncingPlaces] = useState(false);
   const [placeSearchError, setPlaceSearchError] = useState<string | null>(null);
   const [isPickingDestination, setIsPickingDestination] = useState(false);
+  const [showNavigationPanel, setShowNavigationPanel] = useState(false);
+  const latestLocationRef = useRef(location);
+  latestLocationRef.current = location;
 
   useEffect(() => {
     const query = placeQuery.trim();
-    if (query.length < 3 || !isAndroid) {
+    if (query.length < 3 || !isAndroid || !showNavigationPanel) {
       setPlaceResults([]);
       setIsSearchingPlaces(false);
+      setIsDebouncingPlaces(false);
       setPlaceSearchError(null);
       return;
     }
     const controller = new AbortController();
+    setPlaceResults([]);
+    setIsSearchingPlaces(false);
+    setPlaceSearchError(null);
+    setIsDebouncingPlaces(true);
     const timeoutId = window.setTimeout(() => {
+      setIsDebouncingPlaces(false);
       setIsSearchingPlaces(true);
       setPlaceSearchError(null);
       void searchPlaces(query, {
         signal: controller.signal,
-        bias: location ? { lat: location.lat, lng: location.lng } : undefined,
+        bias: latestLocationRef.current
+          ? { lat: latestLocationRef.current.lat, lng: latestLocationRef.current.lng }
+          : undefined,
       }).then((results) => {
         setPlaceResults(results);
       }).catch((searchError: unknown) => {
@@ -192,23 +207,29 @@ const RideMapPage: React.FC = () => {
       window.clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [isAndroid, location, placeQuery]);
+  }, [isAndroid, placeQuery, showNavigationPanel]);
 
   useEffect(() => {
     if (navigation.error) setErrorMessage(navigation.error);
   }, [navigation.error]);
+
+  useEffect(() => {
+    if (isAndroid && navigation.destination) setShowNavigationPanel(true);
+  }, [isAndroid, navigation.destination]);
 
   const handleSelectPlace = (place: PlaceSearchResult) => {
     setPlaceQuery('');
     setPlaceResults([]);
     setPlaceSearchError(null);
     setIsPickingDestination(false);
+    setShowNavigationPanel(true);
     void navigation.setDestination({ lat: place.lat, lng: place.lng, label: place.label });
   };
 
   const handleMapDestinationPick = (point: { lat: number; lng: number }) => {
     if (!isPickingDestination) return;
     setIsPickingDestination(false);
+    setShowNavigationPanel(true);
     void navigation.setDestination({
       ...point,
       label: `Map pin · ${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`,
@@ -626,6 +647,11 @@ const RideMapPage: React.FC = () => {
     setActiveLayer(layer);
   };
 
+  const handleSelectMarkerStyle = (style: MapMarkerStyle) => {
+    setCurrentUserMarkerStyle(style);
+    saveMapMarkerStyle(style);
+  };
+
   const handleToggleOverlay = (overlayId: string) => {
     setEnabledOverlays((prev) =>
       prev.includes(overlayId)
@@ -848,6 +874,7 @@ const RideMapPage: React.FC = () => {
             trackPoints={trackPoints}
             currentUserId={currentUser?.id}
             currentUserAccuracy={location?.accuracy ?? null}
+            currentUserMarkerStyle={currentUserMarkerStyle}
             navigationRoute={navigation.route}
             navigationDestination={navigation.destination}
             onDestinationPick={isPickingDestination ? handleMapDestinationPick : undefined}
@@ -860,100 +887,39 @@ const RideMapPage: React.FC = () => {
             showTrack={enabledOverlays.includes('track')}
           />
 
-          {isAndroid && (
-            <section className="navigation-panel" aria-label="Turn-by-turn navigation">
-              <label className="navigation-search-label" htmlFor="navigation-place-search">Navigate to</label>
-              <div className="navigation-search-row">
-                <input
-                  id="navigation-place-search"
-                  className="navigation-search-input"
-                  type="search"
-                  value={placeQuery}
-                  onChange={(event) => setPlaceQuery(event.target.value)}
-                  placeholder="Search a place or address"
-                  autoComplete="off"
-                />
-                <button
-                  type="button"
-                  className={`navigation-pick-button${isPickingDestination ? ' is-active' : ''}`}
-                  aria-pressed={isPickingDestination}
-                  onClick={() => setIsPickingDestination((picking) => !picking)}
-                >
-                  {isPickingDestination ? 'Tap map…' : 'Pick on map'}
-                </button>
-              </div>
-              {placeResults.length > 0 && (
-                <div className="navigation-place-results" role="group" aria-label="Place search results">
-                  {placeResults.map((place, index) => (
-                    <button
-                      type="button"
-                      className="navigation-place-result"
-                      key={`${place.lat}-${place.lng}-${index}`}
-                      onClick={() => handleSelectPlace(place)}
-                    >
-                      {place.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {isSearchingPlaces && <div className="navigation-search-note" role="status">Searching places…</div>}
-              {placeSearchError && <div className="navigation-search-error" role="status">{placeSearchError}</div>}
-              <div className="navigation-attribution">{PLACE_SEARCH_ATTRIBUTION}</div>
-              {navigation.error && (
-                <div className="navigation-search-error" role="status">{navigation.error}</div>
-              )}
-              <div className="navigation-attribution">Routing data © OpenStreetMap contributors</div>
-              {navigation.destination && (
-                <div className="navigation-destination-card">
-                  <div className="navigation-destination-copy">
-                    <strong>{navigation.destination.label}</strong>
-                    {navigation.route && (
-                      <span>
-                        {(navigation.route.distanceMeters / 1000).toFixed(1)} km · {Math.max(1, Math.round(navigation.route.durationSeconds / 60))} min
-                      </span>
-                    )}
-                    {navigation.isGuiding && navigation.nextInstruction && (
-                      <span className="navigation-next-turn">
-                        {navigation.distanceToNextManeuverMeters != null
-                          ? `${Math.round(navigation.distanceToNextManeuverMeters)} m · `
-                          : ''}{navigation.nextInstruction}
-                      </span>
-                    )}
-                    {navigation.isRouting && <span role="status">Calculating route…</span>}
-                  </div>
-                  <div className="navigation-actions">
-                    <IonButton
-                      size="small"
-                      onClick={() => navigation.isGuiding ? navigation.stopGuidance() : void navigation.startGuidance()}
-                      disabled={!navigation.supported || navigation.isRouting || !location}
-                    >
-                      {navigation.isGuiding ? 'Stop' : 'Start'}
-                    </IonButton>
-                    <IonButton size="small" fill="clear" onClick={() => void navigation.clearDestination()}>
-                      Clear
-                    </IonButton>
-                  </div>
-                </div>
-              )}
-              <div className="navigation-offline-note">
-                {navigation.offlineAvailable
-                  ? 'Offline routing data is installed. Map imagery and place search still need internet.'
-                  : 'Online routing works across the Philippines. You can download optional CALABARZON and Metro Manila routing data for offline use.'}
-              </div>
-              {!navigation.offlineAvailable && (
-                <IonButton
-                  className="navigation-download-button"
-                  size="small"
-                  expand="block"
-                  disabled={navigation.isDownloadingTiles}
-                  onClick={() => void navigation.downloadTiles()}
-                >
-                  {navigation.isDownloadingTiles
-                    ? `Downloading offline map${navigation.tileDownloadProgress == null ? '…' : ` · ${navigation.tileDownloadProgress}%`}`
-                    : 'Download regional offline map · ~227 MB'}
-                </IonButton>
-              )}
-            </section>
+          {isAndroid && showNavigationPanel && (
+            <NavigationPanel
+              query={placeQuery}
+              onQueryChange={setPlaceQuery}
+              placeResults={placeResults}
+              isSearchingPlaces={isSearchingPlaces}
+              isDebouncingPlaces={isDebouncingPlaces}
+              placeSearchError={placeSearchError}
+              onSelectPlace={handleSelectPlace}
+              isPickingDestination={isPickingDestination}
+              onTogglePicking={() => setIsPickingDestination((picking) => !picking)}
+              onClose={() => {
+                setShowNavigationPanel(false);
+                setIsPickingDestination(false);
+              }}
+              destination={navigation.destination}
+              route={navigation.route}
+              isGuiding={navigation.isGuiding}
+              isRouting={navigation.isRouting}
+              nextInstruction={navigation.nextInstruction}
+              distanceToNextManeuverMeters={navigation.distanceToNextManeuverMeters}
+              navigationError={navigation.error}
+              supported={navigation.supported}
+              hasLocation={Boolean(location)}
+              onToggleGuidance={() => navigation.isGuiding
+                ? navigation.stopGuidance()
+                : void navigation.startGuidance()}
+              onClearDestination={() => void navigation.clearDestination()}
+              offlineAvailable={navigation.offlineAvailable}
+              isDownloadingTiles={navigation.isDownloadingTiles}
+              tileDownloadProgress={navigation.tileDownloadProgress}
+              onDownloadTiles={() => void navigation.downloadTiles()}
+            />
           )}
 
           {/* ── Top bar: title + live badge only ── */}
@@ -976,26 +942,51 @@ const RideMapPage: React.FC = () => {
 
           {/* ── Floating action buttons top-right ── */}
           <div className="map-fabs">
-            <button className="map-fab" onClick={handleCenterMap} title="Center map">
-              <IonIcon icon={locate} />
+            <button className="map-fab" onClick={handleCenterMap} title="Center map" aria-label="Center map on your location">
+              <IonIcon icon={locate} aria-hidden="true" />
             </button>
+            <div className="map-zoom-controls" role="group" aria-label="Map zoom controls">
+              <button className="map-fab map-zoom-fab" onClick={() => mapRef.current?.zoomIn()} title="Zoom in" aria-label="Zoom in">
+                <IonIcon icon={add} aria-hidden="true" />
+              </button>
+              <button className="map-fab map-zoom-fab" onClick={() => mapRef.current?.zoomOut()} title="Zoom out" aria-label="Zoom out">
+                <IonIcon icon={remove} aria-hidden="true" />
+              </button>
+            </div>
+            {isAndroid && (
+              <button
+                className={`map-fab${showNavigationPanel || navigation.isGuiding ? ' fab-active' : ''}`}
+                onClick={() => {
+                  setShowNavigationPanel((open) => !open);
+                  setIsPickingDestination(false);
+                }}
+                title="Navigate to a place"
+                aria-label={showNavigationPanel ? 'Close destination search' : 'Navigate to a place'}
+                aria-expanded={showNavigationPanel}
+              >
+                <IonIcon icon={navigate} />
+              </button>
+            )}
             <button
               className={`map-fab${showMapStyleSheet ? ' fab-active' : ''}`}
               onClick={() => setShowMapStyleSheet(true)}
               title="Map style"
+              aria-label="Change map style and details"
+              aria-expanded={showMapStyleSheet}
             >
-              <IonIcon icon={layersOutline} />
+              <IonIcon icon={layersOutline} aria-hidden="true" />
             </button>
-            <button className="map-fab" onClick={handlePhotoClick} title="Add photo">
-              <IonIcon icon={cameraIcon} />
+            <button className="map-fab" onClick={handlePhotoClick} title="Add photo" aria-label="Add ride photo">
+              <IonIcon icon={cameraIcon} aria-hidden="true" />
             </button>
             <button
               className={`map-fab${!isTracking ? ' fab-stopover' : ''}`}
               onClick={handleToggleTracking}
               title={isTogglingTracking ? 'Updating tracking...' : (isTracking ? 'Stopover - pause tracking' : 'Resume ride')}
               disabled={isTogglingTracking}
+              aria-label={isTogglingTracking ? 'Updating ride tracking' : (isTracking ? 'Pause ride tracking' : 'Resume ride tracking')}
             >
-              <IonIcon icon={isTracking ? pause : play} />
+              <IonIcon icon={isTracking ? pause : play} aria-hidden="true" />
             </button>
             <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleFileChange} />
           </div>
@@ -1007,6 +998,7 @@ const RideMapPage: React.FC = () => {
               className="sheet-handle"
               aria-label={isSheetExpanded ? 'Collapse ride controls' : 'Expand ride controls'}
               aria-expanded={isSheetExpanded}
+              aria-controls="ride-controls-details"
               onClick={() => setIsSheetExpanded((expanded) => !expanded)}
             />
             <div className="sheet-content">
@@ -1053,6 +1045,7 @@ const RideMapPage: React.FC = () => {
                 </div>
               </div>
 
+              <div className="sheet-details" id="ride-controls-details" aria-hidden={!isSheetExpanded}>
               {!isSoloMode && (
                 <div className="sheet-crew-row" aria-label={`${crewMembers.length} riders in this group ride`}>
                   <div className="sheet-crew-copy">
@@ -1115,6 +1108,7 @@ const RideMapPage: React.FC = () => {
                 <IonIcon icon={stopCircle} />
                 End Ride
               </button>
+              </div>
 
             </div>
           </div>
@@ -1135,7 +1129,18 @@ const RideMapPage: React.FC = () => {
         duration={1800}
         onDidDismiss={() => setPhotoToast(null)}
       />
-      <BottomSheet isOpen={showPhotoModal} centered={true} onDidDismiss={() => { console.debug('[RideMapPage] BottomSheet onDidDismiss'); setShowPhotoModal(false); }}>
+      <BottomSheet
+        isOpen={showPhotoModal}
+        centered={true}
+        ariaLabel="Save ride photo"
+        onDidDismiss={() => { setShowPhotoModal(false); }}
+        footer={(
+          <div className="btn-row">
+            <IonButton className="cancel" fill="clear" onClick={() => { setShowPhotoModal(false); setPreviewDataUrl(null); setPhotoNote(''); }}>Cancel</IonButton>
+            <IonButton className="save" onClick={handleSavePhoto}>Save photo</IonButton>
+          </div>
+        )}
+      >
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <div style={{ width: 120, height: 90, overflow: 'hidden', borderRadius: 8 }}>
             {previewDataUrl && <img src={previewDataUrl} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
@@ -1146,12 +1151,17 @@ const RideMapPage: React.FC = () => {
             </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 12 }} className="btn-row">
-          <IonButton className="cancel" fill="clear" onClick={() => { setShowPhotoModal(false); setPreviewDataUrl(null); setPhotoNote(''); }}>Cancel</IonButton>
-          <IonButton className="save" onClick={handleSavePhoto}>Save</IonButton>
-        </div>
       </BottomSheet>
-      <BottomSheet isOpen={showMapStyleSheet} onDidDismiss={() => setShowMapStyleSheet(false)}>
+      <BottomSheet
+        isOpen={showMapStyleSheet}
+        ariaLabel="Map style and details"
+        onDidDismiss={() => setShowMapStyleSheet(false)}
+        footer={(
+          <div className="map-style-sheet-actions">
+            <IonButton fill="clear" onClick={() => setShowMapStyleSheet(false)}>Done</IonButton>
+          </div>
+        )}
+      >
         <div className="map-style-sheet-content">
           <MapStyleSwitcher
             layers={MAP_LAYERS}
@@ -1160,10 +1170,9 @@ const RideMapPage: React.FC = () => {
             overlays={MAP_OVERLAYS}
             enabledOverlays={enabledOverlays}
             onToggleOverlay={handleToggleOverlay}
+            markerStyle={currentUserMarkerStyle}
+            onChangeMarkerStyle={handleSelectMarkerStyle}
           />
-          <div className="map-style-sheet-actions">
-            <IonButton fill="clear" onClick={() => setShowMapStyleSheet(false)}>Close</IonButton>
-          </div>
         </div>
       </BottomSheet>
     </IonPage>

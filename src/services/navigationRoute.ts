@@ -1,4 +1,4 @@
-import type { NavigationManeuver, NavigationRoute } from '../types/ride';
+import type { NavigationManeuver, NavigationRoute, NavigationRouteOption } from '../types/ride';
 
 type LatLng = { lat: number; lng: number };
 
@@ -43,15 +43,7 @@ export const decodeValhallaPolyline = (encoded: string, precision = 6): LatLng[]
   return coordinates;
 };
 
-export const normalizeValhallaRoute = (json: string): NavigationRoute => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json) as unknown;
-  } catch {
-    throw new Error('The routing service returned an unreadable route.');
-  }
-
-  const trip = asRecord(asRecord(parsed)?.trip);
+const normalizeTripRoute = (trip: Record<string, unknown> | null): NavigationRoute => {
   const legs = trip?.legs;
   if (!Array.isArray(legs) || legs.length === 0) {
     throw new Error('No route is available for this destination.');
@@ -112,6 +104,35 @@ export const normalizeValhallaRoute = (json: string): NavigationRoute => {
     durationSeconds: totalTimeSeconds,
   };
 };
+
+export const normalizeValhallaRoutes = (json: string): NavigationRouteOption[] => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json) as unknown;
+  } catch {
+    throw new Error('The routing service returned an unreadable route.');
+  }
+  const response = asRecord(parsed);
+  const primary = asRecord(response?.trip);
+  if (!primary) throw new Error('No route is available for this destination.');
+
+  const trips = [primary];
+  if (Array.isArray(response?.alternates)) {
+    response.alternates.forEach((alternateValue) => {
+      const alternate = asRecord(alternateValue);
+      const trip = asRecord(alternate?.trip) ?? alternate;
+      if (trip && Array.isArray(trip.legs) && trip.legs.length > 0) trips.push(trip);
+    });
+  }
+
+  return trips.map((trip, index) => ({
+    route: normalizeTripRoute(trip),
+    label: index === 0 ? 'Recommended' : `Alternative ${index}`,
+  }));
+};
+
+export const normalizeValhallaRoute = (json: string): NavigationRoute =>
+  normalizeValhallaRoutes(json)[0].route;
 
 const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
 

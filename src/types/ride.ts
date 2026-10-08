@@ -29,6 +29,8 @@ export type NavigationDestination = {
   label: string;
 };
 
+export type MapMarkerStyle = 'circle' | 'motorcycle' | 'car' | 'bicycle';
+
 export type NavigationManeuver = {
   id: number;
   shapeIndex: number;
@@ -44,6 +46,11 @@ export type NavigationRoute = {
   maneuvers: NavigationManeuver[];
   distanceMeters: number;
   durationSeconds: number;
+};
+
+export type NavigationRouteOption = {
+  route: NavigationRoute;
+  label: string;
 };
 
 export type Rider = LocationPoint & {
@@ -79,6 +86,8 @@ export type RideSession = {
   elevationGainMeters?: number;
   activeSegmentId?: string;
   navigationDestination?: NavigationDestination;
+  /** Index chosen from the alternatives returned during ride setup. */
+  navigationRouteIndex?: number;
   navigationEnabled?: boolean;
   /** session lifecycle status — e.g. 'active' | 'ended' */
   status?: 'active' | 'ended' | 'paused';

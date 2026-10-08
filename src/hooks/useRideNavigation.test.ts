@@ -4,7 +4,7 @@ import type { AcceptedLocationPoint, NavigationRoute } from '../types/ride';
 import { useRideNavigation } from './useRideNavigation';
 
 const mocks = vi.hoisted(() => ({
-  calculateOfflineRoute: vi.fn(),
+  calculateRouteOptions: vi.fn(),
   downloadNavigationTiles: vi.fn(),
   getNavigationAvailability: vi.fn(),
   speakNavigationPrompt: vi.fn(),
@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../services/navigationEngine', () => ({
-  calculateOfflineRoute: mocks.calculateOfflineRoute,
+  calculateRouteOptions: mocks.calculateRouteOptions,
   downloadNavigationTiles: mocks.downloadNavigationTiles,
   getNavigationAvailability: mocks.getNavigationAvailability,
   speakNavigationPrompt: mocks.speakNavigationPrompt,
@@ -58,7 +58,7 @@ describe('useRideNavigation', () => {
     mocks.saveRideSession.mockResolvedValue(undefined);
     mocks.getNavigationAvailability.mockResolvedValue({ available: true, offlineAvailable: false });
     mocks.downloadNavigationTiles.mockResolvedValue({ available: true, sizeBytes: 237465600 });
-    mocks.calculateOfflineRoute.mockResolvedValue(route);
+    mocks.calculateRouteOptions.mockResolvedValue([{ route, label: 'Recommended' }]);
     mocks.speakNavigationPrompt.mockResolvedValue(undefined);
     mocks.stopNavigationSpeech.mockResolvedValue(undefined);
   });
@@ -85,7 +85,7 @@ describe('useRideNavigation', () => {
     await act(async () => {
       await result.current.setDestination({ lat: 14.602, lng: 121, label: 'Destination' });
     });
-    expect(mocks.calculateOfflineRoute).toHaveBeenCalledTimes(1);
+    expect(mocks.calculateRouteOptions).toHaveBeenCalledTimes(1);
     expect(result.current.route).toEqual(route);
 
     await act(async () => result.current.startGuidance());
@@ -93,15 +93,15 @@ describe('useRideNavigation', () => {
       location = point(id, lat, 121);
       rerender();
     }
-    await waitFor(() => expect(mocks.calculateOfflineRoute).toHaveBeenCalledTimes(2));
-    expect(mocks.calculateOfflineRoute.mock.calls[1][0]).toMatchObject({ lat: 14.612, lng: 121 });
-    expect(mocks.calculateOfflineRoute.mock.calls[1][1].label).toBe('Destination');
+    await waitFor(() => expect(mocks.calculateRouteOptions).toHaveBeenCalledTimes(2));
+    expect(mocks.calculateRouteOptions.mock.calls[1][0]).toMatchObject({ lat: 14.612, lng: 121 });
+    expect(mocks.calculateRouteOptions.mock.calls[1][1].label).toBe('Destination');
   });
 
   it('keeps only one reroute in flight for the same destination', async () => {
-    let resolveReroute: ((value: NavigationRoute) => void) | undefined;
-    mocks.calculateOfflineRoute
-      .mockResolvedValueOnce(route)
+    let resolveReroute: ((value: Array<{ route: NavigationRoute; label: string }>) => void) | undefined;
+    mocks.calculateRouteOptions
+      .mockResolvedValueOnce([{ route, label: 'Recommended' }])
       .mockImplementationOnce(() => new Promise((resolve) => { resolveReroute = resolve; }));
     let location: AcceptedLocationPoint | null = point('p0', 14.6, 121);
     const { result, rerender } = renderHook(() => useRideNavigation('solo-1', location, true));
@@ -115,11 +115,29 @@ describe('useRideNavigation', () => {
       location = point(id, lat, 121);
       rerender();
     }
-    await waitFor(() => expect(mocks.calculateOfflineRoute).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mocks.calculateRouteOptions).toHaveBeenCalledTimes(2));
     expect(resolveReroute).toBeDefined();
-    resolveReroute?.(route);
+    resolveReroute?.([{ route, label: 'Recommended' }]);
     await waitFor(() => expect(result.current.isRouting).toBe(false));
-    expect(mocks.calculateOfflineRoute).toHaveBeenCalledTimes(2);
+    expect(mocks.calculateRouteOptions).toHaveBeenCalledTimes(2);
+  });
+
+  it('restores and uses the selected alternate route index', async () => {
+    const alternate: NavigationRoute = { ...route, distanceMeters: 700 };
+    mocks.getSession.mockResolvedValue({
+      rideId: 'solo-1',
+      navigationDestination: { lat: 14.602, lng: 121, label: 'Destination' },
+      navigationRouteIndex: 1,
+      status: 'active',
+    });
+    mocks.calculateRouteOptions.mockResolvedValue([
+      { route, label: 'Recommended' },
+      { route: alternate, label: 'Alternative 1' },
+    ]);
+    const { result } = renderHook(() => useRideNavigation('solo-1', point('p0', 14.6, 121), true));
+
+    await waitFor(() => expect(result.current.route?.distanceMeters).toBe(700));
+    expect(result.current.selectedRouteIndex).toBe(1);
   });
 
   it('stops voice guidance on pause and removes the destination on clear', async () => {

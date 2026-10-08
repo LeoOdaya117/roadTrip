@@ -1,4 +1,7 @@
 import '../styles/MapStyleSwitcher.css';
+import { IonIcon } from '@ionic/react';
+import { bicycle, carSport } from 'ionicons/icons';
+import type { MapMarkerStyle } from '../types/ride';
 type MapLayerOption = {
   id: string;
   label: string;
@@ -19,7 +22,16 @@ type MapStyleSwitcherProps = {
   overlays: OverlayOption[];
   enabledOverlays: string[];
   onToggleOverlay: (overlayId: string) => void;
+  markerStyle: MapMarkerStyle;
+  onChangeMarkerStyle: (style: MapMarkerStyle) => void;
 };
+
+const markerOptions: Array<{ id: MapMarkerStyle; label: string }> = [
+  { id: 'circle', label: 'Location dot' },
+  { id: 'motorcycle', label: 'Motorcycle' },
+  { id: 'car', label: 'Car' },
+  { id: 'bicycle', label: 'Bicycle' },
+];
 
 const MapStyleSwitcher: React.FC<MapStyleSwitcherProps> = ({
   layers,
@@ -27,7 +39,9 @@ const MapStyleSwitcher: React.FC<MapStyleSwitcherProps> = ({
   onChange,
   overlays,
   enabledOverlays,
-  onToggleOverlay
+  onToggleOverlay,
+  markerStyle,
+  onChangeMarkerStyle,
 }) => {
   return (
     <div>
@@ -55,6 +69,35 @@ const MapStyleSwitcher: React.FC<MapStyleSwitcherProps> = ({
         })}
       </div>
 
+      <div className="map-marker-setting-heading">
+        <div className="sheet-section-label">Your map marker</div>
+        <p>Choose how your location appears on this device.</p>
+      </div>
+      <div className="map-marker-options" role="group" aria-label="Your map marker">
+        {markerOptions.map((option) => {
+          const selected = markerStyle === option.id;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              className={`map-marker-option${selected ? ' map-marker-option-active' : ''}`}
+              aria-pressed={selected}
+              aria-label={`Use ${option.label.toLowerCase()} marker`}
+              onClick={() => onChangeMarkerStyle(option.id)}
+            >
+              <span className={`map-marker-preview map-marker-preview-${option.id}`} aria-hidden="true">
+                {option.id === 'circle' && <span className="map-marker-dot" />}
+                {option.id === 'motorcycle' && <MotorcycleGlyph />}
+                {option.id === 'car' && <IonIcon icon={carSport} />}
+                {option.id === 'bicycle' && <IonIcon icon={bicycle} />}
+              </span>
+              <span>{option.label}</span>
+              <span className="map-marker-option-check" aria-hidden="true">{selected ? '✓' : ''}</span>
+            </button>
+          );
+        })}
+      </div>
+
       <div className="sheet-section-label">Map Details</div>
       <div className="map-overlay-row" role="group" aria-label="Map overlay options">
         {overlays.map((overlay) => {
@@ -74,5 +117,13 @@ const MapStyleSwitcher: React.FC<MapStyleSwitcherProps> = ({
     </div>
   );
 };
+
+const MotorcycleGlyph = () => (
+  <svg viewBox="0 0 32 24" focusable="false" aria-hidden="true">
+    <circle cx="7" cy="18" r="3.1" />
+    <circle cx="25" cy="18" r="3.1" />
+    <path d="M7 18l5-8h5l4 8h4M12 10l-2-3h5l2 3m-4 0 4 8m-4-6h7l2 3" />
+  </svg>
+);
 
 export default MapStyleSwitcher;
