@@ -1,8 +1,8 @@
 /**
  * Online destination search using the public Photon demo service.
  *
- * Callers own debounce and caching. Results are restricted to the pilot area
- * (CALABARZON and Metro Manila) with Photon's bbox/country filters and a local
+ * Callers own debounce and caching. Results are restricted to the Philippines
+ * with Photon's bbox/country filters and a local
  * coordinate check. Display `PLACE_SEARCH_ATTRIBUTION` alongside results.
  */
 
@@ -10,8 +10,8 @@ export const PHOTON_SEARCH_ENDPOINT = 'https://photon.komoot.io/api/';
 export const PLACE_SEARCH_ATTRIBUTION =
   'Geocoding by Photon · © OpenStreetMap contributors';
 
-/** Approximate pilot-area envelope, expressed as [minLon, minLat, maxLon, maxLat]. */
-export const PILOT_SEARCH_BOUNDS = [119.8, 12.3, 123.0, 15.5] as const;
+/** Philippines envelope with a small margin, expressed as [minLon, minLat, maxLon, maxLat]. */
+export const PHILIPPINES_SEARCH_BOUNDS = [116.0, 4.0, 127.0, 22.0] as const;
 
 export const MAX_PLACE_SEARCH_RESULTS = 10;
 export const PLACE_SEARCH_CACHE_TTL_MS = 60_000;
@@ -46,7 +46,7 @@ export class PlaceSearchError extends Error {
 
 export type PlaceSearchOptions = {
   signal?: AbortSignal;
-  /** Current location biases ranking while the pilot bounding box remains enforced. */
+  /** Current location biases ranking while the Philippines bounding box remains enforced. */
   bias?: { lat: number; lng: number };
 };
 
@@ -66,7 +66,7 @@ const isFiniteCoordinate = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
 
 const isWithinPilotBounds = (lng: number, lat: number): boolean => {
-  const [minLng, minLat, maxLng, maxLat] = PILOT_SEARCH_BOUNDS;
+  const [minLng, minLat, maxLng, maxLat] = PHILIPPINES_SEARCH_BOUNDS;
   return lng >= minLng && lng <= maxLng && lat >= minLat && lat <= maxLat;
 };
 
@@ -153,7 +153,7 @@ export async function searchPlaces(
   url.searchParams.set('q', normalizedQuery);
   url.searchParams.set('limit', String(MAX_PLACE_SEARCH_RESULTS));
   url.searchParams.set('countrycode', 'PH');
-  url.searchParams.set('bbox', PILOT_SEARCH_BOUNDS.join(','));
+  url.searchParams.set('bbox', PHILIPPINES_SEARCH_BOUNDS.join(','));
   if (
     options.bias &&
     Number.isFinite(options.bias.lat) &&

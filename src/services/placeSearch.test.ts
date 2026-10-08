@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   clearPlaceSearchCache,
   MAX_PLACE_SEARCH_RESULTS,
-  PILOT_SEARCH_BOUNDS,
+  PHILIPPINES_SEARCH_BOUNDS,
   PLACE_SEARCH_ATTRIBUTION,
   searchPlaces,
 } from './placeSearch';
@@ -30,13 +30,13 @@ describe('Photon place search', () => {
     vi.unstubAllGlobals();
   });
 
-  it('requests Philippines results in the pilot bounding box and maps valid results', async () => {
+  it('requests Philippines results in the country bounding box and maps valid results', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
         type: 'FeatureCollection',
         features: [
           feature('Tagaytay', [120.95, 14.1], { city: 'Tagaytay', state: 'Cavite' }),
-          feature('Far away', [121.0, 16.0]),
+          feature('Outside the Philippines', [130.0, 16.0]),
           feature('No coordinates', [Number.NaN, 14]),
         ],
       }),
@@ -48,7 +48,7 @@ describe('Photon place search', () => {
 
     expect(requestedUrl.searchParams.get('q')).toBe('Tagaytay');
     expect(requestedUrl.searchParams.get('countrycode')).toBe('PH');
-    expect(requestedUrl.searchParams.get('bbox')).toBe(PILOT_SEARCH_BOUNDS.join(','));
+    expect(requestedUrl.searchParams.get('bbox')).toBe(PHILIPPINES_SEARCH_BOUNDS.join(','));
     expect(requestedUrl.searchParams.get('limit')).toBe(String(MAX_PLACE_SEARCH_RESULTS));
     expect(requestedUrl.searchParams.get('lat')).toBe('14.1');
     expect(requestedUrl.searchParams.get('lon')).toBe('120.95');
@@ -62,6 +62,16 @@ describe('Photon place search', () => {
     ]);
     expect(PLACE_SEARCH_ATTRIBUTION).toContain('OpenStreetMap');
     expect(PLACE_SEARCH_ATTRIBUTION).toContain('Photon');
+  });
+
+  it('accepts results from across the country, including Mindanao', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      jsonResponse({ features: [feature('Davao City', [125.61, 7.07])] }),
+    ));
+
+    await expect(searchPlaces('Davao City')).resolves.toEqual([
+      expect.objectContaining({ label: 'Davao City, Philippines', lat: 7.07, lng: 125.61 }),
+    ]);
   });
 
   it('skips short queries and bounds result count', async () => {

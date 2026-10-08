@@ -1,37 +1,42 @@
-# Offline Navigation
+# Hybrid Navigation
 
-RoadTrip's Android navigation bridge uses Valhalla Mobile to calculate a
-motorcycle route from a bundled routing graph. Search uses the public Photon
-demo while online. A destination can also be selected by tapping the map. The
-Leaflet basemap remains remote, so offline route calculation does not make map
-imagery available offline.
+On Android, RoadTrip routes through the hosted Valhalla API by default. If a
+rider downloads the optional CALABARZON and Metro Manila routing pack, the app
+uses that local graph where it covers the requested route and falls back to the
+online API for other areas. GPS tracking, route progress, and maneuver prompts
+remain in the app. The public routing request sends the current route endpoints
+to the configured Valhalla service; off-route fixes are sent when calculating a
+reroute.
 
-The Android app includes a CALABARZON and Metro Manila pilot extract at the
-required asset path below. The current graph was built with Valhalla 3.9.1 from
-the Geofabrik Philippines OSM PBF updated at `2026-10-06T20:21:06Z`, clipped
-with Osmium complete-way extraction to the pilot envelope
-`119.8,12.3,123.0,15.5` (longitude/latitude). This is a rectangular envelope,
-so the tiles also include roads in neighboring provinces and do not represent a
-precise regional boundary.
+The default endpoint is the FOSSGIS Valhalla demo at
+`https://valhalla1.openstreetmap.de/route`, which has global graph coverage and
+supports motorcycle costing. It is a fair-use demo, not a service guarantee.
+Valhalla asks apps distributed to end users to identify themselves with an
+`X-Client-Id` header and notify the maintainers before publication. The native
+bridge sends the RoadTrip repository as that identifier. Set
+`VITE_NAVIGATION_ROUTING_URL` to a different compatible HTTPS Valhalla endpoint
+when the app has an approved production service. Do not put private API keys in
+`VITE_*` values.
 
-The generated `valhalla_tiles.tar` is 237,465,600 bytes. In the Android debug
-APK, the asset compresses to 95,867,263 bytes; the full universal debug APK is
-138,515,764 bytes (about 132 MiB). This is a measured debug build size, not a
-release AAB size. The shipped OSM attribution and license notice is
+The optional offline pack is hosted as the public GitHub Release asset
+`offline-routing-calabarzon-v1/valhalla_tiles.tar`. It is 237,465,600 bytes
+(about 227 MiB) and is downloaded only when the rider requests it. SHA-256 is
+checked before the file is made available to Valhalla. Its graph was built with
+Valhalla 3.9.1 from Geofabrik's Philippines OpenStreetMap PBF updated at
+`2026-10-06T20:21:06Z`, using the rectangular bounds `119.8,12.3,123.0,15.5`
+(longitude/latitude). This regional pack is not a nationwide offline graph.
+The route line and voice prompts can continue offline after a route is
+calculated, but a new off-route calculation outside installed tile coverage
+requires the online API. The Leaflet basemap remains remote, so routing tiles do
+not make map imagery available offline.
+
+The OSM attribution and license notice is
 `android/app/src/main/assets/OSM_DATA_LICENSE.txt`; the ride guidance UI also
-shows OpenStreetMap attribution.
+shows OpenStreetMap attribution. The routing pack is no longer included in the
+checked-out source tree or APK; this change removes the tile asset and Git LFS
+tracking from the branch.
 
-## Required routing data
-
-The native bridge expects a Valhalla tile extract at:
-
-```text
-android/app/src/main/assets/valhalla_tiles.tar
-```
-
-The archive is bundled at that path. Rebuild it when the pilot coverage or
-source map data changes, and keep the data timestamp and packaged size in this
-document and the license notice.
+## Rebuilding the optional offline pack
 
 Build an extract from an OpenStreetMap PBF that covers the complete pilot area.
 The current bundle was clipped from the Philippines PBF with this Osmium
@@ -61,7 +66,7 @@ valhalla_build_tiles -c valhalla.json calabarzon-metro-manila.osm.pbf
 valhalla_build_extract -c valhalla.json -v
 ```
 
-The bundled archive was smoke-tested with Valhalla 3.9.1 for motorcycle routes
+The release archive was smoke-tested with Valhalla 3.9.1 for motorcycle routes
 from Manila to Tagaytay (59.0 km) and Manila to Lucena (138.7 km). Test additional
 destinations near the pilot envelope edges after changing the source data. Do
 not commit a placeholder or an extract for a different region under the expected
@@ -75,8 +80,11 @@ Mobile's Android artifact and model dependencies are declared in
 
 ## Runtime behavior
 
-- The Capacitor `OfflineNavigation` plugin owns one Valhalla actor and reuses it
-  for route requests. Route calls run away from the Android main thread.
+- The Capacitor `OfflineNavigation` plugin reuses one Valhalla actor for local
+  routes. Online requests also run away from the Android main thread.
+- A local graph is optional. The first online route works without downloading
+  it; the rider can download the regional pack from the navigation panel for
+  offline routing in its coverage area.
 - Navigation consumes only points accepted by `useLocationTracker`; it does not
   register another location watcher.
 - The destination and whether guidance is enabled are stored with the local ride
@@ -86,10 +94,14 @@ Mobile's Android artifact and model dependencies are declared in
 - Three consecutive accepted fixes beyond `max(40 m, 2 × accuracy)` trigger one
   reroute. Pausing stops spoken prompts; resuming recalculates from the next
   accepted fix. Ending a ride releases guidance and speech.
-- Photon place search is limited to the pilot bounding box, debounced in the UI,
-  cached briefly, and attributed. Map-tap selection does not require network.
+- Photon place search covers the Philippines, is debounced in the UI, cached
+  briefly, and attributed. Map-tap selection does not require network.
 - Photon’s public demo has no availability guarantee and may throttle extensive
   usage. Review its current terms and usage before a broad public rollout.
+- The FOSSGIS Valhalla demo follows fair-use limits and has no availability
+  guarantee. Its maintainers request notice before end-user app distribution;
+  use a compatible hosted endpoint with an explicit service agreement for a
+  production launch if those limits or terms are unsuitable.
 - Turn prompts use Android text-to-speech in English. Verify route progress and
   speech with the screen locked on a physical Android device before release.
 - Valhalla Mobile 0.6.3 requires Android compile SDK 36 and minimum SDK 24. The

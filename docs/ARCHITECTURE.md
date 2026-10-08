@@ -27,7 +27,7 @@ Android application.
 | Build and typing | Vite 5, TypeScript 5.9 in strict/no-emit mode |
 | Shared client state | Zustand 5 |
 | Maps | Leaflet and React Leaflet |
-| Offline navigation | Valhalla Mobile Android bridge with bundled regional tiles |
+| Turn-by-turn navigation | Android Valhalla bridge with online routing and optional downloadable regional tiles |
 | Local persistence | Dexie over IndexedDB plus narrowly scoped local storage |
 | HTTP | Axios |
 | Realtime | Laravel Echo with the Pusher protocol |
@@ -151,12 +151,13 @@ hook's `isTracking` as the actual GPS watch state. It retries startup while a ri
 wants tracking but the watch is unavailable.
 
 Android turn-by-turn navigation is coordinated by `useRideNavigation` from the
-accepted location returned by `useLocationTracker`. The route service calls the
-native `OfflineNavigation` Capacitor plugin, which owns and reuses one Valhalla
-actor and uses native Android text-to-speech. Destination and guidance intent are
-optional fields on the local `RideSession`; generated route geometry remains
-transient and is recalculated on resume. The Android app requires a regional
-`valhalla_tiles.tar` asset; see [Offline Navigation](OFFLINE_NAVIGATION.md).
+accepted location returned by `useLocationTracker`. The native
+`OfflineNavigation` Capacitor plugin routes through the hosted Valhalla API by
+default and uses a locally cached graph when the rider has downloaded the
+optional regional pack. It owns and reuses one local Valhalla actor and uses
+native Android text-to-speech. Destination and guidance intent are optional
+fields on the local `RideSession`; generated route geometry remains transient
+and is recalculated on resume. See [Navigation](OFFLINE_NAVIGATION.md).
 Navigation is unavailable on web and does not change the remote basemap behavior.
 
 ### Persist and synchronize locations

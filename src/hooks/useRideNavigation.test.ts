@@ -5,6 +5,7 @@ import { useRideNavigation } from './useRideNavigation';
 
 const mocks = vi.hoisted(() => ({
   calculateOfflineRoute: vi.fn(),
+  downloadNavigationTiles: vi.fn(),
   getNavigationAvailability: vi.fn(),
   speakNavigationPrompt: vi.fn(),
   stopNavigationSpeech: vi.fn(),
@@ -14,10 +15,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../services/navigationEngine', () => ({
   calculateOfflineRoute: mocks.calculateOfflineRoute,
+  downloadNavigationTiles: mocks.downloadNavigationTiles,
   getNavigationAvailability: mocks.getNavigationAvailability,
   speakNavigationPrompt: mocks.speakNavigationPrompt,
   stopNavigationSpeech: mocks.stopNavigationSpeech,
-  supportsOfflineNavigation: () => true,
+  supportsTurnByTurnNavigation: () => true,
 }));
 
 vi.mock('../services/offlineDb', () => ({
@@ -54,10 +56,26 @@ describe('useRideNavigation', () => {
     vi.clearAllMocks();
     mocks.getSession.mockResolvedValue({ rideId: 'solo-1', status: 'active' });
     mocks.saveRideSession.mockResolvedValue(undefined);
-    mocks.getNavigationAvailability.mockResolvedValue({ available: true });
+    mocks.getNavigationAvailability.mockResolvedValue({ available: true, offlineAvailable: false });
+    mocks.downloadNavigationTiles.mockResolvedValue({ available: true, sizeBytes: 237465600 });
     mocks.calculateOfflineRoute.mockResolvedValue(route);
     mocks.speakNavigationPrompt.mockResolvedValue(undefined);
     mocks.stopNavigationSpeech.mockResolvedValue(undefined);
+  });
+
+  it('routes online without a tile download and installs the optional offline pack on request', async () => {
+    mocks.getNavigationAvailability
+      .mockResolvedValueOnce({ available: true, offlineAvailable: false })
+      .mockResolvedValueOnce({ available: true, offlineAvailable: true });
+    const { result } = renderHook(() => useRideNavigation('solo-1', point('p0', 14.6, 121), true));
+
+    await waitFor(() => expect(result.current.supported).toBe(true));
+    expect(result.current.offlineAvailable).toBe(false);
+
+    await act(async () => result.current.downloadTiles());
+
+    expect(mocks.downloadNavigationTiles).toHaveBeenCalledTimes(1);
+    expect(result.current.offlineAvailable).toBe(true);
   });
 
   it('routes from the accepted location and reroutes after three consecutive off-route fixes', async () => {

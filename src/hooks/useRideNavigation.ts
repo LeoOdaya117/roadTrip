@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   calculateOfflineRoute,
+  downloadNavigationTiles,
   getNavigationAvailability,
   speakNavigationPrompt,
   stopNavigationSpeech,
-  supportsOfflineNavigation,
+  supportsTurnByTurnNavigation,
 } from '../services/navigationEngine';
 import {
   distanceAlongRouteMeters,
@@ -26,12 +27,16 @@ export type RideNavigationState = {
   distanceToNextManeuverMeters: number | null;
   isRouting: boolean;
   isGuiding: boolean;
+  isDownloadingTiles: boolean;
+  tileDownloadProgress: number | null;
   error: string | null;
   supported: boolean;
+  offlineAvailable: boolean;
   setDestination: (destination: NavigationDestination) => Promise<void>;
   startGuidance: () => Promise<void>;
   stopGuidance: () => void;
   clearDestination: () => Promise<void>;
+  downloadTiles: () => Promise<void>;
 };
 
 export const useRideNavigation = (
@@ -43,8 +48,11 @@ export const useRideNavigation = (
   const [route, setRoute] = useState<NavigationRoute | null>(null);
   const [isRouting, setIsRouting] = useState(false);
   const [isGuiding, setIsGuiding] = useState(false);
+  const [isDownloadingTiles, setIsDownloadingTiles] = useState(false);
+  const [tileDownloadProgress, setTileDownloadProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [supported, setSupported] = useState(supportsOfflineNavigation());
+  const [supported, setSupported] = useState(supportsTurnByTurnNavigation());
+  const [offlineAvailable, setOfflineAvailable] = useState(false);
   const routeOperationRef = useRef(0);
   const routeInFlightRef = useRef(false);
   const inFlightDestinationKeyRef = useRef<string | null>(null);
@@ -92,7 +100,7 @@ export const useRideNavigation = (
         setRoute(null);
         setError(routeError instanceof Error
           ? routeError.message
-          : 'Unable to calculate an offline route.');
+          : 'Unable to calculate a route. Check your connection or install the regional offline map.');
       }
     } finally {
       if (operation === routeOperationRef.current) setIsRouting(false);
@@ -143,7 +151,7 @@ export const useRideNavigation = (
   }, [rideId]);
 
   useEffect(() => {
-    if (!supportsOfflineNavigation()) {
+    if (!supportsTurnByTurnNavigation()) {
       setSupported(false);
       return;
     }
@@ -151,9 +159,10 @@ export const useRideNavigation = (
     void getNavigationAvailability().then((availability) => {
       if (cancelled) return;
       setSupported(availability.available);
+      setOfflineAvailable(availability.offlineAvailable);
       if (!availability.available && availability.message) setError(availability.message);
     }).catch((availabilityError: unknown) => {
-      if (cancelled && !supportsOfflineNavigation()) return;
+      if (cancelled && !supportsTurnByTurnNavigation()) return;
       setSupported(false);
       setError(availabilityError instanceof Error
         ? availabilityError.message
@@ -201,7 +210,7 @@ export const useRideNavigation = (
   }, [location, persistDestination, routeFrom, supported]);
 
   const startGuidance = useCallback(async () => {
-    if (!supportsOfflineNavigation()) {
+    if (!supportsTurnByTurnNavigation()) {
       setError('Turn-by-turn navigation is available in the Android app.');
       return;
     }
@@ -222,6 +231,30 @@ export const useRideNavigation = (
     }
     if (destination && location && !route) await routeFrom(location, destination);
   }, [destination, location, persistDestination, route, routeFrom]);
+
+  const downloadTiles = useCallback(async () => {
+    if (isDownloadingTiles) return;
+    setIsDownloadingTiles(true);
+    setTileDownloadProgress(0);
+    setError(null);
+    try {
+      await downloadNavigationTiles(setTileDownloadProgress);
+      const availability = await getNavigationAvailability();
+      setSupported(availability.available);
+      setOfflineAvailable(availability.offlineAvailable);
+      if (!availability.available) {
+        throw new Error(availability.message ?? 'Downloaded offline map data could not be opened.');
+      }
+      setTileDownloadProgress(100);
+    } catch (downloadError) {
+      setError(downloadError instanceof Error
+        ? downloadError.message
+        : 'Offline map data could not be downloaded. Check your connection and retry.');
+    } finally {
+      setIsDownloadingTiles(false);
+      setTileDownloadProgress(null);
+    }
+  }, [isDownloadingTiles]);
 
   const stopGuidance = useCallback(() => {
     setIsGuiding(false);
@@ -315,11 +348,15 @@ export const useRideNavigation = (
     distanceToNextManeuverMeters,
     isRouting,
     isGuiding,
+    isDownloadingTiles,
+    tileDownloadProgress,
     error,
     supported,
+    offlineAvailable,
     setDestination,
     startGuidance,
     stopGuidance,
     clearDestination,
+    downloadTiles,
   };
 };

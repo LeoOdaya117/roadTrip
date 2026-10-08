@@ -919,7 +919,7 @@ const RideMapPage: React.FC = () => {
                           : ''}{navigation.nextInstruction}
                       </span>
                     )}
-                    {navigation.isRouting && <span role="status">Calculating offline route…</span>}
+                    {navigation.isRouting && <span role="status">Calculating route…</span>}
                   </div>
                   <div className="navigation-actions">
                     <IonButton
@@ -936,10 +936,23 @@ const RideMapPage: React.FC = () => {
                 </div>
               )}
               <div className="navigation-offline-note">
-                {navigation.supported
-                  ? 'Route calculation works offline. Map imagery and place search need internet.'
-                  : 'Offline routes need the Valhalla map tiles for this area.'}
+                {navigation.offlineAvailable
+                  ? 'Offline routing data is installed. Map imagery and place search still need internet.'
+                  : 'Online routing works across the Philippines. You can download optional CALABARZON and Metro Manila routing data for offline use.'}
               </div>
+              {!navigation.offlineAvailable && (
+                <IonButton
+                  className="navigation-download-button"
+                  size="small"
+                  expand="block"
+                  disabled={navigation.isDownloadingTiles}
+                  onClick={() => void navigation.downloadTiles()}
+                >
+                  {navigation.isDownloadingTiles
+                    ? `Downloading offline map${navigation.tileDownloadProgress == null ? '…' : ` · ${navigation.tileDownloadProgress}%`}`
+                    : 'Download regional offline map · ~227 MB'}
+                </IonButton>
+              )}
             </section>
           )}
 

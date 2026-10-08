@@ -23,11 +23,11 @@ export const decodeValhallaPolyline = (encoded: string, precision = 6): LatLng[]
     let byte: number;
     do {
       if (index >= encoded.length || shift > 30) {
-        throw new Error('The offline route geometry is invalid.');
+        throw new Error('The route geometry is invalid.');
       }
       byte = encoded.charCodeAt(index++) - 63;
       if (byte < 0 || byte > 63) {
-        throw new Error('The offline route geometry is invalid.');
+        throw new Error('The route geometry is invalid.');
       }
       result |= (byte & 0x1f) << shift;
       shift += 5;
@@ -48,13 +48,13 @@ export const normalizeValhallaRoute = (json: string): NavigationRoute => {
   try {
     parsed = JSON.parse(json) as unknown;
   } catch {
-    throw new Error('The offline routing engine returned an unreadable route.');
+    throw new Error('The routing service returned an unreadable route.');
   }
 
   const trip = asRecord(asRecord(parsed)?.trip);
   const legs = trip?.legs;
   if (!Array.isArray(legs) || legs.length === 0) {
-    throw new Error('No route is available for this destination in the offline map.');
+    throw new Error('No route is available for this destination.');
   }
 
   const coordinates: LatLng[] = [];
@@ -103,7 +103,7 @@ export const normalizeValhallaRoute = (json: string): NavigationRoute => {
   });
 
   if (coordinates.length < 2) {
-    throw new Error('The offline routing engine returned no usable road geometry.');
+    throw new Error('The routing service returned no usable road geometry.');
   }
   return {
     coordinates,
