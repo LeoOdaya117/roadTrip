@@ -86,6 +86,26 @@ describe('rideDb v5 persistence', () => {
     expect(await getPendingOutboxCount()).toBe(0);
   });
 
+  it('persists a navigation destination without changing legacy session compatibility', async () => {
+    const legacySession = {
+      rideId: 'solo-legacy',
+      userId: 'rider-1',
+      userName: 'Rider',
+      isHost: true,
+      isSolo: true,
+      createdAt: '2026-08-09T00:00:00.000Z',
+    };
+    await saveRideSession(legacySession);
+    expect(await rideDb.sessions.get('solo-legacy')).toEqual(legacySession);
+
+    const navigationDestination = { lat: 14.1, lng: 120.95, label: 'Tagaytay' };
+    await saveRideSession({ ...legacySession, navigationDestination, navigationEnabled: true });
+    expect(await rideDb.sessions.get('solo-legacy')).toMatchObject({
+      navigationDestination,
+      navigationEnabled: true,
+    });
+  });
+
   it('deletes all data owned by a ride', async () => {
     await saveRideSession({
       rideId: 'group-1',

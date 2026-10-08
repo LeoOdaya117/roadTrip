@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, useMap, Polyline } from 'react-leaflet';
+import { CircleMarker, MapContainer, TileLayer, useMap, useMapEvents, Polyline } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import '../services/leafletConfig';
 import RiderMarker from './RiderMarker';
-import { Rider } from '../types/ride';
+import type { NavigationDestination, NavigationRoute, Rider } from '../types/ride';
 import type L from 'leaflet';
 
 type RideMapViewProps = {
@@ -19,6 +19,16 @@ type RideMapViewProps = {
   labelsAttribution?: string;
   showRiders?: boolean;
   showTrack?: boolean;
+  navigationRoute?: NavigationRoute | null;
+  navigationDestination?: NavigationDestination | null;
+  onDestinationPick?: (point: { lat: number; lng: number }) => void;
+};
+
+const DestinationPickHandler = ({ onPick }: { onPick?: (point: { lat: number; lng: number }) => void }) => {
+  useMapEvents({
+    click: (event) => onPick?.({ lat: event.latlng.lat, lng: event.latlng.lng }),
+  });
+  return null;
 };
 
 const MapReadyHandler = ({ onReady }: { onReady?: (map: L.Map) => void }) => {
@@ -72,7 +82,10 @@ const RideMapView = ({
   labelsTileUrl,
   labelsAttribution,
   showRiders = true,
-  showTrack = true
+  showTrack = true,
+  navigationRoute,
+  navigationDestination,
+  onDestinationPick,
 }: RideMapViewProps) => {
   const markers = useMemo(
     () =>
@@ -128,6 +141,7 @@ const RideMapView = ({
         />
       )}
       <MapReadyHandler onReady={onMapReady} />
+      <DestinationPickHandler onPick={onDestinationPick} />
       {showRiders ? markers : null}
       {showTrack &&
         trackSegments.map((segment, index) => (
@@ -142,6 +156,25 @@ const RideMapView = ({
             />
           </Fragment>
         ))}
+      {navigationRoute && (
+        <>
+          <Polyline
+            positions={navigationRoute.coordinates.map((point) => [point.lat, point.lng])}
+            pathOptions={{ color: '#FFFFFF', weight: 9, opacity: 0.85, lineCap: 'round' }}
+          />
+          <Polyline
+            positions={navigationRoute.coordinates.map((point) => [point.lat, point.lng])}
+            pathOptions={{ color: '#168AAD', weight: 6, opacity: 0.98, lineCap: 'round' }}
+          />
+        </>
+      )}
+      {navigationDestination && (
+        <CircleMarker
+          center={[navigationDestination.lat, navigationDestination.lng]}
+          radius={9}
+          pathOptions={{ color: '#FFFFFF', weight: 3, fillColor: '#EF4444', fillOpacity: 1 }}
+        />
+      )}
     </MapContainer>
   );
 };

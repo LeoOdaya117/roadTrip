@@ -3,7 +3,7 @@ describe('RoadTrip shell', () => {
     cy.visit('/');
 
     cy.contains('ion-title', 'RoadTrip').should('be.visible');
-    cy.contains('Start ride').should('be.visible');
+    cy.contains('Create group ride').should('be.visible');
     cy.contains('button', 'Rides').click();
 
     cy.url().should('include', '/ride-history');
@@ -22,5 +22,55 @@ describe('RoadTrip shell', () => {
     cy.contains('button', 'Light').should('have.attr', 'aria-pressed', 'true');
     cy.contains('button', 'System').click();
     cy.get('html').should('have.attr', 'data-theme-preference', 'system');
+  });
+
+  it('keeps web rides in tracking-only mode without native turn-by-turn controls', () => {
+    cy.visit('/ride-map/solo-web-navigation-check', {
+      onBeforeLoad(win) {
+        Object.defineProperty(win.navigator, 'geolocation', {
+          configurable: true,
+          value: {
+            getCurrentPosition(success: (position: GeolocationPosition) => void) {
+              success({
+                coords: {
+                  latitude: 14.6,
+                  longitude: 121,
+                  accuracy: 5,
+                  altitude: null,
+                  altitudeAccuracy: null,
+                  heading: null,
+                  speed: 5,
+                },
+                timestamp: Date.now(),
+              } as GeolocationPosition);
+            },
+            watchPosition(success: (position: GeolocationPosition) => void) {
+              success({
+                coords: {
+                  latitude: 14.6,
+                  longitude: 121,
+                  accuracy: 5,
+                  altitude: null,
+                  altitudeAccuracy: null,
+                  heading: null,
+                  speed: 5,
+                },
+                timestamp: Date.now(),
+              } as GeolocationPosition);
+              return 1;
+            },
+            clearWatch() {},
+          },
+        });
+        Object.defineProperty(win.navigator, 'permissions', {
+          configurable: true,
+          value: { query: () => Promise.resolve({ state: 'granted' }) },
+        });
+      },
+    });
+
+    cy.get('.map-container').should('exist');
+    cy.get('.navigation-panel').should('not.exist');
+    cy.get('.map-title').should('contain.text', 'Solo ride');
   });
 });
