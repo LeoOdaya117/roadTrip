@@ -8,10 +8,12 @@ import {
 } from '@ionic/react';
 import { locate, pause, play, send, close, stopCircle, camera, layersOutline } from 'ionicons/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { useHistory, useParams } from 'react-router-dom';
 import type L from 'leaflet';
 import RideMapView from '../components/RideMapView';
 import { useLocationTracker } from '../hooks/useLocationTracker';
+import { useRideNavigation } from '../hooks/useRideNavigation';
 import { useMockRiders } from '../hooks/useMockRiders';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useRideChannel } from '../hooks/useRideChannel';
@@ -30,6 +32,7 @@ import {
   haversineDistanceMeters,
 } from '../services/locationFilter';
 import type { AcceptedLocationPoint, PhotoRecord } from '../types/ride';
+import { PLACE_SEARCH_ATTRIBUTION, searchPlaces, type PlaceSearchResult } from '../services/placeSearch';
 import { useRideStore } from '../store/rideStore';
 import maleAvatar from '../assets/images/default/user_male.png';
 import streetPreview from '../assets/images/default/Map/street.png';
@@ -152,6 +155,65 @@ const RideMapPage: React.FC = () => {
     stopTracking,
     startNewSegment,
   } = useLocationTracker(false);
+  const navigation = useRideNavigation(rideId, location, isTracking);
+  const isAndroid = Capacitor.getPlatform() === 'android';
+  const [placeQuery, setPlaceQuery] = useState('');
+  const [placeResults, setPlaceResults] = useState<PlaceSearchResult[]>([]);
+  const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
+  const [placeSearchError, setPlaceSearchError] = useState<string | null>(null);
+  const [isPickingDestination, setIsPickingDestination] = useState(false);
+
+  useEffect(() => {
+    const query = placeQuery.trim();
+    if (query.length < 3 || !isAndroid) {
+      setPlaceResults([]);
+      setIsSearchingPlaces(false);
+      setPlaceSearchError(null);
+      return;
+    }
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      setIsSearchingPlaces(true);
+      setPlaceSearchError(null);
+      void searchPlaces(query, {
+        signal: controller.signal,
+        bias: location ? { lat: location.lat, lng: location.lng } : undefined,
+      }).then((results) => {
+        setPlaceResults(results);
+      }).catch((searchError: unknown) => {
+        if (controller.signal.aborted) return;
+        setPlaceResults([]);
+        setPlaceSearchError(searchError instanceof Error ? searchError.message : 'Place search is unavailable.');
+      }).finally(() => {
+        if (!controller.signal.aborted) setIsSearchingPlaces(false);
+      });
+    }, 450);
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [isAndroid, location, placeQuery]);
+
+  useEffect(() => {
+    if (navigation.error) setErrorMessage(navigation.error);
+  }, [navigation.error]);
+
+  const handleSelectPlace = (place: PlaceSearchResult) => {
+    setPlaceQuery('');
+    setPlaceResults([]);
+    setPlaceSearchError(null);
+    setIsPickingDestination(false);
+    void navigation.setDestination({ lat: place.lat, lng: place.lng, label: place.label });
+  };
+
+  const handleMapDestinationPick = (point: { lat: number; lng: number }) => {
+    if (!isPickingDestination) return;
+    setIsPickingDestination(false);
+    void navigation.setDestination({
+      ...point,
+      label: `Map pin · ${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`,
+    });
+  };
 
   useEffect(() => {
     if (routeRideId) {
@@ -786,6 +848,9 @@ const RideMapPage: React.FC = () => {
             trackPoints={trackPoints}
             currentUserId={currentUser?.id}
             currentUserAccuracy={location?.accuracy ?? null}
+            navigationRoute={navigation.route}
+            navigationDestination={navigation.destination}
+            onDestinationPick={isPickingDestination ? handleMapDestinationPick : undefined}
             onMapReady={(map) => {
               mapRef.current = map;
             }}
@@ -794,6 +859,89 @@ const RideMapPage: React.FC = () => {
             showRiders={enabledOverlays.includes('riders')}
             showTrack={enabledOverlays.includes('track')}
           />
+
+          {isAndroid && (
+            <section className="navigation-panel" aria-label="Turn-by-turn navigation">
+              <label className="navigation-search-label" htmlFor="navigation-place-search">Navigate to</label>
+              <div className="navigation-search-row">
+                <input
+                  id="navigation-place-search"
+                  className="navigation-search-input"
+                  type="search"
+                  value={placeQuery}
+                  onChange={(event) => setPlaceQuery(event.target.value)}
+                  placeholder="Search a place or address"
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  className={`navigation-pick-button${isPickingDestination ? ' is-active' : ''}`}
+                  aria-pressed={isPickingDestination}
+                  onClick={() => setIsPickingDestination((picking) => !picking)}
+                >
+                  {isPickingDestination ? 'Tap map…' : 'Pick on map'}
+                </button>
+              </div>
+              {placeResults.length > 0 && (
+                <div className="navigation-place-results" role="group" aria-label="Place search results">
+                  {placeResults.map((place, index) => (
+                    <button
+                      type="button"
+                      className="navigation-place-result"
+                      key={`${place.lat}-${place.lng}-${index}`}
+                      onClick={() => handleSelectPlace(place)}
+                    >
+                      {place.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {isSearchingPlaces && <div className="navigation-search-note" role="status">Searching places…</div>}
+              {placeSearchError && <div className="navigation-search-error" role="status">{placeSearchError}</div>}
+              <div className="navigation-attribution">{PLACE_SEARCH_ATTRIBUTION}</div>
+              {navigation.error && (
+                <div className="navigation-search-error" role="status">{navigation.error}</div>
+              )}
+              <div className="navigation-attribution">Routing data © OpenStreetMap contributors</div>
+              {navigation.destination && (
+                <div className="navigation-destination-card">
+                  <div className="navigation-destination-copy">
+                    <strong>{navigation.destination.label}</strong>
+                    {navigation.route && (
+                      <span>
+                        {(navigation.route.distanceMeters / 1000).toFixed(1)} km · {Math.max(1, Math.round(navigation.route.durationSeconds / 60))} min
+                      </span>
+                    )}
+                    {navigation.isGuiding && navigation.nextInstruction && (
+                      <span className="navigation-next-turn">
+                        {navigation.distanceToNextManeuverMeters != null
+                          ? `${Math.round(navigation.distanceToNextManeuverMeters)} m · `
+                          : ''}{navigation.nextInstruction}
+                      </span>
+                    )}
+                    {navigation.isRouting && <span role="status">Calculating offline route…</span>}
+                  </div>
+                  <div className="navigation-actions">
+                    <IonButton
+                      size="small"
+                      onClick={() => navigation.isGuiding ? navigation.stopGuidance() : void navigation.startGuidance()}
+                      disabled={!navigation.supported || navigation.isRouting || !location}
+                    >
+                      {navigation.isGuiding ? 'Stop' : 'Start'}
+                    </IonButton>
+                    <IonButton size="small" fill="clear" onClick={() => void navigation.clearDestination()}>
+                      Clear
+                    </IonButton>
+                  </div>
+                </div>
+              )}
+              <div className="navigation-offline-note">
+                {navigation.supported
+                  ? 'Route calculation works offline. Map imagery and place search need internet.'
+                  : 'Offline routes need the Valhalla map tiles for this area.'}
+              </div>
+            </section>
+          )}
 
           {/* ── Top bar: title + live badge only ── */}
           <div className="map-top-bar">

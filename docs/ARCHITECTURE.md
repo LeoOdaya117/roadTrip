@@ -27,14 +27,17 @@ Android application.
 | Build and typing | Vite 5, TypeScript 5.9 in strict/no-emit mode |
 | Shared client state | Zustand 5 |
 | Maps | Leaflet and React Leaflet |
+| Offline navigation | Valhalla Mobile Android bridge with bundled regional tiles |
 | Local persistence | Dexie over IndexedDB plus narrowly scoped local storage |
 | HTTP | Axios |
 | Realtime | Laravel Echo with the Pusher protocol |
 | Location | Capacitor Geolocation and community Background Geolocation |
 | Tests | Vitest, Testing Library, jsdom, and Cypress |
 
-The Android wrapper targets SDK 35 with a minimum SDK of 23. The committed
-application ID is currently `io.ionic.starter`. Android permits cleartext traffic
+The Android wrapper compiles against SDK 36, targets SDK 35, and requires a
+minimum SDK of 24 because Valhalla Mobile's native library requires Android 7.0.
+The Android application ID is `com.github.leoodaya117.roadtrip`, derived from
+the repository's GitHub owner and project name. Android permits cleartext traffic
 for the local HTTP/WebSocket development defaults. There is no committed iOS
 project and no backend implementation in this repository.
 
@@ -146,6 +149,15 @@ selects the newest non-ended session not hidden by `ride:hidden:<rideId>`.
 `RideMapPage` treats Zustand's `isTracking` as the desired ride state and the
 hook's `isTracking` as the actual GPS watch state. It retries startup while a ride
 wants tracking but the watch is unavailable.
+
+Android turn-by-turn navigation is coordinated by `useRideNavigation` from the
+accepted location returned by `useLocationTracker`. The route service calls the
+native `OfflineNavigation` Capacitor plugin, which owns and reuses one Valhalla
+actor and uses native Android text-to-speech. Destination and guidance intent are
+optional fields on the local `RideSession`; generated route geometry remains
+transient and is recalculated on resume. The Android app requires a regional
+`valhalla_tiles.tar` asset; see [Offline Navigation](OFFLINE_NAVIGATION.md).
+Navigation is unavailable on web and does not change the remote basemap behavior.
 
 ### Persist and synchronize locations
 

@@ -23,6 +23,29 @@ export type AcceptedLocationPoint = LocationPoint & {
   source: LocationSource;
 };
 
+export type NavigationDestination = {
+  lat: number;
+  lng: number;
+  label: string;
+};
+
+export type NavigationManeuver = {
+  id: number;
+  shapeIndex: number;
+  instruction: string;
+  distanceMeters: number;
+  timeSeconds: number;
+  lat: number;
+  lng: number;
+};
+
+export type NavigationRoute = {
+  coordinates: Array<{ lat: number; lng: number }>;
+  maneuvers: NavigationManeuver[];
+  distanceMeters: number;
+  durationSeconds: number;
+};
+
 export type Rider = LocationPoint & {
   id: string;
   name: string;
@@ -55,6 +78,8 @@ export type RideSession = {
   durationSeconds?: number;
   elevationGainMeters?: number;
   activeSegmentId?: string;
+  navigationDestination?: NavigationDestination;
+  navigationEnabled?: boolean;
   /** session lifecycle status — e.g. 'active' | 'ended' */
   status?: 'active' | 'ended' | 'paused';
 };
