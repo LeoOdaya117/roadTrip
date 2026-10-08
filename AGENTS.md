@@ -12,6 +12,8 @@ area you are touching:
   current validation baseline.
 - [Background geolocation setup](docs/BACKGROUND_GEO_SETUP.md) — native plugin
   permissions and device setup.
+- [Offline navigation](docs/OFFLINE_NAVIGATION.md) — Valhalla Android routing,
+  tile bundle requirements, coverage, and offline behavior.
 
 ## What this project is
 
