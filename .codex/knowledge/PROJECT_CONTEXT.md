@@ -1,6 +1,6 @@
 # RoadTrip Project Context
 
-Verified from the repository on 2026-10-07. This is a point-in-time map; refresh
+Verified from the repository on 2026-10-10. This is a point-in-time map; refresh
 it after significant architecture, dependency, or command changes.
 
 ## Stack and runtime
@@ -9,9 +9,11 @@ it after significant architecture, dependency, or command changes.
   TypeScript 5.9, Vite 5, React Router 5, and Zustand 5.
 - Maps use Leaflet and React Leaflet. HTTP uses Axios. Realtime uses Laravel Echo
   with the Pusher protocol. Local structured data uses Dexie/IndexedDB.
-- Browser and Android are supported targets. The committed Android app ID is
-  `io.ionic.starter`; `capacitor.config.ts` enables `android.useLegacyBridge`.
-  No iOS project or backend implementation is committed.
+- Browser and Android are supported targets. `capacitor.config.ts` and Gradle
+  set the Android application ID to `com.github.leoodaya117.roadtrip`; the
+  Android Gradle namespace and Java package remain `io.ionic.starter`.
+  `capacitor.config.ts` enables `android.useLegacyBridge`. No iOS project or
+  backend implementation is committed.
 - `VITE_*` settings are bundled into client code. They are public configuration,
   not a place for credentials or privileged secrets.
 
@@ -54,6 +56,9 @@ Routes are declared in `src/App.tsx` using React Router v5 inside
 | `/ride-history-stats/:rideId/share` | Configurable ride share image |
 | `/ride-replay/:rideId` | Stored track replay with time-positioned photos |
 
+`App.tsx` lazy-loads routed pages, applies the theme provider, mounts shared
+navigation, and configures the Android status bar only on native platforms.
+
 Group create/join calls the external API and stores the returned ride in
 Zustand and Dexie before opening the lobby. Realtime rider updates are optional.
 The current client does not publish a separate ride-start event. Solo sessions
@@ -66,12 +71,23 @@ locations. Batch upload is additionally gated by
 segment on resume. Ending records final stats, marks the session ended and hidden
 from resume, clears transient ride state, and resets the timer.
 
+On Android, `RideMapPage` connects accepted locations to `useRideNavigation` and
+the `OfflineNavigation` Capacitor bridge. Routing uses the configured hosted
+Valhalla endpoint by default; an optional downloaded CALABARZON/Metro Manila
+graph supports routes within its coverage. Destination and guidance intent are
+saved on the local session, while route geometry is recalculated on resume.
+Navigation is unavailable on web, and the Leaflet basemap still needs network
+access. See `docs/OFFLINE_NAVIGATION.md` for endpoint, coverage, attribution,
+and device-validation details.
+
 ## Persistence and important contracts
 
 - Dexie database `rideTrackerDb` currently has schema version 5. Tables are
   sessions, latest locations, track points, photos, and the optional upload
   outbox. Schema versions and field meanings are compatibility contracts; add a
   new version for schema changes.
+- `deleteSession` removes a ride's session, latest location, tracks, photos, and
+  outbox rows in one Dexie transaction.
 - `rideId` is shared across routes, Zustand, REST/realtime, and Dexie. Solo IDs
   keep the `solo-` prefix.
 - The device owner's accepted track is stored locally for solo and group rides.

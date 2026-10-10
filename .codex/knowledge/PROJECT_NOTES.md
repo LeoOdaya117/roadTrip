@@ -48,9 +48,17 @@ Verified conventions for future changes. Canonical detailed guidance remains in
 
 - Source `src/services/offlineDb.ts:deleteSession` transactionally deletes
   sessions, locations, tracks, photos, and outbox records. The current
-  `docs/ARCHITECTURE.md` history paragraph still says photo deletion is omitted.
+  `docs/ARCHITECTURE.md` history paragraph still says photo deletion is omitted;
+  update that documentation when its owner next edits the history section.
 - The current Dexie schema and migration tests use version 5, while
-  `docs/TESTING.md` still mentions fresh v4 creation.
+  `docs/TESTING.md` still mentions fresh v4 creation. Keep the docs aligned with
+  the current v5 schema when that testing section is next maintained.
+- The previous project context called `io.ionic.starter` the Android app ID.
+  It is the Gradle namespace/package; `applicationId` in `android/app/build.gradle`
+  and `appId` in `capacitor.config.ts` are `com.github.leoodaya117.roadtrip`.
+- `cypress.config.mjs` sets `http://127.0.0.1:5173`, while `docs/TESTING.md`
+  describes `http://localhost:5173`. Align the documentation when that section
+  is next maintained.
 
 These are documentation inconsistencies observed during initialization; they do
 not change the verified runtime contracts above.

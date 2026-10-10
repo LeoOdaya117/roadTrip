@@ -1,0 +1,243 @@
+{
+  "root": "D:\\Projects\\Ionic React\\roadTrip",
+  "registered_agent_names": [
+    "architecture",
+    "code_reviewer",
+    "frontend_engineer",
+    "qa",
+    "release_reviewer",
+    "security_reviewer"
+  ],
+  "items": [
+    {
+      "kind": "skill",
+      "name": "create-ticket",
+      "path": ".agents/skills/create-ticket/SKILL.md",
+      "description": "Turn an issue or feature description plus screenshots, files, logs and repository context into a structured local engineering ticket. Use for reporting bugs, requests and tasks; never implement during creation.",
+      "roles": [],
+      "registered": false
+    },
+    {
+      "kind": "skill",
+      "name": "discover-team",
+      "path": ".agents/skills/discover-team/SKILL.md",
+      "description": "Discover and reuse repository-specific Codex agents and skills before orchestrating a ticket; produce an inventory and suggest role mappings without overwriting configuration.",
+      "roles": [],
+      "registered": false
+    },
+    {
+      "kind": "skill",
+      "name": "feature-build",
+      "path": ".agents/skills/feature-build/SKILL.md",
+      "description": "Implement a selected RoadTrip feature plan, coordinate bounded specialists, verify integrated behavior, and record observed progress.",
+      "roles": [
+        "frontend"
+      ],
+      "registered": false
+    },
+    {
+      "kind": "skill",
+      "name": "feature-map",
+      "path": ".agents/skills/feature-map/SKILL.md",
+      "description": "Map a RoadTrip feature request through the implemented app flow, interfaces, lifecycle invariants, and relevant tests before planning or implementation.",
+      "roles": [
+        "qa"
+      ],
+      "registered": false
+    },
+    {
+      "kind": "skill",
+      "name": "feature-plan",
+      "path": ".agents/skills/feature-plan/SKILL.md",
+      "description": "Turn a RoadTrip feature request into a repository-grounded, decision-complete implementation plan saved under .codex/plans/.",
+      "roles": [],
+      "registered": false
+    },
+    {
+      "kind": "skill",
+      "name": "process-ticket",
+      "path": ".agents/skills/process-ticket/SKILL.md",
+      "description": "Orchestrate an existing engineering ticket through reproduction, planning, specialist implementation, independent review, testing and QA; finish at human verification, never auto-merge.",
+      "roles": [
+        "qa"
+      ],
+      "registered": false
+    },
+    {
+      "kind": "skill",
+      "name": "project-init",
+      "path": ".agents/skills/project-init/SKILL.md",
+      "description": "Inspect RoadTrip and create or refresh concise, source-verified architecture and convention knowledge for future work.",
+      "roles": [
+        "architect"
+      ],
+      "registered": false
+    },
+    {
+      "kind": "skill",
+      "name": "verify-ticket",
+      "path": ".agents/skills/verify-ticket/SKILL.md",
+      "description": "Record a human verifier's approval or rejection of a processed ticket, update status, and route rejected work back to implementation.",
+      "roles": [],
+      "registered": false
+    },
+    {
+      "kind": "agent",
+      "name": "architecture",
+      "path": ".codex/agents/architecture.toml",
+      "description": "Read-only RoadTrip feature mapper for tracing UI, ride lifecycle, state, persistence, integrations, and contracts before substantial changes.",
+      "roles": [
+        "architect"
+      ],
+      "registered": true
+    },
+    {
+      "kind": "agent",
+      "name": "code_reviewer",
+      "path": ".codex/agents/code_reviewer.toml",
+      "description": "Independent read-only reviewer for RoadTrip correctness, regressions, integration contracts, and missing tests.",
+      "roles": [
+        "reviewer"
+      ],
+      "registered": true
+    },
+    {
+      "kind": "agent",
+      "name": "frontend_engineer",
+      "path": ".codex/agents/frontend_engineer.toml",
+      "description": "Bounded Ionic React and TypeScript implementer for RoadTrip UI, hooks, and client-side behavior.",
+      "roles": [
+        "frontend"
+      ],
+      "registered": true
+    },
+    {
+      "kind": "agent",
+      "name": "qa",
+      "path": ".codex/agents/qa.toml",
+      "description": "Read-only QA specialist for RoadTrip acceptance criteria, lifecycle edge cases, test gaps, and integrated verification.",
+      "roles": [
+        "qa"
+      ],
+      "registered": true
+    },
+    {
+      "kind": "agent",
+      "name": "release_reviewer",
+      "path": ".codex/agents/release_reviewer.toml",
+      "description": "Read-only release readiness reviewer for RoadTrip compatibility, native configuration, docs, and validation evidence.",
+      "roles": [
+        "reviewer"
+      ],
+      "registered": true
+    },
+    {
+      "kind": "agent",
+      "name": "security_reviewer",
+      "path": ".codex/agents/security_reviewer.toml",
+      "description": "Read-only targeted security reviewer for RoadTrip client data handling, external integrations, and native boundaries.",
+      "roles": [
+        "security"
+      ],
+      "registered": true
+    }
+  ],
+  "by_role": {
+    "investigator": [],
+    "architect": [
+      {
+        "kind": "agent",
+        "name": "architecture",
+        "path": ".codex/agents/architecture.toml",
+        "description": "Read-only RoadTrip feature mapper for tracing UI, ride lifecycle, state, persistence, integrations, and contracts before substantial changes.",
+        "roles": [
+          "architect"
+        ],
+        "registered": true
+      }
+    ],
+    "backend": [],
+    "frontend": [
+      {
+        "kind": "skill",
+        "name": "feature-build",
+        "path": ".agents/skills/feature-build/SKILL.md",
+        "description": "Implement a selected RoadTrip feature plan, coordinate bounded specialists, verify integrated behavior, and record observed progress.",
+        "roles": [
+          "frontend"
+        ],
+        "registered": false
+      },
+      {
+        "kind": "agent",
+        "name": "frontend_engineer",
+        "path": ".codex/agents/frontend_engineer.toml",
+        "description": "Bounded Ionic React and TypeScript implementer for RoadTrip UI, hooks, and client-side behavior.",
+        "roles": [
+          "frontend"
+        ],
+        "registered": true
+      }
+    ],
+    "database": [],
+    "security": [
+      {
+        "kind": "agent",
+        "name": "security_reviewer",
+        "path": ".codex/agents/security_reviewer.toml",
+        "description": "Read-only targeted security reviewer for RoadTrip client data handling, external integrations, and native boundaries.",
+        "roles": [
+          "security"
+        ],
+        "registered": true
+      }
+    ],
+    "devops": [],
+    "reviewer": [
+      {
+        "kind": "agent",
+        "name": "code_reviewer",
+        "path": ".codex/agents/code_reviewer.toml",
+        "description": "Independent read-only reviewer for RoadTrip correctness, regressions, integration contracts, and missing tests.",
+        "roles": [
+          "reviewer"
+        ],
+        "registered": true
+      },
+      {
+        "kind": "agent",
+        "name": "release_reviewer",
+        "path": ".codex/agents/release_reviewer.toml",
+        "description": "Read-only release readiness reviewer for RoadTrip compatibility, native configuration, docs, and validation evidence.",
+        "roles": [
+          "reviewer"
+        ],
+        "registered": true
+      }
+    ],
+    "qa": [
+      {
+        "kind": "skill",
+        "name": "feature-map",
+        "path": ".agents/skills/feature-map/SKILL.md",
+        "description": "Map a RoadTrip feature request through the implemented app flow, interfaces, lifecycle invariants, and relevant tests before planning or implementation.",
+        "roles": [
+          "qa"
+        ],
+        "registered": false
+      },
+      {
+        "kind": "agent",
+        "name": "qa",
+        "path": ".codex/agents/qa.toml",
+        "description": "Read-only QA specialist for RoadTrip acceptance criteria, lifecycle edge cases, test gaps, and integrated verification.",
+        "roles": [
+          "qa"
+        ],
+        "registered": true
+      }
+    ],
+    "docs": []
+  },
+  "note": "Inventory is heuristic. Read candidate instructions before delegation. Skills are not automatically subagents."
+}
