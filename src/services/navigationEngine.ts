@@ -1,7 +1,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import type { PluginListenerHandle } from '@capacitor/core';
-import type { NavigationDestination, NavigationRoute } from '../types/ride';
-import { normalizeValhallaRoute } from './navigationRoute';
+import type { NavigationDestination, NavigationRoute, NavigationRouteOption } from '../types/ride';
+import { normalizeValhallaRoute, normalizeValhallaRoutes } from './navigationRoute';
 
 type RouteEndpoint = { lat: number; lng: number };
 
@@ -16,6 +16,7 @@ type OfflineNavigationPlugin = {
     origin: RouteEndpoint;
     destination: RouteEndpoint;
     routingUrl: string;
+    alternatives?: number;
   }): Promise<{ responseJson: string }>;
   speak(options: { text: string }): Promise<void>;
   stopSpeech(): Promise<void>;
@@ -70,6 +71,22 @@ export const calculateOfflineRoute = async (
     routingUrl,
   });
   return normalizeValhallaRoute(responseJson);
+};
+
+export const calculateRouteOptions = async (
+  origin: RouteEndpoint,
+  destination: NavigationDestination,
+): Promise<NavigationRouteOption[]> => {
+  ensureAndroid();
+  const routingUrl = import.meta.env.VITE_NAVIGATION_ROUTING_URL?.trim()
+    || DEFAULT_ROUTING_URL;
+  const { responseJson } = await OfflineNavigation.route({
+    origin,
+    destination: { lat: destination.lat, lng: destination.lng },
+    routingUrl,
+    alternatives: 2,
+  });
+  return normalizeValhallaRoutes(responseJson);
 };
 
 export const speakNavigationPrompt = async (text: string) => {

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent } from '@ionic/react';
+import { IonPage, IonContent } from '@ionic/react';
 import { fetchRideById } from '../api/ride';
 import ShareImageGenerator from '../components/ShareImage/ShareImageGenerator';
 import type { Ride } from '../types/ride';
 import '../styles/ride-history-styles.css';
+import AppHeader from '../components/AppHeader';
 
 type Props = { rideId: string };
 
@@ -14,10 +15,16 @@ export default function ShareImagePage({ rideId }: Props) {
 
   useEffect(() => {
     let mounted = true;
+    let photoUrls: string[] = [];
     setLoading(true);
+    setError(null);
     fetchRideById(rideId)
       .then(r => {
-        if (!mounted) return;
+        if (!mounted) {
+          r.photoUrls.filter((url) => url.startsWith('blob:')).forEach((url) => URL.revokeObjectURL(url));
+          return;
+        }
+        photoUrls = r.photoUrls.filter((url) => url.startsWith('blob:'));
         setRide(r);
         setLoading(false);
       })
@@ -26,27 +33,24 @@ export default function ShareImagePage({ rideId }: Props) {
         setError(String(err));
         setLoading(false);
       });
-    return () => { mounted = false };
+    return () => {
+      mounted = false;
+      photoUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
   }, [rideId]);
-
-  if (loading) return <IonPage><IonContent className="app-page"><div className="screen-state" role="status">Loading ride details…</div></IonContent></IonPage>;
-  if (error) return <IonPage><IonContent className="app-page"><div className="screen-state" role="alert">Couldn’t load this ride. {error}</div></IonContent></IonPage>;
-  if (!ride) return <IonPage><IonContent className="app-page"><div className="screen-state" role="status">Ride not found.</div></IonContent></IonPage>;
 
   return (
     <IonPage>
-      <IonHeader>
-        <IonToolbar className="app-toolbar">
-          <IonButtons slot="start">
-            <IonBackButton defaultHref={`/ride-history-stats/${rideId}`} />
-          </IonButtons>
-          <IonTitle>Create Share Image</IonTitle>
-        </IonToolbar>
-      </IonHeader>
+      <AppHeader title="Create Share Image" backHref={`/ride-history-stats/${rideId}`} />
       <IonContent className="app-page page-content share-screen">
-        <div className="screen-shell">
-          <ShareImageGenerator ride={ride} />
-        </div>
+        {loading && <div className="screen-state" role="status">Loading ride details…</div>}
+        {!loading && error && <div className="screen-state" role="alert">Couldn’t load this ride. {error}</div>}
+        {!loading && !error && !ride && <div className="screen-state" role="status">Ride not found.</div>}
+        {ride && !loading && !error && <div className="screen-shell share-page-shell">
+          <div className="share-page-scroll">
+            <ShareImageGenerator ride={ride} />
+          </div>
+        </div>}
       </IonContent>
     </IonPage>
   );

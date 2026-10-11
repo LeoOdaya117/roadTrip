@@ -1,23 +1,22 @@
 import {
   IonContent,
-  IonHeader,
   IonPage,
   IonSpinner,
-  IonTitle,
-  IonToolbar,
-  IonToast,
-  IonButtons,
   IonIcon,
+  IonModal,
 } from '@ionic/react';
 import { people, key, add, play } from 'ionicons/icons';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIonViewWillEnter } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import { createRide, joinRide } from '../services/api';
 import { createLocalUser, loadUserProfile } from '../services/user';
-import { getRideSession, getAllSessions, saveRideSession, deleteSession } from '../services/offlineDb';
+import { getRideSession, getAllSessions, saveRideSession } from '../services/offlineDb';
 import { useRideStore } from '../store/rideStore';
 import { RideSession } from '../types/ride';
+import type { NavigationDestination } from '../types/ride';
+import RideSetupWizard from '../components/RideSetupWizard';
+import AppHeader from '../components/AppHeader';
 
 const HomePage: React.FC = () => {
   const history = useHistory();
@@ -31,9 +30,13 @@ const HomePage: React.FC = () => {
   const [loadingAction, setLoadingAction] = useState<'create' | 'join' | 'solo' | null>(
     null
   );
-  const [startMode, setStartMode] = useState<'group' | 'solo'>('group');
-  const [error, setError] = useState<string | null>(null);
+  const [isPlanningRide, setIsPlanningRide] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [joinError, setJoinError] = useState<string | null>(null);
   const [savedSession, setSavedSession] = useState<RideSession | null>(null);
+  const [hiddenResumeRideId, setHiddenResumeRideId] = useState<string | null>(null);
+  const [setupModalPresented, setSetupModalPresented] = useState(false);
+  const startRideButtonRef = useRef<HTMLButtonElement>(null);
 
   const currentUser = useRideStore((state) => state.currentUser);
 
@@ -92,8 +95,9 @@ const HomePage: React.FC = () => {
     return () => window.removeEventListener('ride:ended', handler as EventListener);
   }, [refreshSavedSession]);
 
-  const handleCreateRide = async () => {
+  const handleCreateRide = async (destination: NavigationDestination, routeIndex: number) => {
     try {
+      setCreateError(null);
       setLoadingAction('create');
       const user = createLocalUser(true);
       setUser(user);
@@ -117,14 +121,17 @@ const HomePage: React.FC = () => {
         userName: user.name,
         isHost: true,
         createdAt: new Date().toISOString(),
-        status: 'active'
+        status: 'active',
+        navigationDestination: destination,
+        navigationRouteIndex: routeIndex,
       };
       await saveRideSession(session);
       setSavedSession(session);
+      setIsPlanningRide(false);
 
       history.push(`/ride-lobby/${rideId}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to create ride.');
+      setCreateError(err instanceof Error ? err.message : 'Unable to create ride.');
     } finally {
       setLoadingAction(null);
     }
@@ -133,11 +140,12 @@ const HomePage: React.FC = () => {
   const handleJoinRide = async () => {
     const trimmedCode = joinCode.trim();
     if (!trimmedCode) {
-      setError('Enter a ride code to join.');
+      setJoinError('Enter a ride code to join.');
       return;
     }
 
     try {
+      setJoinError(null);
       setLoadingAction('join');
       const user = createLocalUser(false);
       setUser(user);
@@ -167,7 +175,7 @@ const HomePage: React.FC = () => {
 
       history.push(`/ride-lobby/${response.rideId}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to join ride.');
+      setJoinError(err instanceof Error ? err.message : 'Unable to join ride.');
     } finally {
       setLoadingAction(null);
     }
@@ -197,8 +205,9 @@ const HomePage: React.FC = () => {
     }
   };
 
-  const handleSoloRide = async () => {
+  const handleSoloRide = async (destination: NavigationDestination, routeIndex: number) => {
     try {
+      setCreateError(null);
       setLoadingAction('solo');
       const user = createLocalUser(true);
       setUser(user);
@@ -216,14 +225,17 @@ const HomePage: React.FC = () => {
         isHost: true,
         isSolo: true,
         createdAt: new Date().toISOString(),
-        status: 'active'
+        status: 'active',
+        navigationDestination: destination,
+        navigationRouteIndex: routeIndex,
       };
       await saveRideSession(session);
       setSavedSession(session);
+      setIsPlanningRide(false);
 
       history.push(`/ride-map/${rideId}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to start solo ride.');
+      setCreateError(err instanceof Error ? err.message : 'Unable to start solo ride.');
     } finally {
       setLoadingAction(null);
     }
@@ -231,27 +243,25 @@ const HomePage: React.FC = () => {
 
   return (
     <IonPage>
-      <IonHeader>
-        <IonToolbar className="app-toolbar">
-          <IonTitle>RoadTrip</IonTitle>
-          <IonButtons slot="end">
-            <button
-              className="home-account-btn"
-              onClick={() => history.push('/account')}
-              aria-label="Account"
-            >
-              {currentUser?.avatarUrl ? (
-                <img src={currentUser.avatarUrl} className="home-account-avatar" alt="Profile" />
-              ) : (
-                <span className="home-account-initials">
-                  {(currentUser?.name ?? 'R').slice(0, 2).toUpperCase()}
-                </span>
-              )}
-            </button>
-          </IonButtons>
-          {/* last-session pill removed from header — moved into page content */}
-        </IonToolbar>
-      </IonHeader>
+      <AppHeader
+        title="RoadTrip"
+        actions={(
+          <button
+            type="button"
+            className="home-account-btn"
+            onClick={() => history.push('/account')}
+            aria-label="Account"
+          >
+            {currentUser?.avatarUrl ? (
+              <img src={currentUser.avatarUrl} className="home-account-avatar" alt="Profile" />
+            ) : (
+              <span className="home-account-initials">
+                {(currentUser?.name ?? 'R').slice(0, 2).toUpperCase()}
+              </span>
+            )}
+          </button>
+        )}
+      />
       <IonContent className="app-page page-content home-minimal home-page">
 
         <div className="page-hero">
@@ -266,7 +276,7 @@ const HomePage: React.FC = () => {
         </div>
 
         <div className="home-grid">
-          {savedSession && (
+          {savedSession && hiddenResumeRideId !== savedSession.rideId && (
             <div className="glass-card resume-card crew-resume-card">
               <div className="card-head">
                 <div className="card-head-left">
@@ -279,17 +289,9 @@ const HomePage: React.FC = () => {
                 <button className="btn-primary" onClick={handleResumeRide}>Resume Ride</button>
                 <button
                   className="btn-secondary"
-                  onClick={async () => {
-                    if (!savedSession) return;
-                    try {
-                      await deleteSession(savedSession.rideId);
-                      setSavedSession(null);
-                    } catch {
-                      /* ignore */
-                    }
-                  }}
+                  onClick={() => setHiddenResumeRideId(savedSession.rideId)}
                 >
-                  Dismiss
+                  Hide for now
                 </button>
               </div>
             </div>
@@ -304,29 +306,18 @@ const HomePage: React.FC = () => {
             </div>
             <p className="card-description">Bring everyone onto the same map, or switch to a solo route.</p>
 
-            <div className="start-mode-toggle" role="group" aria-label="Ride type" style={{ display: 'flex', gap: 8, marginTop: 8, marginBottom: 12 }}>
-              <button type="button" aria-pressed={startMode === 'group'} className={startMode === 'group' ? 'chip chip-active' : 'chip'} onClick={() => setStartMode('group')}>Group ride</button>
-              <button type="button" aria-pressed={startMode === 'solo'} className={startMode === 'solo' ? 'chip chip-active' : 'chip'} onClick={() => setStartMode('solo')}>Solo ride</button>
-            </div>
-
             <button
+              ref={startRideButtonRef}
               className="btn-primary btn-primary-lg"
-              onClick={async () => {
-                if (startMode === 'group') {
-                  await handleCreateRide();
-                } else {
-                  await handleSoloRide();
-                }
+              onClick={() => {
+                setCreateError(null);
+                setIsPlanningRide(true);
               }}
               disabled={loadingAction !== null}
             >
-              {loadingAction === 'create' || loadingAction === 'solo' ? (
-                <span className="btn-inner">
-                  <IonSpinner name="dots" style={{ width: 18, height: 18 }} />
-                  Starting…
-                </span>
-              ) : (startMode === 'group' ? 'Create group ride' : 'Start solo ride')}
+              Start a ride
             </button>
+            {createError && !isPlanningRide && <p className="home-action-error" role="alert">{createError}</p>}
           </div>
 
           <div className="glass-card join-card crew-join-card">
@@ -344,13 +335,17 @@ const HomePage: React.FC = () => {
                   </div>
                 </div>
                 <div className="input-group" style={{ marginTop: 8 }}>
+                  <label className="home-field-label" htmlFor="ride-code">Ride code</label>
                   <input
                     id="ride-code"
                     className="custom-input"
                     type="text"
-                    placeholder="Ride code"
+                    placeholder="Enter the code from your host"
                     value={joinCode}
-                    onChange={(e) => setJoinCode(e.target.value)}
+                    onChange={(e) => {
+                      setJoinCode(e.target.value);
+                      setJoinError(null);
+                    }}
                     autoComplete="off"
                     autoCorrect="off"
                     spellCheck={false}
@@ -369,6 +364,7 @@ const HomePage: React.FC = () => {
                     ) : 'Join Ride'}
                   </button>
                 </div>
+                {joinError && <p className="home-action-error" role="alert">{joinError}</p>}
               </div>
             </div>
           </div>
@@ -377,13 +373,36 @@ const HomePage: React.FC = () => {
         {/* bottom resume card removed; moved into grid */}
 
       </IonContent>
-      <IonToast
-        isOpen={error !== null}
-        message={error ?? ''}
-        color="danger"
-        duration={2500}
-        onDidDismiss={() => setError(null)}
-      />
+      <IonModal
+        isOpen={isPlanningRide}
+        className="ride-setup-modal"
+        backdropDismiss={false}
+        onDidPresent={() => setSetupModalPresented(true)}
+        onDidDismiss={() => {
+          setSetupModalPresented(false);
+          setIsPlanningRide(false);
+          startRideButtonRef.current?.focus();
+        }}
+      >
+        {isPlanningRide && (
+          <IonPage className="ride-setup-modal-page">
+            <AppHeader title="Plan a ride" />
+            <IonContent className="ride-setup-modal-content">
+              <RideSetupWizard
+                busy={loadingAction !== null}
+                errorMessage={createError}
+                isModalPresented={setupModalPresented}
+                onCancel={() => {
+                  if (loadingAction === null) setIsPlanningRide(false);
+                }}
+                onContinue={(mode, destination, routeIndex) => mode === 'group'
+                  ? void handleCreateRide(destination, routeIndex)
+                  : void handleSoloRide(destination, routeIndex)}
+              />
+            </IonContent>
+          </IonPage>
+        )}
+      </IonModal>
     </IonPage>
   );
 };

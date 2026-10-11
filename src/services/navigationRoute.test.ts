@@ -4,6 +4,7 @@ import {
   nearestRouteProgress,
   nextRouteManeuver,
   normalizeValhallaRoute,
+  normalizeValhallaRoutes,
   routeOffTrackThresholdMeters,
   updateOffRouteFixCount,
 } from './navigationRoute';
@@ -66,6 +67,21 @@ describe('navigationRoute', () => {
       lat: points[2].lat,
       lng: points[2].lng,
     });
+  });
+
+  it('normalizes the primary route and any alternatives returned by Valhalla', () => {
+    const trip = (length: number) => ({
+      legs: [{ shape: encodePolyline(points), summary: { length, time: 240 }, maneuvers: [] }],
+    });
+    const routes = normalizeValhallaRoutes(JSON.stringify({
+      trip: trip(1.25),
+      alternates: [{ trip: trip(1.8) }, { trip: trip(2.1) }],
+    }));
+
+    expect(routes).toHaveLength(3);
+    expect(routes.map(({ label }) => label)).toEqual(['Recommended', 'Alternative 1', 'Alternative 2']);
+    expect(routes.map(({ route }) => route.distanceMeters)).toEqual([1250, 1800, 2100]);
+    expect(routes[1].route.coordinates).toEqual(points);
   });
 
   it('finds route progress and the next turn without changing coordinate order', () => {

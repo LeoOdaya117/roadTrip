@@ -3,7 +3,7 @@ import { CircleMarker, MapContainer, TileLayer, useMap, useMapEvents, Polyline }
 import 'leaflet/dist/leaflet.css';
 import '../services/leafletConfig';
 import RiderMarker from './RiderMarker';
-import type { NavigationDestination, NavigationRoute, Rider } from '../types/ride';
+import type { MapMarkerStyle, NavigationDestination, NavigationRoute, Rider } from '../types/ride';
 import type L from 'leaflet';
 
 type RideMapViewProps = {
@@ -12,6 +12,7 @@ type RideMapViewProps = {
   trackPoints?: { lat: number; lng: number; segmentId?: string }[];
   currentUserId?: string;
   currentUserAccuracy?: number | null;
+  currentUserMarkerStyle?: MapMarkerStyle;
   onMapReady?: (map: L.Map) => void;
   tileUrl?: string;
   attribution?: string;
@@ -76,6 +77,7 @@ const RideMapView = ({
   trackPoints,
   currentUserId,
   currentUserAccuracy,
+  currentUserMarkerStyle = 'circle',
   onMapReady,
   tileUrl,
   attribution,
@@ -95,9 +97,10 @@ const RideMapView = ({
           rider={rider}
           isCurrentUser={rider.id === currentUserId}
           accuracy={rider.id === currentUserId ? currentUserAccuracy ?? null : null}
+          markerStyle={rider.id === currentUserId ? currentUserMarkerStyle : 'circle'}
         />
       )),
-    [riders, currentUserId, currentUserAccuracy]
+    [riders, currentUserId, currentUserAccuracy, currentUserMarkerStyle]
   );
 
   const trackSegments = useMemo(() => {

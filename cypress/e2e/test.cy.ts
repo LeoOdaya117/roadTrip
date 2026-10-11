@@ -3,7 +3,7 @@ describe('RoadTrip shell', () => {
     cy.visit('/');
 
     cy.contains('ion-title', 'RoadTrip').should('be.visible');
-    cy.contains('Create group ride').should('be.visible');
+    cy.contains('button', 'Start a ride').should('be.visible');
     cy.contains('button', 'Rides').click();
 
     cy.url().should('include', '/ride-history');

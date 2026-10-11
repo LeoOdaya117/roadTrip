@@ -146,6 +146,7 @@ class OfflineNavigationPlugin : Plugin() {
         val origin = call.getObject("origin")
         val destination = call.getObject("destination")
         val routingUrl = call.getString("routingUrl")?.trim()
+        val alternatives = (call.getInt("alternatives") ?: 0).coerceIn(0, 2)
         val originLat = origin?.optDouble("lat", Double.NaN) ?: Double.NaN
         val originLng = origin?.optDouble("lng", Double.NaN) ?: Double.NaN
         val destinationLat = destination?.optDouble("lat", Double.NaN) ?: Double.NaN
@@ -167,6 +168,7 @@ class OfflineNavigationPlugin : Plugin() {
                     )
                     .put("costing", "motorcycle")
                     .put("units", "kilometers")
+                    .put("alternates", alternatives)
                 val response = if (tileFile().isFile && tileFile().length() > 0L) {
                     try {
                         getValhalla().routeRaw(request.toString())

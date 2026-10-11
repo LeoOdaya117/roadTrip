@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  calculateOfflineRoute,
+  calculateRouteOptions,
   downloadNavigationTiles,
   getNavigationAvailability,
   speakNavigationPrompt,
@@ -18,11 +18,13 @@ import type {
   AcceptedLocationPoint,
   NavigationDestination,
   NavigationRoute,
+  NavigationRouteOption,
 } from '../types/ride';
 
 export type RideNavigationState = {
   destination: NavigationDestination | null;
   route: NavigationRoute | null;
+  selectedRouteIndex: number;
   nextInstruction: string | null;
   distanceToNextManeuverMeters: number | null;
   isRouting: boolean;
@@ -32,7 +34,7 @@ export type RideNavigationState = {
   error: string | null;
   supported: boolean;
   offlineAvailable: boolean;
-  setDestination: (destination: NavigationDestination) => Promise<void>;
+  setDestination: (destination: NavigationDestination, routeIndex?: number) => Promise<void>;
   startGuidance: () => Promise<void>;
   stopGuidance: () => void;
   clearDestination: () => Promise<void>;
@@ -46,6 +48,7 @@ export const useRideNavigation = (
 ): RideNavigationState => {
   const [destination, setDestinationState] = useState<NavigationDestination | null>(null);
   const [route, setRoute] = useState<NavigationRoute | null>(null);
+  const [selectedRouteIndex, setSelectedRouteIndex] = useState(0);
   const [isRouting, setIsRouting] = useState(false);
   const [isGuiding, setIsGuiding] = useState(false);
   const [isDownloadingTiles, setIsDownloadingTiles] = useState(false);
@@ -54,6 +57,7 @@ export const useRideNavigation = (
   const [supported, setSupported] = useState(supportsTurnByTurnNavigation());
   const [offlineAvailable, setOfflineAvailable] = useState(false);
   const routeOperationRef = useRef(0);
+  const selectedRouteIndexRef = useRef(0);
   const routeInFlightRef = useRef(false);
   const inFlightDestinationKeyRef = useRef<string | null>(null);
   const pendingRouteRef = useRef<{
@@ -86,8 +90,10 @@ export const useRideNavigation = (
     setIsRouting(true);
     setError(null);
     try {
-      const nextRoute = await calculateOfflineRoute(origin, target);
+      const routeOptions: NavigationRouteOption[] = await calculateRouteOptions(origin, target);
       if (operation !== routeOperationRef.current) return;
+      const nextRoute = routeOptions[selectedRouteIndexRef.current]?.route ?? routeOptions[0]?.route;
+      if (!nextRoute) throw new Error('No route is available for this destination.');
       setRoute(nextRoute);
       offRouteFixCountRef.current = 0;
       spokenManeuverRef.current = null;
@@ -119,6 +125,8 @@ export const useRideNavigation = (
     pendingRouteRef.current = null;
     setDestinationState(null);
     setRoute(null);
+    setSelectedRouteIndex(0);
+    selectedRouteIndexRef.current = 0;
     setIsGuiding(false);
     setError(null);
     routeOperationRef.current += 1;
@@ -132,7 +140,12 @@ export const useRideNavigation = (
       if (cancelled) return;
       didRestoreRef.current = true;
       const restoredDestination = session?.endedAt ? null : session?.navigationDestination ?? null;
+      const restoredRouteIndex = Number.isInteger(session?.navigationRouteIndex)
+        ? Math.max(0, session?.navigationRouteIndex ?? 0)
+        : 0;
       setDestinationState(restoredDestination);
+      setSelectedRouteIndex(restoredRouteIndex);
+      selectedRouteIndexRef.current = restoredRouteIndex;
       setIsGuiding(Boolean(
         restoredDestination
         && session?.navigationEnabled !== false
@@ -174,30 +187,40 @@ export const useRideNavigation = (
   const persistDestination = useCallback(async (
     value: NavigationDestination | null,
     enabled = false,
+    routeIndex = selectedRouteIndexRef.current,
   ) => {
     if (!rideId) return;
     const session = await getSession(rideId);
     if (!session) return;
     if (value) {
-      await saveRideSession({ ...session, navigationDestination: value, navigationEnabled: enabled });
+      await saveRideSession({
+        ...session,
+        navigationDestination: value,
+        navigationEnabled: enabled,
+        navigationRouteIndex: routeIndex,
+      });
     } else {
       const withoutDestination = { ...session };
       delete withoutDestination.navigationDestination;
       delete withoutDestination.navigationEnabled;
+      delete withoutDestination.navigationRouteIndex;
       await saveRideSession(withoutDestination);
     }
   }, [rideId]);
 
-  const setDestination = useCallback(async (value: NavigationDestination) => {
+  const setDestination = useCallback(async (value: NavigationDestination, routeIndex = 0) => {
     routeOperationRef.current += 1;
     pendingRouteRef.current = null;
     setDestinationState(value);
+    const safeRouteIndex = Math.max(0, Number.isInteger(routeIndex) ? routeIndex : 0);
+    selectedRouteIndexRef.current = safeRouteIndex;
+    setSelectedRouteIndex(safeRouteIndex);
     setRoute(null);
     setError(null);
     offRouteFixCountRef.current = 0;
     spokenManeuverRef.current = null;
     try {
-      await persistDestination(value, false);
+      await persistDestination(value, false, safeRouteIndex);
       if (location && supported) {
         didAutoRouteRef.current = true;
         await routeFrom(location, value);
@@ -268,6 +291,8 @@ export const useRideNavigation = (
   const clearDestination = useCallback(async () => {
     setDestinationState(null);
     setRoute(null);
+    selectedRouteIndexRef.current = 0;
+    setSelectedRouteIndex(0);
     setIsGuiding(false);
     setError(null);
     offRouteFixCountRef.current = 0;
@@ -344,6 +369,7 @@ export const useRideNavigation = (
   return {
     destination,
     route,
+    selectedRouteIndex,
     nextInstruction: maneuver?.instruction ?? null,
     distanceToNextManeuverMeters,
     isRouting,
