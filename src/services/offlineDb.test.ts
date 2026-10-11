@@ -6,6 +6,7 @@ import {
   addPhoto,
   deleteSession,
   getDueOutboxBatch,
+  getAllSessions,
   getLastLocation,
   getPendingOutboxCount,
   getPhotos,
@@ -14,7 +15,9 @@ import {
   pauseOutboxPointsForAuthentication,
   persistAcceptedLocation,
   rideDb,
+  saveRideProgress,
   saveRideSession,
+  updateRideSession,
 } from './offlineDb';
 import type { AcceptedLocationPoint } from '../types/ride';
 
@@ -42,6 +45,80 @@ describe('rideDb v5 persistence', () => {
   afterEach(async () => {
     rideDb.close();
     await Dexie.delete('rideTrackerDb');
+  });
+
+  it('coalesces concurrent identical list reads but refreshes after completion', async () => {
+    await saveRideSession({
+      rideId: 'read-once',
+      userId: 'rider-1',
+      userName: 'Rider',
+      isHost: true,
+      createdAt: '2026-08-09T00:00:00.000Z',
+      status: 'active',
+    });
+    const orderBy = vi.spyOn(rideDb.sessions, 'orderBy');
+
+    const [first, second] = await Promise.all([getAllSessions(), getAllSessions()]);
+
+    expect(first).toHaveLength(1);
+    expect(second).toEqual(first);
+    expect(orderBy).toHaveBeenCalledTimes(1);
+    await getAllSessions();
+    expect(orderBy).toHaveBeenCalledTimes(2);
+    orderBy.mockRestore();
+  });
+
+  it('keeps lifecycle state intact when a stale progress save completes after resume', async () => {
+    const staleSnapshot = {
+      rideId: 'resume-race',
+      userId: 'rider-1',
+      userName: 'Rider',
+      isHost: true,
+      isSolo: true,
+      createdAt: '2026-08-09T00:00:00.000Z',
+      status: 'paused' as const,
+      activeSegmentId: 'old-segment',
+      durationSeconds: 10,
+      distanceMeters: 25,
+    };
+    await saveRideSession({
+      ...staleSnapshot,
+      status: 'active',
+      activeSegmentId: 'new-segment',
+      durationSeconds: 12,
+      distanceMeters: 30,
+    });
+
+    await saveRideProgress(staleSnapshot, 11, 28);
+
+    expect(await rideDb.sessions.get('resume-race')).toMatchObject({
+      status: 'active',
+      activeSegmentId: 'new-segment',
+      durationSeconds: 12,
+      distanceMeters: 30,
+    });
+  });
+
+  it('applies lifecycle patches without replacing session progress', async () => {
+    await saveRideSession({
+      rideId: 'lifecycle-patch',
+      userId: 'rider-1',
+      userName: 'Rider',
+      isHost: true,
+      createdAt: '2026-08-09T00:00:00.000Z',
+      durationSeconds: 42,
+      distanceMeters: 500,
+      activeSegmentId: 'segment-1',
+    });
+
+    await updateRideSession('lifecycle-patch', { status: 'paused' });
+
+    expect(await rideDb.sessions.get('lifecycle-patch')).toMatchObject({
+      status: 'paused',
+      durationSeconds: 42,
+      distanceMeters: 500,
+      activeSegmentId: 'segment-1',
+    });
   });
 
   it('atomically persists and deduplicates a group point with its outbox record', async () => {

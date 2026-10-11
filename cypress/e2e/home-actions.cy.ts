@@ -90,7 +90,7 @@ const chooseGroupDestination = () => {
   cy.contains('.ride-setup-actions button', 'Choose destination').click();
   cy.get('#ride-destination-search').type('Tagaytay');
   cy.wait('@destinationSearch');
-  cy.get('.ride-setup-results-floating button').contains('Tagaytay').click();
+  cy.get('.ride-setup-results button').contains('Tagaytay').click();
   cy.contains('.ride-setup-actions button', 'Use destination').click();
   cy.contains('Review your ride').should('be.visible');
 };
@@ -146,6 +146,8 @@ describe('Home actions and ride setup controls', () => {
     }).as('createRequest');
 
     chooseGroupDestination();
+    let homeHistoryKey = '';
+    cy.window().then((win) => { homeHistoryKey = win.history.state.key; });
     cy.contains('.ride-setup-actions button', 'Create group ride').click();
     cy.wait('@createRequest');
     cy.contains('.ride-setup-modal [role="alert"]', 'Service unavailable').should('be.visible');
@@ -156,6 +158,20 @@ describe('Home actions and ride setup controls', () => {
     cy.wait('@createRequest');
     cy.location('pathname').should('eq', '/ride-lobby/created-crew');
     cy.contains('.ride-code-value', 'created-crew').should('be.visible');
+    let lobbyHistoryKey = '';
+    cy.window().then((win) => { lobbyHistoryKey = win.history.state.key; });
+
+    cy.go('back');
+    cy.location('pathname').should('eq', '/home');
+    cy.get('.crew-create-card').should('be.visible');
+    cy.get('ion-router-outlet .ion-page:visible').should('have.length', 1);
+    cy.window().then((win) => expect(win.history.state.key).to.equal(homeHistoryKey));
+
+    cy.go('forward');
+    cy.location('pathname').should('eq', '/ride-lobby/created-crew');
+    cy.window().then((win) => expect(win.history.state.key).to.equal(lobbyHistoryKey));
+    cy.contains('.ride-code-value', 'created-crew').should('be.visible');
+    cy.get('ion-router-outlet .ion-page:visible').should('have.length', 1);
   });
 
   it('resumes solo rides to the map and group rides to the lobby', () => {

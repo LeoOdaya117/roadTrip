@@ -1,4 +1,5 @@
-import { IonSpinner } from '@ionic/react';
+import { IonIcon, IonSpinner } from '@ionic/react';
+import { checkmarkOutline, chevronForwardOutline, locationOutline } from 'ionicons/icons';
 import 'leaflet/dist/leaflet.css';
 import { CircleMarker, MapContainer, Polyline, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -84,6 +85,7 @@ const RideSetupWizard: React.FC<Props> = ({ busy, errorMessage, isModalPresented
   const [mode, setMode] = useState<'group' | 'solo'>('solo');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<PlaceSearchResult[]>([]);
+  const [isSearchPanelDismissed, setIsSearchPanelDismissed] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchRetryCount, setSearchRetryCount] = useState(0);
@@ -101,11 +103,14 @@ const RideSetupWizard: React.FC<Props> = ({ busy, errorMessage, isModalPresented
   const [mapTilesFailed, setMapTilesFailed] = useState(false);
   const [mapTileRetryCount, setMapTileRetryCount] = useState(0);
   const lastRouteRequestRef = useRef<string | null>(null);
+  const destinationSearchRef = useRef<HTMLInputElement | null>(null);
+  const preserveSearchDismissalOnFocusRef = useRef(false);
   const headingRef = useRef<HTMLDivElement | null>(null);
   const wizardRef = useRef<HTMLElement | null>(null);
   const lastFocusedStepRef = useRef<Step | null>(null);
 
   const stepNumber = step === 'mode' ? 1 : step === 'destination' ? 2 : step === 'routes' ? 3 : totalSteps;
+  const isSearchPanelOpen = step === 'destination' && query.trim().length >= 2 && !isSearchPanelDismissed;
   const selectedRoute = routeOptions[selectedRouteIndex]?.route;
   const center = useMemo<[number, number]>(() => {
     const focus = candidate ?? destination;
@@ -129,12 +134,22 @@ const RideSetupWizard: React.FC<Props> = ({ busy, errorMessage, isModalPresented
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        if (!busy) onCancel();
+        if (busy) return;
+        if (isSearchPanelOpen) {
+          setIsSearchPanelDismissed(true);
+          return;
+        }
+        onCancel();
       }
     };
     const onIonicBack = (event: Event) => {
       (event as IonicBackButtonEvent).detail.register(1000, () => {
-        if (!busy) onCancel();
+        if (busy) return;
+        if (isSearchPanelOpen) {
+          setIsSearchPanelDismissed(true);
+          return;
+        }
+        onCancel();
       });
     };
     document.addEventListener('keydown', onKeyDown);
@@ -143,7 +158,7 @@ const RideSetupWizard: React.FC<Props> = ({ busy, errorMessage, isModalPresented
       document.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('ionBackButton', onIonicBack);
     };
-  }, [busy, onCancel]);
+  }, [busy, isSearchPanelOpen, onCancel]);
 
   useLayoutEffect(() => {
     if (!isModalPresented) return;
@@ -317,49 +332,85 @@ const RideSetupWizard: React.FC<Props> = ({ busy, errorMessage, isModalPresented
               <MapSizeObserver />
               <MapCenterController center={center} />
               <MapTiles onError={() => setMapTilesFailed(true)} />
-              <MapTap onPick={(lat, lng) => setCandidate({ lat, lng, label: `Map pin · ${lat.toFixed(4)}, ${lng.toFixed(4)}` })} />
+              <MapTap onPick={(lat, lng) => {
+                setIsSearchPanelDismissed(true);
+                setCandidate({ lat, lng, label: `Map pin · ${lat.toFixed(4)}, ${lng.toFixed(4)}` });
+              }} />
               {location && <CircleMarker center={[location.lat, location.lng]} radius={7} pathOptions={{ color: '#256af4', fillColor: '#78a5ff', fillOpacity: 1 }} />}
               {candidate && <CircleMarker center={[candidate.lat, candidate.lng]} radius={9} pathOptions={{ color: '#c77726', fillColor: '#f1b35f', fillOpacity: 1 }} />}
             </MapContainer>
-            <div className="ride-setup-map-search">
+            <div className={`ride-setup-map-search${isSearchPanelOpen ? ' is-open' : ''}`}>
               <div className="ride-setup-search ride-setup-search-floating">
                 <label htmlFor="ride-destination-search">Search destination</label>
                 <input
+                  ref={destinationSearchRef}
                   id="ride-destination-search"
                   type="search"
                   value={query}
+                  aria-expanded={isSearchPanelOpen}
+                  aria-controls="ride-destination-suggestions"
                   onChange={(event) => {
                     const nextQuery = event.target.value;
                     setQuery(nextQuery);
+                    setIsSearchPanelDismissed(false);
+                    setCandidate(null);
                     setResults([]);
                     setSearchError(null);
                     setIsSearching(nextQuery.trim().length >= 2);
                   }}
+                  onFocus={() => {
+                    if (preserveSearchDismissalOnFocusRef.current) {
+                      preserveSearchDismissalOnFocusRef.current = false;
+                      return;
+                    }
+                    if (query.trim().length >= 2) setIsSearchPanelDismissed(false);
+                  }}
                   placeholder="Place, street, or address"
                   autoComplete="off"
-                  aria-describedby={(isSearching || searchError || (query.trim().length >= 2 && results.length === 0)) ? 'ride-search-feedback' : undefined}
+                  aria-describedby={isSearchPanelOpen && (isSearching || searchError || (query.trim().length >= 2 && results.length === 0)) ? 'ride-search-feedback' : undefined}
                 />
                 <span className="ride-setup-search-attribution">{PLACE_SEARCH_ATTRIBUTION}</span>
               </div>
-            </div>
-            <div className="ride-setup-search-overlay" aria-live="polite">
-              {isSearching && <div className="ride-setup-search-feedback" id="ride-search-feedback" role="status"><IonSpinner name="dots" /> Searching places…</div>}
-              {!isSearching && searchError && (
-                <div className="ride-setup-search-feedback is-error" id="ride-search-feedback" role="alert">
-                  <span>{searchError}</span><button type="button" onClick={() => setSearchRetryCount((count) => count + 1)}>Retry search</button>
-                </div>
-              )}
-              {!isSearching && !searchError && query.trim().length >= 2 && results.length === 0 && <div className="ride-setup-search-feedback" id="ride-search-feedback" role="status">No places found. Try another search or tap the map.</div>}
-              {results.length > 0 && (
-                <div className="ride-setup-results ride-setup-results-floating" aria-label="Destination search results">
-                  {results.map((place) => {
-                    const isSelected = candidate?.lat === place.lat && candidate?.lng === place.lng;
-                    return <button key={`${place.lat},${place.lng}`} type="button" aria-pressed={isSelected} onClick={() => setCandidate({ lat: place.lat, lng: place.lng, label: place.label })}>
-                      <span>{place.label}</span><span aria-hidden="true">{isSelected ? '✓' : '›'}</span>
-                    </button>;
-                  })}
-                </div>
-              )}
+              <div
+                id="ride-destination-suggestions"
+                className="ride-setup-search-overlay"
+                aria-live="polite"
+                hidden={!isSearchPanelOpen}
+              >
+                {isSearching && <div className="ride-setup-search-feedback" id="ride-search-feedback" role="status"><IonSpinner name="dots" /> Searching places…</div>}
+                {!isSearching && searchError && (
+                  <div className="ride-setup-search-feedback is-error" id="ride-search-feedback" role="alert">
+                    <span>{searchError}</span><button type="button" onClick={() => setSearchRetryCount((count) => count + 1)}>Retry search</button>
+                  </div>
+                )}
+                {!isSearching && !searchError && query.trim().length >= 2 && results.length === 0 && <div className="ride-setup-search-feedback" id="ride-search-feedback" role="status">No places found. Try another search or tap the map.</div>}
+                {results.length > 0 && (
+                  <div className="ride-setup-results" role="group" aria-label="Destination search results">
+                    {results.map((place) => {
+                      const isSelected = candidate?.lat === place.lat && candidate?.lng === place.lng;
+                      return (
+                        <button
+                          key={`${place.lat},${place.lng}`}
+                          type="button"
+                          aria-pressed={isSelected}
+                          onClick={() => {
+                            setCandidate({ lat: place.lat, lng: place.lng, label: place.label });
+                            setIsSearchPanelDismissed(true);
+                            if (document.activeElement !== destinationSearchRef.current) {
+                              preserveSearchDismissalOnFocusRef.current = true;
+                              destinationSearchRef.current?.focus();
+                            }
+                          }}
+                        >
+                          <IonIcon className="ride-setup-result-icon" icon={locationOutline} aria-hidden="true" />
+                          <span className="ride-setup-result-label">{place.label}</span>
+                          <IonIcon className="ride-setup-result-icon ride-setup-result-icon-end" icon={isSelected ? checkmarkOutline : chevronForwardOutline} aria-hidden="true" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
             <span className="ride-setup-map-hint" aria-live="polite">{candidate ? `Selected · ${candidate.label}` : 'Tap the map to drop a destination pin'}</span>
           </div>

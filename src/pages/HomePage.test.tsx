@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   updateRiders: vi.fn(),
   clearRide: vi.fn(),
   setSoloMode: vi.fn(),
+  enterPage: vi.fn(),
 }));
 
 vi.mock('@ionic/react', () => ({
@@ -26,7 +27,7 @@ vi.mock('@ionic/react', () => ({
   IonButtons: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   IonIcon: () => null,
   IonModal: ({ isOpen, children }: React.PropsWithChildren<{ isOpen: boolean }>) => isOpen ? <div role="dialog">{children}</div> : null,
-  useIonViewWillEnter: () => undefined,
+  useIonViewWillEnter: (callback: () => void) => { mocks.enterPage.mockImplementation(callback); },
 }));
 
 vi.mock('react-router-dom', () => ({ useHistory: () => ({ push: mocks.push, listen: () => () => undefined }) }));
@@ -67,12 +68,46 @@ import HomePage from './HomePage';
 describe('HomePage actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.enterPage.mockReset();
     mocks.getAllSessions.mockResolvedValue([]);
     mocks.getRideSession.mockResolvedValue(undefined);
     mocks.saveRideSession.mockResolvedValue(undefined);
   });
 
   afterEach(() => cleanup());
+
+  it('queues a fresh read when ride-ended overlaps a pending page refresh', async () => {
+    let resolveSessions!: (sessions: import('../types/ride').RideSession[]) => void;
+    const pendingSessions = new Promise<import('../types/ride').RideSession[]>((resolve) => {
+      resolveSessions = resolve;
+    });
+    mocks.getAllSessions.mockReturnValueOnce(pendingSessions);
+    const view = render(<HomePage />);
+
+    expect(mocks.getAllSessions).not.toHaveBeenCalled();
+    act(() => mocks.enterPage());
+    expect(mocks.getAllSessions).toHaveBeenCalledTimes(1);
+    act(() => window.dispatchEvent(new Event('ride:ended')));
+    expect(mocks.getAllSessions).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveSessions([{
+        rideId: 'ride-ended-race',
+        userId: 'rider-1',
+        userName: 'Rider',
+        isHost: true,
+        isSolo: true,
+        createdAt: '2026-10-11T00:00:00.000Z',
+        status: 'active',
+      }]);
+      await pendingSessions;
+    });
+    await waitFor(() => expect(mocks.getAllSessions).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(view.container.querySelector('.resume-card')).toBeNull());
+
+    act(() => mocks.enterPage());
+    await waitFor(() => expect(mocks.getAllSessions).toHaveBeenCalledTimes(3));
+  });
 
   it('validates an empty ride code and lets the user focus the labeled code field', async () => {
     const user = userEvent.setup();

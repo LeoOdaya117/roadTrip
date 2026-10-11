@@ -82,10 +82,19 @@ const normalizeTripRoute = (trip: Record<string, unknown> | null): NavigationRou
           maneuver.instruction,
         ].find((value) => typeof value === 'string' && value.trim().length > 0);
         if (typeof verbal !== 'string') return;
+        const usableStreetName = (value: unknown) => {
+          if (!Array.isArray(value)) return undefined;
+          return value.find((name): name is string =>
+            typeof name === 'string' && name.trim().length > 0,
+          )?.trim();
+        };
+        const streetName = usableStreetName(maneuver.street_names)
+          ?? usableStreetName(maneuver.begin_street_names);
         maneuvers.push({
           id: legIndex * 1000 + maneuverIndex,
           shapeIndex: shapeOffset + localIndex,
-          instruction: verbal,
+          instruction: verbal.replace(/\s+/g, ' ').trim(),
+          ...(streetName ? { streetName } : {}),
           distanceMeters: finiteNumber(maneuver.length) * 1000,
           timeSeconds: finiteNumber(maneuver.time),
           ...point,
@@ -162,20 +171,23 @@ const distanceToSegmentMeters = (point: LatLng, start: LatLng, end: LatLng) => {
   const fraction = lengthSquared === 0
     ? 0
     : Math.max(0, Math.min(1, ((pointX - startX) * dx + (pointY - startY) * dy) / lengthSquared));
-  return Math.hypot(pointX - (startX + fraction * dx), pointY - (startY + fraction * dy));
+  return {
+    distanceMeters: Math.hypot(pointX - (startX + fraction * dx), pointY - (startY + fraction * dy)),
+    fraction,
+  };
 };
 
 export const nearestRouteProgress = (point: LatLng, route: NavigationRoute) => {
-  if (route.coordinates.length < 2) return { distanceMeters: Infinity, shapeIndex: 0 };
-  let nearest = { distanceMeters: Infinity, shapeIndex: 0 };
+  if (route.coordinates.length < 2) return { distanceMeters: Infinity, shapeIndex: 0, fraction: 0 };
+  let nearest = { distanceMeters: Infinity, shapeIndex: 0, fraction: 0 };
   for (let index = 0; index < route.coordinates.length - 1; index += 1) {
-    const distanceMeters = distanceToSegmentMeters(
+    const projection = distanceToSegmentMeters(
       point,
       route.coordinates[index],
       route.coordinates[index + 1],
     );
-    if (distanceMeters < nearest.distanceMeters) {
-      nearest = { distanceMeters, shapeIndex: index };
+    if (projection.distanceMeters < nearest.distanceMeters) {
+      nearest = { ...projection, shapeIndex: index };
     }
   }
   return nearest;
@@ -195,10 +207,26 @@ export const distanceAlongRouteMeters = (
   return distance;
 };
 
-export const nextRouteManeuver = (shapeIndex: number, route: NavigationRoute) =>
-  route.maneuvers.find((maneuver) => maneuver.shapeIndex > shapeIndex)
-    ?? route.maneuvers[route.maneuvers.length - 1]
-    ?? null;
+export const distanceFromRouteProgressToShapeIndexMeters = (
+  shapeIndex: number,
+  fraction: number,
+  endIndex: number,
+  route: NavigationRoute,
+) => {
+  const segmentStart = Math.max(0, Math.min(shapeIndex, route.coordinates.length - 2));
+  const boundedFraction = Math.max(0, Math.min(fraction, 1));
+  const segmentLength = haversineMeters(
+    route.coordinates[segmentStart],
+    route.coordinates[segmentStart + 1],
+  );
+  return (segmentLength * (1 - boundedFraction))
+    + distanceAlongRouteMeters(segmentStart + 1, endIndex, route);
+};
+
+export const nextRouteManeuver = (shapeIndex: number, route: NavigationRoute, fraction = 0) => {
+  const progressIndex = shapeIndex + Math.max(0, Math.min(fraction, 1));
+  return route.maneuvers.find((maneuver) => maneuver.shapeIndex > progressIndex) ?? null;
+};
 
 export const routeOffTrackThresholdMeters = (accuracy?: number | null) =>
   Math.max(40, Math.max(0, accuracy ?? 0) * 2);

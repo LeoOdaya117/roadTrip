@@ -35,6 +35,8 @@ export type NavigationManeuver = {
   id: number;
   shapeIndex: number;
   instruction: string;
+  /** Street name supplied by the routing maneuver, when the provider returns one. */
+  streetName?: string;
   distanceMeters: number;
   timeSeconds: number;
   lat: number;

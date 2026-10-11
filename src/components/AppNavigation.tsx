@@ -25,7 +25,9 @@ export default function AppNavigation() {
             type="button"
             className={`route-navigation-item${active ? ' route-navigation-item-active' : ''}`}
             aria-current={active ? 'page' : undefined}
-            onClick={() => history.push(item.path)}
+            onClick={() => {
+              if (!active) history.push(item.path);
+            }}
           >
             <IonIcon icon={item.icon} aria-hidden="true" />
             <span>{item.label}</span>

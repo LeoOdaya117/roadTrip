@@ -4,6 +4,7 @@ import type { PluginListenerHandle } from '@capacitor/core';
 import { createLocationProviders } from '../services/LocationProviderFactory';
 import type ILocationProvider from '../services/ILocationProvider';
 import {
+  LOCATION_FILTER_LIMITS,
   LocationQualityFilter,
   type LocationRejectionReason,
 } from '../services/locationFilter';
@@ -22,6 +23,7 @@ export type LocationQualityState = {
 
 type TrackerState = {
   location: AcceptedLocationPoint | null;
+  hasFreshLocation: boolean;
   isTracking: boolean;
   permission: PermissionState;
   error: string | null;
@@ -44,6 +46,7 @@ const initialQuality: LocationQualityState = {
 
 export const useLocationTracker = (autoStart = false): TrackerState => {
   const [location, setLocation] = useState<AcceptedLocationPoint | null>(null);
+  const [hasFreshLocation, setHasFreshLocation] = useState(false);
   const [isTracking, setIsTracking] = useState(false);
   const [permission, setPermission] = useState<PermissionState>('prompt');
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +61,26 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
   const isTrackingRef = useRef(false);
   const shouldResumeRef = useRef(false);
   const operationRef = useRef(0);
+  const freshnessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearLocationFreshness = useCallback(() => {
+    if (freshnessTimerRef.current !== null) {
+      clearTimeout(freshnessTimerRef.current);
+      freshnessTimerRef.current = null;
+    }
+    setHasFreshLocation(false);
+  }, []);
+
+  const refreshLocationFreshness = useCallback(() => {
+    if (freshnessTimerRef.current !== null) {
+      clearTimeout(freshnessTimerRef.current);
+    }
+    setHasFreshLocation(true);
+    freshnessTimerRef.current = setTimeout(() => {
+      freshnessTimerRef.current = null;
+      setHasFreshLocation(false);
+    }, LOCATION_FILTER_LIMITS.maxPointAgeMs);
+  }, []);
 
   useEffect(() => {
     isTrackingRef.current = isTracking;
@@ -65,6 +88,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
 
   const acceptRawPoint = useCallback(
     (rawPoint: LocationPoint, source: LocationSource) => {
+      const now = Date.now();
       const decision = filterRef.current.evaluate(
         rawPoint,
         source,
@@ -77,17 +101,35 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
           lastRejectedReason: decision.reason,
         }));
         console.debug('[useLocationTracker] rejected location', decision.reason);
+        const rawTimestampMs = Date.parse(rawPoint.timestamp);
+        const hasCurrentTimestamp = Number.isFinite(rawTimestampMs)
+          && rawTimestampMs <= now
+          && rawTimestampMs >= now - LOCATION_FILTER_LIMITS.maxPointAgeMs;
+        if (
+          hasCurrentTimestamp
+          && (decision.reason === 'too-soon' || decision.reason === 'too-close')
+        ) {
+          refreshLocationFreshness();
+        }
         return;
       }
 
       setLocation(decision.point);
+      const rawTimestampMs = Date.parse(rawPoint.timestamp);
+      if (
+        Number.isFinite(rawTimestampMs)
+        && rawTimestampMs <= now
+        && rawTimestampMs >= now - LOCATION_FILTER_LIMITS.maxPointAgeMs
+      ) {
+        refreshLocationFreshness();
+      }
       setQuality((current) => ({
         acceptedCount: current.acceptedCount + 1,
         rejectedCount: current.rejectedCount,
         lastRejectedReason: null,
       }));
     },
-    [],
+    [refreshLocationFreshness],
   );
 
   const switchProvider = useCallback(
@@ -106,9 +148,13 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
         activeProviderRef.current.stop();
       }
 
-      const unsubscribe = provider.onLocation((point) =>
-        acceptRawPoint(point, source),
-      );
+      const unsubscribe = provider.onLocation((point) => {
+        if (
+          operation !== operationRef.current
+          || (!isTrackingRef.current && !isStartingRef.current)
+        ) return;
+        acceptRawPoint(point, source);
+      });
       try {
         await provider.start();
         if (operation !== operationRef.current) {
@@ -120,12 +166,16 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
         activeProviderRef.current = provider;
         setPermission(await provider.getPermissionState());
         setError(null);
+        isTrackingRef.current = true;
         setIsTracking(true);
       } catch (startError) {
         unsubscribe();
         if (operation === operationRef.current) {
+          operationRef.current += 1;
           activeProviderRef.current = null;
+          isTrackingRef.current = false;
           setIsTracking(false);
+          clearLocationFreshness();
           setError(
             startError instanceof Error
               ? startError.message
@@ -135,7 +185,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
         throw startError;
       }
     },
-    [acceptRawPoint],
+    [acceptRawPoint, clearLocationFreshness],
   );
 
   const startTracking = useCallback(async () => {
@@ -161,7 +211,8 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
     activeProviderRef.current = null;
     isTrackingRef.current = false;
     setIsTracking(false);
-  }, []);
+    clearLocationFreshness();
+  }, [clearLocationFreshness]);
 
   const startNewSegment = useCallback((segmentId = createSegmentId()) => {
     segmentIdRef.current = segmentId;
@@ -174,6 +225,13 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
     void startTracking();
     return stopTracking;
   }, [autoStart, startTracking, stopTracking]);
+
+  useEffect(() => () => {
+    if (freshnessTimerRef.current !== null) {
+      clearTimeout(freshnessTimerRef.current);
+      freshnessTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     let listener: PluginListenerHandle | null = null;
@@ -209,6 +267,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
 
   return {
     location,
+    hasFreshLocation,
     isTracking,
     permission,
     error,

@@ -6,6 +6,7 @@ import type {
   PhotoRecord,
   RideSession,
 } from '../types/ride';
+import { createSingleFlight } from './singleFlight';
 
 type LocationRecord = LocationPoint & {
   rideId: string;
@@ -95,25 +96,77 @@ class RideDb extends Dexie {
 
 export const rideDb = new RideDb();
 
-export const saveRideSession = async (session: RideSession) => {
-  await rideDb.sessions.put(session);
+const pendingRideReads = createSingleFlight();
+const isSessionListRead = (key: string) =>
+  key === 'sessions:first' || key === 'sessions:all' || key.startsWith('sessions:page:');
+const invalidateRideReads = (rideId?: string) => {
+  const prefixes = ['session:', 'location:', 'tracks:', 'photos:'];
+  pendingRideReads.invalidate((key) =>
+    isSessionListRead(key) || prefixes.some((prefix) =>
+      key.startsWith(prefix) && (rideId === undefined || key === `${prefix}${rideId}`),
+    ),
+  );
 };
 
-export const getRideSession = async () => rideDb.sessions.toCollection().first();
+export const saveRideSession = async (session: RideSession) => {
+  await rideDb.sessions.put(session);
+  invalidateRideReads(session.rideId);
+};
+
+export const updateRideSession = async (
+  rideId: string,
+  updates: Partial<Omit<RideSession, 'rideId'>>,
+) => {
+  const updatedCount = await rideDb.sessions.update(rideId, updates);
+  invalidateRideReads(rideId);
+  return updatedCount;
+};
+
+/** Persist progress without replacing lifecycle fields from a stale session snapshot. */
+export const saveRideProgress = async (
+  fallbackSession: RideSession,
+  durationSeconds: number,
+  distanceMeters: number,
+) => {
+  const { rideId } = fallbackSession;
+  await rideDb.transaction('rw', rideDb.sessions, async () => {
+    const existing = await rideDb.sessions.get(rideId);
+    const progress = {
+      durationSeconds: Math.max(existing?.durationSeconds ?? 0, durationSeconds),
+      distanceMeters: Math.max(existing?.distanceMeters ?? 0, distanceMeters),
+    };
+
+    if (existing) {
+      await rideDb.sessions.update(rideId, progress);
+      return;
+    }
+
+    await rideDb.sessions.put({ ...fallbackSession, ...progress });
+  });
+  invalidateRideReads(rideId);
+};
+
+export const getRideSession = async () =>
+  pendingRideReads.run('sessions:first', () => rideDb.sessions.toCollection().first());
 
 export const getAllSessions = async (): Promise<RideSession[]> =>
-  rideDb.sessions.orderBy('createdAt').reverse().toArray();
+  pendingRideReads.run('sessions:all', () =>
+    rideDb.sessions.orderBy('createdAt').reverse().toArray(),
+  );
 
-export const getSession = async (rideId: string) => rideDb.sessions.get(rideId);
+export const getSession = async (rideId: string) =>
+  pendingRideReads.run(`session:${rideId}`, () => rideDb.sessions.get(rideId));
 
 export const getSessionsPage = async (page: number, pageSize: number) => {
-  const offset = Math.max(0, (page - 1) * pageSize);
-  return rideDb.sessions
-    .orderBy('createdAt')
-    .reverse()
-    .offset(offset)
-    .limit(pageSize)
-    .toArray();
+  return pendingRideReads.run(`sessions:page:${page}:${pageSize}`, () => {
+    const offset = Math.max(0, (page - 1) * pageSize);
+    return rideDb.sessions
+      .orderBy('createdAt')
+      .reverse()
+      .offset(offset)
+      .limit(pageSize)
+      .toArray();
+  });
 };
 
 export const deleteSession = async (rideId: string) => {
@@ -128,23 +181,29 @@ export const deleteSession = async (rideId: string) => {
       await rideDb.outbox.where('rideId').equals(rideId).delete();
     },
   );
+  invalidateRideReads(rideId);
 };
 
 export const deleteTrackPoints = async (rideId: string) => {
   await rideDb.tracks.where('rideId').equals(rideId).delete();
+  pendingRideReads.invalidate((key) => key === `tracks:${rideId}`);
 };
 
-export const clearRideSession = async () => rideDb.sessions.clear();
+export const clearRideSession = async () => {
+  await rideDb.sessions.clear();
+  invalidateRideReads();
+};
 
 export const saveLastLocation = async (
   rideId: string,
   location: LocationPoint,
 ) => {
   await rideDb.locations.put({ rideId, ...location });
+  pendingRideReads.invalidate((key) => key === `location:${rideId}`);
 };
 
 export const getLastLocation = async (rideId: string) =>
-  rideDb.locations.get(rideId);
+  pendingRideReads.run(`location:${rideId}`, () => rideDb.locations.get(rideId));
 
 type PersistLocationOptions = {
   rideId: string;
@@ -190,6 +249,7 @@ export const persistAcceptedLocation = async ({
       }
     },
   );
+  invalidateRideReads(rideId);
 };
 
 export const appendTrackPoint = async (
@@ -205,6 +265,7 @@ export const appendTrackPoint = async (
     segmentId,
     source: 'foreground',
   });
+  pendingRideReads.invalidate((key) => key === `tracks:${rideId}`);
 };
 
 export const appendTrackEvent = async (
@@ -214,18 +275,29 @@ export const appendTrackEvent = async (
 ) => {
   const pointId = `event-${globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
   await rideDb.tracks.add({ rideId, ...point, pointId, event });
+  pendingRideReads.invalidate((key) => key === `tracks:${rideId}`);
 };
 
 export const getTrackPoints = async (rideId: string) =>
-  rideDb.tracks.where('rideId').equals(rideId).sortBy('timestamp');
+  pendingRideReads.run(`tracks:${rideId}`, () =>
+    rideDb.tracks.where('rideId').equals(rideId).sortBy('timestamp'),
+  );
 
-export const addPhoto = async (photo: PhotoRecord) => rideDb.photos.add(photo);
+export const addPhoto = async (photo: PhotoRecord) => {
+  const id = await rideDb.photos.add(photo);
+  pendingRideReads.invalidate((key) => key === `photos:${photo.rideId}`);
+  return id;
+};
 
 export const getPhotos = async (rideId: string) =>
-  rideDb.photos.where('rideId').equals(rideId).sortBy('timestamp');
+  pendingRideReads.run(`photos:${rideId}`, () =>
+    rideDb.photos.where('rideId').equals(rideId).sortBy('timestamp'),
+  );
 
-export const deletePhotos = async (rideId: string) =>
-  rideDb.photos.where('rideId').equals(rideId).delete();
+export const deletePhotos = async (rideId: string) => {
+  await rideDb.photos.where('rideId').equals(rideId).delete();
+  pendingRideReads.invalidate((key) => key === `photos:${rideId}`);
+};
 
 export const getDueOutboxBatch = async (nowMs: number, limit = 50) => {
   const due = await rideDb.outbox

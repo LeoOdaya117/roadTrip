@@ -219,5 +219,8 @@
   box-sizing: border-box;
   width: min(100%, 1120px);
   margin-inline: auto;
-  padding: 12px clamp(12px, 4vw, 24px) 28px;
+  padding: var(--rt-page-top-gutter, 18px) var(--rt-page-gutter, 20px) 28px;
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  .summary-screen .ride-history-page { padding-top: var(--rt-page-top-gutter-landscape, 6px); }
 }

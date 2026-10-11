@@ -37,59 +37,62 @@ const HomePage: React.FC = () => {
   const [hiddenResumeRideId, setHiddenResumeRideId] = useState<string | null>(null);
   const [setupModalPresented, setSetupModalPresented] = useState(false);
   const startRideButtonRef = useRef<HTMLButtonElement>(null);
+  const savedSessionRefreshRef = useRef<Promise<void> | null>(null);
+  const savedSessionRefreshQueuedRef = useRef(false);
 
   const currentUser = useRideStore((state) => state.currentUser);
 
-  const refreshSavedSession = useCallback(async () => {
-    try {
-      const sessions = await getAllSessions();
-      console.log('[HomePage] refreshSavedSession -> sessions (raw):', JSON.parse(JSON.stringify(sessions)));
-      console.log('[HomePage] refreshSavedSession -> sessions summary:', sessions.map(s => ({ rideId: s.rideId, endedAt: s.endedAt })));
-      // prefer explicit status if present; treat missing status as legacy active
-      const active = sessions.find((s) => {
-        // skip sessions the user explicitly hid after ending (keep for history)
-        try {
-          if (localStorage.getItem(`ride:hidden:${s.rideId}`) === '1') return false;
-        } catch {
-          // ignore
-        }
-        return s.status ? s.status !== 'ended' : !s.endedAt;
-      });
-      console.log('[HomePage] active session after filter:', active);
-      setSavedSession(active ?? null);
-      console.log('[HomePage] savedSession set to:', JSON.parse(JSON.stringify(active ?? null)));
-    } catch {
-      try {
-        const session = await getRideSession();
-        console.log('[HomePage] fallback getRideSession ->', session);
-        setSavedSession(session ?? null);
-      } catch {
-        setSavedSession(null);
-      }
+  const refreshSavedSession = useCallback((queueAfterPending = false) => {
+    if (savedSessionRefreshRef.current) {
+      if (queueAfterPending) savedSessionRefreshQueuedRef.current = true;
+      return savedSessionRefreshRef.current;
     }
+
+    const request = (async () => {
+      try {
+        const sessions = await getAllSessions();
+        // prefer explicit status if present; treat missing status as legacy active
+        const active = sessions.find((s) => {
+          // skip sessions the user explicitly hid after ending (keep for history)
+          try {
+            if (localStorage.getItem(`ride:hidden:${s.rideId}`) === '1') return false;
+          } catch {
+            // ignore
+          }
+          return s.status ? s.status !== 'ended' : !s.endedAt;
+        });
+        if (!savedSessionRefreshQueuedRef.current) setSavedSession(active ?? null);
+      } catch {
+        try {
+          const session = await getRideSession();
+          if (!savedSessionRefreshQueuedRef.current) setSavedSession(session ?? null);
+        } catch {
+          if (!savedSessionRefreshQueuedRef.current) setSavedSession(null);
+        }
+      }
+    })();
+    const clearRequest = () => {
+      if (savedSessionRefreshRef.current !== request) return;
+      savedSessionRefreshRef.current = null;
+      if (savedSessionRefreshQueuedRef.current) {
+        savedSessionRefreshQueuedRef.current = false;
+        void refreshSavedSession();
+      }
+    };
+    savedSessionRefreshRef.current = request;
+    void request.then(clearRequest, clearRequest);
+    return request;
   }, []);
 
-  useEffect(() => {
-    refreshSavedSession();
-  }, [refreshSavedSession]);
-
   useIonViewWillEnter(() => {
-    refreshSavedSession();
+    void refreshSavedSession();
   });
-
-  // Also refresh when navigation occurs so Home reflects session changes
-  useEffect(() => {
-    const unlisten = history.listen(() => {
-      refreshSavedSession();
-    });
-    return () => unlisten();
-  }, [history, refreshSavedSession]);
 
   // Listen for explicit events when a ride ends in another page
   useEffect(() => {
     const handler = (e: Event) => {
       console.log('[HomePage] received ride:ended event', (e as CustomEvent).detail);
-      refreshSavedSession();
+      void refreshSavedSession(true);
     };
     window.addEventListener('ride:ended', handler as EventListener);
     return () => window.removeEventListener('ride:ended', handler as EventListener);
