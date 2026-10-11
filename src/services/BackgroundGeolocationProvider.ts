@@ -1,114 +1,69 @@
-import { registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Geolocation } from '@capacitor/geolocation';
+import { LocalNotifications } from '@capacitor/local-notifications';
+import type {
+  BackgroundGeolocationPlugin,
+  CallbackError,
+  Location as BackgroundLocation,
+  WatcherOptions,
+} from '@capacitor-community/background-geolocation';
 import { LocationPoint } from '../types/ride';
 import ILocationProvider, { PermissionState } from './ILocationProvider';
 
-declare global {
-  interface Window {
-    __bgGeoPlugin?: any;
-  }
-}
+const BackgroundGeolocation =
+  registerPlugin<BackgroundGeolocationPlugin>('BackgroundGeolocation');
 
-const BackgroundGeolocation = (() => {
-  if (typeof window !== 'undefined' && (window as any).__bgGeoPlugin) {
-    return (window as any).__bgGeoPlugin;
-  }
-
-  try {
-    const p = registerPlugin('BackgroundGeolocation') as any;
-    if (typeof window !== 'undefined') {
-      (window as any).__bgGeoPlugin = p;
-    }
-    return p;
-  } catch (err) {
-    // Fallback: if another loader attached the plugin to window, reuse it
-    if (typeof window !== 'undefined' && (window as any).BackgroundGeolocation) {
-      return (window as any).BackgroundGeolocation;
-    }
-    throw err;
-  }
-})();
-
-const DEFAULT_OPTIONS = {
+const DEFAULT_OPTIONS: WatcherOptions = {
   backgroundMessage: 'Tracking location in background',
   backgroundTitle: 'RoadTrip Tracking',
   requestPermissions: true,
   stale: false,
-  distanceFilter: 0
+  distanceFilter: 5,
 };
 
 const LAST_BG_TS_KEY = 'bg_last_location_ts';
 
 export class BackgroundGeolocationProvider implements ILocationProvider {
   private watcherId: string | null = null;
-  private heartbeatId: number | null = null;
   private listeners = new Set<(p: LocationPoint) => void>();
 
   async start(): Promise<void> {
-
+    if (this.watcherId) return;
+    await this.ensureNotificationPermission();
     try {
-          // Log permission state before starting watcher
-          try {
-            const perms = await BackgroundGeolocation.hasPermissions();
-            console.debug('[BackgroundGeolocationProvider] start - hasPermissions', { perms });
-          } catch (permErr) {
-            console.debug('[BackgroundGeolocationProvider] start - hasPermissions check failed', { permErr });
+      this.watcherId = await BackgroundGeolocation.addWatcher(
+        DEFAULT_OPTIONS,
+        (location?: BackgroundLocation, error?: CallbackError) => {
+          if (error) {
+            console.warn('[BackgroundGeolocationProvider] watcher error', {
+              code: error.code,
+              message: error.message,
+            });
+            return;
           }
-
-          console.debug('[BackgroundGeolocationProvider] addWatcher start', { options: DEFAULT_OPTIONS });
-          const id = await BackgroundGeolocation.addWatcher(DEFAULT_OPTIONS as any, (location: any, error: any) => {
-            console.debug('[BackgroundGeolocationProvider] addWatcher callback', { location, error });
-            if (error) {
-              console.debug('[BackgroundGeolocationProvider] watcher error', error);
-              return;
-            }
-            if (!location) return;
-
-            const point: LocationPoint = {
-              lat: (location.latitude ?? location.lat) as number,
-              lng: (location.longitude ?? location.lng) as number,
-              speed: (location.speed ?? null) as number | null,
-              accuracy: (location.accuracy ?? null) as number | null,
-              timestamp: new Date((location.time as number) ?? Date.now()).toISOString()
-            };
-
-            console.debug('[BackgroundGeolocationProvider] emit location point', point);
-            this.emit(point);
+          if (!location) return;
+          this.emit({
+            lat: location.latitude,
+            lng: location.longitude,
+            speed: location.speed,
+            accuracy: location.accuracy,
+            timestamp: new Date(location.time ?? Date.now()).toISOString(),
           });
-
-          this.watcherId = id as unknown as string;
-          console.debug('[BackgroundGeolocationProvider] addWatcher registered', { watcherId: this.watcherId });
-
-          // Start a heartbeat logger so we can see the watcher is alive
-          try {
-            if (this.heartbeatId == null) {
-              this.heartbeatId = (globalThis.setInterval(() => {
-                console.debug('[BackgroundGeolocationProvider] heartbeat - watcher active', { watcherId: this.watcherId });
-              }, 15000) as unknown) as number;
-            }
-          } catch (_) {}
-        } catch (err) {
-          this.watcherId = null;
-          console.debug('[BackgroundGeolocationProvider] addWatcher failed', { err });
-          throw err;
+        },
+      );
+    } catch (error) {
+      this.watcherId = null;
+      throw error;
     }
   }
 
   stop(): void {
     if (this.watcherId) {
-      console.debug('[BackgroundGeolocationProvider] removeWatcher', { watcherId: this.watcherId });
-      BackgroundGeolocation.removeWatcher({ id: this.watcherId } as any).then(() => {
-        console.debug('[BackgroundGeolocationProvider] removeWatcher result', { watcherId: this.watcherId });
-      }).catch((e: any) => {
-        console.debug('[BackgroundGeolocationProvider] removeWatcher failed', { err: e });
-      });
+      const watcherId = this.watcherId;
       this.watcherId = null;
-    }
-
-    if (this.heartbeatId != null) {
-      try { globalThis.clearInterval(this.heartbeatId as any); } catch (_) {}
-      this.heartbeatId = null;
-    } else {
-      console.debug('[BackgroundGeolocationProvider] stop called but no watcherId present');
+      void BackgroundGeolocation.removeWatcher({ id: watcherId }).catch((error: unknown) => {
+        console.warn('[BackgroundGeolocationProvider] failed to remove watcher', error);
+      });
     }
   }
 
@@ -119,11 +74,9 @@ export class BackgroundGeolocationProvider implements ILocationProvider {
 
   async getPermissionState(): Promise<PermissionState> {
     try {
-          const status = await BackgroundGeolocation.hasPermissions();
-          console.debug('[BackgroundGeolocationProvider] hasPermissions', { status });
-          const next = (status as any).location ?? (status as any).coarseLocation ?? 'prompt';
-          return next as PermissionState;
-    } catch (_) {
+      const status = await Geolocation.checkPermissions();
+      return status.location ?? status.coarseLocation ?? 'prompt';
+    } catch {
       return 'prompt';
     }
   }
@@ -133,10 +86,21 @@ export class BackgroundGeolocationProvider implements ILocationProvider {
     try {
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(LAST_BG_TS_KEY, p.timestamp);
-        console.debug('[BackgroundGeolocationProvider] saved last background timestamp', { key: LAST_BG_TS_KEY, timestamp: p.timestamp });
       }
-    } catch (e) {
+    } catch {
       // ignore storage errors
+    }
+  }
+
+  private async ensureNotificationPermission() {
+    if (Capacitor.getPlatform() !== 'android') return;
+    const current = await LocalNotifications.checkPermissions();
+    if (current.display === 'granted') return;
+    const requested = await LocalNotifications.requestPermissions();
+    if (requested.display !== 'granted') {
+      throw new Error(
+        'Notification permission is required for reliable background tracking.',
+      );
     }
   }
 
@@ -145,7 +109,9 @@ export class BackgroundGeolocationProvider implements ILocationProvider {
       if (typeof localStorage !== 'undefined') {
         return localStorage.getItem(LAST_BG_TS_KEY);
       }
-    } catch (_) {}
+    } catch {
+      // localStorage may be unavailable in privacy mode
+    }
     return null;
   }
 }

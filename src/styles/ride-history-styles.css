@@ -9,9 +9,6 @@
   --glass-2: rgba(255,255,255,0.02);
 }
 
-/* Import a modern system font (Inter) for Strava-like aesthetic */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
-
 /* Ensure page-level tokens fallback to Ionic vars when included in app */
 :root {
   --accent: var(--ion-color-primary);
@@ -22,7 +19,7 @@
 }
 .ride-history-page {
   padding: 20px;
-  font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  font-family: var(--ion-font-family);
   color: var(--ion-text-color);
   background: linear-gradient(180deg, var(--bg) 0%, #0b0f14 100%);
   min-height: 100vh;
@@ -109,3 +106,121 @@
 .map-center-btn { position: absolute; right: 12px; top: 12px; z-index: 600; background: rgba(255,255,255,0.92); border: none; padding: 8px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 6px 16px rgba(2,6,23,0.45); }
 .map-center-btn svg { display: block; }
 .map-center-btn:hover { transform: translateY(-2px); transition: transform 140ms ease; }
+
+/* RoadTrip history surfaces follow the same theme tokens as the live ride UI. */
+.ride-history-page {
+  min-height: 100%;
+  padding: clamp(12px, 2.4vw, 24px);
+  color: var(--rt-text);
+  background: var(--rt-bg);
+}
+.rh-container {
+  width: min(100%, 1440px);
+  margin-inline: auto;
+  gap: var(--rt-space-md);
+  grid-template-columns: minmax(0, 1fr);
+}
+.rh-card {
+  min-width: 0;
+  padding: clamp(14px, 2vw, 20px);
+  color: var(--rt-text);
+  background: var(--rt-surface);
+  border: 1px solid var(--rt-line);
+  border-radius: var(--rt-radius-md);
+  box-shadow: var(--rt-shadow-card);
+}
+.rh-map {
+  min-height: 240px;
+  padding: 0;
+  background: var(--rt-map-canvas);
+}
+.rh-page-title { color: var(--rt-text); font-size: clamp(20px, 2vw, 26px); line-height: 1.2; }
+.rh-section-title { color: var(--rt-primary); font-size: 14px; line-height: 1.35; }
+.rh-muted,.rh-hero-label { color: var(--rt-muted); }
+.rh-stat-title { color: var(--rt-muted); }
+.rh-stat-value,.rh-hero-value { color: var(--rt-text); }
+.rh-hero-value { font-size: clamp(22px, 2.4vw, 28px); }
+.rh-hero-stat { background: var(--rt-surface-raised); border: 1px solid var(--rt-line); }
+.rh-generate-btn,.icon-btn.primary {
+  min-height: 48px;
+  color: var(--rt-on-action);
+  background: var(--rt-action);
+  box-shadow: none;
+}
+.rh-generate-btn:disabled {
+  opacity: .62;
+  cursor: progress;
+  box-shadow: none;
+  transform: none;
+}
+.summary-preview-loading { margin: 8px 0 0; color: var(--rt-muted); font-size: 13px; }
+.rh-small-btn,.icon-btn:not(.primary) {
+  min-height: 48px;
+  color: var(--rt-text);
+  background: var(--rt-surface-raised);
+  border: 1px solid var(--rt-line);
+}
+.rh-generate-btn:hover,.rh-small-btn:hover,.icon-btn:hover { transform: translateY(-1px); }
+.rh-generate-btn:focus-visible,.rh-small-btn:focus-visible,.icon-btn:focus-visible,
+.map-center-btn:focus-visible,.replay-photo-trigger:focus-visible {
+  outline: 3px solid var(--rt-route);
+  outline-offset: 3px;
+}
+.rh-card:hover { transform: none; box-shadow: var(--rt-shadow-card); }
+.history-map-empty {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  padding: 20px;
+  border: 1px dashed var(--rt-line);
+  border-radius: var(--rt-radius-sm);
+  background: var(--rt-surface-raised);
+  color: var(--rt-muted);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+}
+.replay-photo-trigger {
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid var(--rt-line);
+  border-radius: 12px;
+  background: var(--rt-surface);
+  color: var(--rt-text);
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+.replay-photo-trigger:hover { background: var(--rt-surface-raised); }
+.replay-photo-trigger:active { transform: scale(.97); }
+.replay-photo-trigger.active { border-color: var(--rt-primary); background: var(--rt-sage); color: var(--rt-text); }
+
+@media (min-width: 960px) {
+  .rh-container { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); align-items: start; }
+  .rh-map { height: min(62vh, 680px); min-height: 360px; }
+}
+@media (max-width: 520px) {
+  .rh-hero-stats { gap: 8px; }
+  .rh-hero-stat { padding: 10px 6px; }
+  .rh-stats-grid { gap: 8px; }
+  .rh-gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rh-gallery-item img { height: clamp(84px, 24vw, 112px); }
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  .ride-history-page { padding-block: 8px; }
+  .rh-map { height: 52vh; min-height: 190px; }
+  .rh-container { gap: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rh-card,.rh-generate-btn,.rh-small-btn,.icon-btn,.replay-photo-trigger { transition: none; }
+}
+
+/* Keep the summary heading and every summary section on one responsive inset. */
+.summary-screen .ride-history-page {
+  box-sizing: border-box;
+  width: min(100%, 1120px);
+  margin-inline: auto;
+  padding: var(--rt-page-top-gutter, 18px) var(--rt-page-gutter, 20px) 28px;
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  .summary-screen .ride-history-page { padding-top: var(--rt-page-top-gutter-landscape, 6px); }
+}

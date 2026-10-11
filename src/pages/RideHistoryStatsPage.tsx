@@ -1,13 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation, useHistory } from 'react-router-dom';
-import { IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent } from '@ionic/react';
+import { IonPage, IonContent } from '@ionic/react';
 import ReplayIcon from '../components/Icons/ReplayIcon';
 import { fetchRideById } from '../api/ride';
 import MapView from '../components/RideMap/MapView';
 import StatsPanel from '../components/RideStats/StatsPanel';
 import GalleryGrid from '../components/Gallery/GalleryGrid';
 import type { Ride } from '../types/ride';
+import type { LatLngBoundsExpression, Map as LeafletMap } from 'leaflet';
 import '../styles/ride-history-styles.css';
+import AppHeader from '../components/AppHeader';
 
 type Props = { rideId: string };
 
@@ -15,24 +17,35 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
   const [ride, setRide] = useState<Ride | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [mapCanvas, setMapCanvas] = useState<HTMLCanvasElement | null>(null);
-  const [mapInstance, setMapInstance] = useState<any | null>(null);
+  const [mapInstance, setMapInstance] = useState<LeafletMap | null>(null);
+  const [leavingSummary, setLeavingSummary] = useState(false);
   const location = useLocation();
   const history = useHistory();
   const params = new URLSearchParams(location.search);
   const [replayMode, setReplayMode] = useState<boolean>(params.get('mode') === 'replay');
-  const [playing, setPlaying] = useState(false);
+  const handleMapReady = useCallback((map: LeafletMap) => {
+    setMapInstance(map);
+  }, []);
 
   useEffect(() => {
-    // update replay mode if query changes
     const p = new URLSearchParams(location.search);
     setReplayMode(p.get('mode') === 'replay');
+  }, [location.search]);
 
+  useEffect(() => {
     let mounted = true;
+    let photoUrls: string[] = [];
     setLoading(true);
+    setError(null);
+    setRide(null);
+    setMapInstance(null);
     fetchRideById(rideId)
       .then(r => {
-        if (!mounted) return;
+        if (!mounted) {
+          r.photoUrls.filter((url) => url.startsWith('blob:')).forEach((url) => URL.revokeObjectURL(url));
+          return;
+        }
+        photoUrls = r.photoUrls.filter((url) => url.startsWith('blob:'));
         setRide(r);
         setLoading(false);
       })
@@ -41,14 +54,24 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
         setError(String(err));
         setLoading(false);
       });
-    return () => { mounted = false };
+    return () => {
+      mounted = false;
+      photoUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
   }, [rideId]);
+
+  useEffect(() => {
+    if (location.pathname === `/ride-history-stats/${rideId}`) {
+      setLeavingSummary(false);
+      setMapInstance(null);
+    }
+  }, [location.pathname, rideId]);
 
   useEffect(() => {
     if (!mapInstance) return;
     // allow layout to settle then invalidate size so Leaflet redraws properly
     const t = setTimeout(() => {
-      try { mapInstance.invalidateSize && mapInstance.invalidateSize(); } catch (e) { console.warn('invalidateSize failed', e); }
+      try { mapInstance.invalidateSize(); } catch (error) { console.warn('invalidateSize failed', error); }
     }, 200);
     return () => clearTimeout(t);
   }, [mapInstance]);
@@ -60,60 +83,59 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
       // extract lat-lng pairs from ride.polylineGeoJSON (convert [lng,lat] -> [lat,lng])
       let latlngs: [number, number][] = [];
       const geo = ride.polylineGeoJSON;
-      if ((geo as GeoJSON.Feature)?.type === 'Feature') {
-        const feat = geo as GeoJSON.Feature;
-        if (feat.geometry.type === 'LineString') latlngs = feat.geometry.coordinates.map((c: any) => [c[1], c[0]]);
-      } else if ((geo as GeoJSON.LineString)?.type === 'LineString') {
-        latlngs = (geo as GeoJSON.LineString).coordinates.map((c: any) => [c[1], c[0]]);
+      const geometry = geo.type === 'Feature' ? geo.geometry : geo;
+      if (geometry.type === 'LineString') {
+        latlngs = geometry.coordinates.map((coordinate) => [coordinate[1], coordinate[0]]);
       }
       if (latlngs.length > 0) {
-        setTimeout(() => {
+        const timeout = window.setTimeout(() => {
           try {
-            mapInstance.invalidateSize && mapInstance.invalidateSize();
-            mapInstance.fitBounds && mapInstance.fitBounds(latlngs as any, { padding: [40, 40] });
+            mapInstance.invalidateSize();
+            mapInstance.fitBounds(latlngs as LatLngBoundsExpression, { padding: [40, 40] });
           } catch (e) { console.warn('fitBounds failed', e); }
         }, 300);
+        return () => window.clearTimeout(timeout);
       }
+      return undefined;
     } catch (e) { console.warn('fit route failed', e); }
   }, [mapInstance, ride]);
 
-  if (loading) return <div style={{ padding: 20 }}>Loading ride...</div>;
-  if (error) return <div style={{ padding: 20, color: 'red' }}>Error: {error}</div>;
-  if (!ride) return <div style={{ padding: 20 }}>Ride not found.</div>;
-
-  const saveSampleToLocal = () => {
-    const key = `ride:${rideId}`;
-    try {
-      localStorage.setItem(key, JSON.stringify(ride));
-      alert('Saved sample ride to localStorage under ' + key);
-    } catch (err) {
-      console.warn(err);
-      alert('Failed to save to localStorage');
-    }
+  const openReviewRoute = (path: string) => {
+    // Give React Leaflet a commit to tear down its map and child layers before Ionic
+    // starts the next page transition. This avoids layers attaching to a detached pane.
+    setLeavingSummary(true);
+    window.requestAnimationFrame(() => history.push(path));
   };
-
-  const togglePlay = () => {
-    setPlaying((v) => !v);
-  };
+  const openReplay = () => openReviewRoute(`/ride-replay/${rideId}`);
+  const hasPreviewRoute = (() => {
+    if (!ride) return false;
+    const geometry = ride.polylineGeoJSON.type === 'Feature'
+      ? ride.polylineGeoJSON.geometry
+      : ride.polylineGeoJSON;
+    return geometry.type === 'LineString' && geometry.coordinates.length > 0;
+  })();
+  const previewReady = !hasPreviewRoute || mapInstance !== null;
 
   return (
     <IonPage>
-      <IonHeader>
-        <IonToolbar>
-          <IonButtons slot="start">
-            <IonBackButton defaultHref="/ride-history" />
-          </IonButtons>
-          <IonTitle>Ride Summary</IonTitle>
-        </IonToolbar>
-      </IonHeader>
-      <IonContent>
+      <AppHeader title={replayMode ? 'Ride replay' : 'Ride summary'} backHref="/ride-history" />
+      <IonContent className="summary-screen app-page">
+        {loading && <div className="screen-state" role="status">Loading ride summary…</div>}
+        {!loading && error && <div className="screen-state" role="alert">Couldn’t load this ride. {error}</div>}
+        {!loading && !error && !ride && <div className="screen-state" role="status">Ride not found.</div>}
+        {ride && !loading && !error && <>
         <div className="ride-history-page">
+          <div className="summary-heading">
+            <h1>Ride complete</h1>
+            <p>{new Date(ride.startTimeISO).toLocaleDateString(undefined, { dateStyle: 'full' })}</p>
+            <span className="summary-ride-type">{rideId.startsWith('solo-') ? 'Solo route' : 'Shared group ride'}</span>
+          </div>
           {replayMode && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, margin: '12px 12px 0 12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button className="icon-btn primary" onClick={togglePlay} title={playing ? 'Stop replay' : 'Start replay'}>
+                  <button className="icon-btn primary" onClick={openReplay} aria-label="Open route replay">
                   <ReplayIcon />
-                  <span>{playing ? 'Stop' : 'Start'} Replay</span>
+                  <span>Open Replay</span>
                 </button>
               </div>
             </div>
@@ -140,28 +162,40 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
 
               <div className="rh-card">
                 <div className="rh-section-title">Customize</div>
-                <p style={{ marginBottom: 12, opacity: 0.7, fontSize: 14 }}>Create a customizable share image for social media</p>
+                <p style={{ marginBottom: 12, opacity: 0.7, fontSize: 14 }}>Replay the route or create an image to share this ride.</p>
+                <button
+                  className="rh-generate-btn"
+                  onClick={() => openReviewRoute(`/ride-replay/${rideId}`)}
+                  disabled={!previewReady}
+                  aria-describedby={!previewReady ? 'summary-preview-loading' : undefined}
+                  style={{ width: '100%', marginBottom: 8 }}
+                >
+                  Replay ride
+                </button>
                 <button 
                   className="rh-generate-btn" 
-                  onClick={() => history.push(`/ride-history-stats/${rideId}/share`)}
+                  onClick={() => openReviewRoute(`/ride-history-stats/${rideId}/share`)}
+                  disabled={!previewReady}
+                  aria-describedby={!previewReady ? 'summary-preview-loading' : undefined}
                   style={{ width: '100%' }}
                 >
                   Create Share Image
                 </button>
+                {!previewReady && <p id="summary-preview-loading" role="status" className="summary-preview-loading">Preparing route preview…</p>}
               </div>
 
               
 
-              <div>
-                <button className="rh-small-btn" onClick={saveSampleToLocal} style={{ marginTop: 8 }}>Save sample ride to localStorage</button>
-              </div>
             </div>
 
             <div className="rh-card rh-map">
-              <MapView polylineGeoJSON={ride.polylineGeoJSON} height={420} onMapReady={m => setMapInstance(m)} />
+              {leavingSummary
+                ? <div className="history-map-empty" role="status">Opening ride review…</div>
+                : <MapView polylineGeoJSON={ride.polylineGeoJSON} height={420} onMapReady={handleMapReady} />}
             </div>
           </div>
         </div>
+        </>}
       </IonContent>
     </IonPage>
   );

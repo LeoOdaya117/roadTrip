@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { CurrentUser, Rider } from '../types/ride';
+import type { LocationOutboxRecord } from './offlineDb';
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api';
 
@@ -66,5 +67,54 @@ export const sendLocation = async (
     });
   } catch (error) {
     throw formatApiError(error);
+  }
+};
+
+export type LocationBatchResponse = {
+  acceptedPointIds: string[];
+  rejected: Array<{ pointId: string; reason: string }>;
+};
+
+export class LocationBatchRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = 'LocationBatchRequestError';
+  }
+}
+
+export const sendLocationBatch = async (
+  rideId: string,
+  riderId: string,
+  records: LocationOutboxRecord[],
+) => {
+  try {
+    const response = await api.post<LocationBatchResponse>(
+      `/rides/${rideId}/locations/batch`,
+      {
+        riderId,
+        points: records.map((record) => ({
+          pointId: record.pointId,
+          timestamp: record.timestamp,
+          lat: record.lat,
+          lng: record.lng,
+          speed: record.speed,
+          accuracy: record.accuracy,
+          source: record.source,
+        })),
+      },
+    );
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const message =
+        (error.response?.data as { message?: string } | undefined)?.message ??
+        error.message ??
+        'Location batch request failed';
+      throw new LocationBatchRequestError(message, error.response?.status);
+    }
+    throw new LocationBatchRequestError('Unexpected location batch error');
   }
 };

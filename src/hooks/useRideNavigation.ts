@@ -1,0 +1,460 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  calculateRouteOptions,
+  downloadNavigationTiles,
+  getNavigationAvailability,
+  speakNavigationPrompt,
+  stopNavigationSpeech,
+  supportsTurnByTurnNavigation,
+} from '../services/navigationEngine';
+import {
+  distanceFromRouteProgressToShapeIndexMeters,
+  nearestRouteProgress,
+  nextRouteManeuver,
+  updateOffRouteFixCount,
+} from '../services/navigationRoute';
+import { getSession, saveRideSession } from '../services/offlineDb';
+import type {
+  AcceptedLocationPoint,
+  NavigationDestination,
+  NavigationRoute,
+  NavigationRouteOption,
+} from '../types/ride';
+
+export type RideNavigationState = {
+  destination: NavigationDestination | null;
+  route: NavigationRoute | null;
+  selectedRouteIndex: number;
+  nextInstruction: string | null;
+  nextStreetName: string | null;
+  distanceToNextManeuverMeters: number | null;
+  isRouting: boolean;
+  isGuiding: boolean;
+  isDownloadingTiles: boolean;
+  tileDownloadProgress: number | null;
+  error: string | null;
+  supported: boolean;
+  offlineAvailable: boolean;
+  setDestination: (destination: NavigationDestination, routeIndex?: number) => Promise<void>;
+  startGuidance: () => Promise<void>;
+  stopGuidance: () => void;
+  clearDestination: () => Promise<void>;
+  downloadTiles: () => Promise<void>;
+};
+
+export const useRideNavigation = (
+  rideId: string | undefined,
+  location: AcceptedLocationPoint | null | undefined,
+  isTracking: boolean,
+  hasFreshLocation = Boolean(location),
+): RideNavigationState => {
+  const [destination, setDestinationState] = useState<NavigationDestination | null>(null);
+  const [route, setRoute] = useState<NavigationRoute | null>(null);
+  const [selectedRouteIndex, setSelectedRouteIndex] = useState(0);
+  const [isRouting, setIsRouting] = useState(false);
+  const [isGuiding, setIsGuiding] = useState(false);
+  const [isDownloadingTiles, setIsDownloadingTiles] = useState(false);
+  const [tileDownloadProgress, setTileDownloadProgress] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [supported, setSupported] = useState(supportsTurnByTurnNavigation());
+  const [offlineAvailable, setOfflineAvailable] = useState(false);
+  const routeOperationRef = useRef(0);
+  const selectedRouteIndexRef = useRef(0);
+  const routeInFlightRef = useRef(false);
+  const inFlightDestinationKeyRef = useRef<string | null>(null);
+  const pendingRouteRef = useRef<{
+    origin: AcceptedLocationPoint;
+    destination: NavigationDestination;
+    rerouting: boolean;
+  } | null>(null);
+  const offRouteFixCountRef = useRef(0);
+  const lastPointIdRef = useRef<string | null>(null);
+  const failedRoutePointIdRef = useRef<string | null>(null);
+  const spokenManeuverRef = useRef<number | null>(null);
+  const didRestoreRef = useRef(false);
+  const didAutoRouteRef = useRef(false);
+  const previousTrackingRef = useRef(isTracking);
+  const hasFreshLocationRef = useRef(hasFreshLocation);
+  const wasLocationFreshRef = useRef(hasFreshLocation);
+  hasFreshLocationRef.current = hasFreshLocation;
+
+  const routeFrom = useCallback(async (
+    origin: AcceptedLocationPoint,
+    target: NavigationDestination,
+    rerouting = false,
+  ) => {
+    if (routeInFlightRef.current) {
+      const destinationKey = `${target.lat},${target.lng}`;
+      if (inFlightDestinationKeyRef.current !== destinationKey) {
+        pendingRouteRef.current = { origin, destination: target, rerouting };
+      }
+      return;
+    }
+    routeInFlightRef.current = true;
+    inFlightDestinationKeyRef.current = `${target.lat},${target.lng}`;
+    if (failedRoutePointIdRef.current !== origin.pointId) failedRoutePointIdRef.current = null;
+    const operation = ++routeOperationRef.current;
+    setIsRouting(true);
+    setError(null);
+    try {
+      const routeOptions: NavigationRouteOption[] = await calculateRouteOptions(origin, target);
+      if (operation !== routeOperationRef.current) return;
+      const nextRoute = routeOptions[selectedRouteIndexRef.current]?.route ?? routeOptions[0]?.route;
+      if (!nextRoute) throw new Error('No route is available for this destination.');
+      setRoute(nextRoute);
+      failedRoutePointIdRef.current = null;
+      offRouteFixCountRef.current = 0;
+      spokenManeuverRef.current = null;
+      if (rerouting && isGuiding && isTracking) {
+        const firstInstruction = nextRoute.maneuvers[0]?.instruction;
+        if (firstInstruction) await speakNavigationPrompt(`Route updated. ${firstInstruction}`);
+      }
+    } catch (routeError) {
+      if (operation === routeOperationRef.current) {
+        setRoute(null);
+        failedRoutePointIdRef.current = origin.pointId;
+        setError(routeError instanceof Error
+          ? routeError.message
+          : 'Unable to calculate a route. Check your connection or install the regional offline map.');
+      }
+    } finally {
+      if (operation === routeOperationRef.current) setIsRouting(false);
+      routeInFlightRef.current = false;
+      inFlightDestinationKeyRef.current = null;
+      const pending = pendingRouteRef.current;
+      pendingRouteRef.current = null;
+      if (pending) void routeFrom(pending.origin, pending.destination, pending.rerouting);
+    }
+  }, [isGuiding, isTracking]);
+
+  useEffect(() => {
+    let cancelled = false;
+    didRestoreRef.current = false;
+    didAutoRouteRef.current = false;
+    pendingRouteRef.current = null;
+    setDestinationState(null);
+    setRoute(null);
+    setSelectedRouteIndex(0);
+    selectedRouteIndexRef.current = 0;
+    setIsGuiding(false);
+    setError(null);
+    routeOperationRef.current += 1;
+    routeInFlightRef.current = false;
+    inFlightDestinationKeyRef.current = null;
+    offRouteFixCountRef.current = 0;
+    lastPointIdRef.current = null;
+    failedRoutePointIdRef.current = null;
+    if (!rideId) return;
+
+    void getSession(rideId).then((session) => {
+      if (cancelled) return;
+      didRestoreRef.current = true;
+      const restoredDestination = session?.endedAt ? null : session?.navigationDestination ?? null;
+      const restoredRouteIndex = Number.isInteger(session?.navigationRouteIndex)
+        ? Math.max(0, session?.navigationRouteIndex ?? 0)
+        : 0;
+      setDestinationState(restoredDestination);
+      setSelectedRouteIndex(restoredRouteIndex);
+      selectedRouteIndexRef.current = restoredRouteIndex;
+      setIsGuiding(Boolean(
+        restoredDestination
+        && session?.navigationEnabled !== false
+        && !session?.endedAt,
+      ));
+    }).catch(() => {
+      if (!cancelled) didRestoreRef.current = true;
+    });
+
+    return () => {
+      cancelled = true;
+      routeOperationRef.current += 1;
+      routeInFlightRef.current = false;
+      void stopNavigationSpeech().catch(() => undefined);
+    };
+  }, [rideId]);
+
+  useEffect(() => {
+    if (!supportsTurnByTurnNavigation()) {
+      setSupported(false);
+      return;
+    }
+    let cancelled = false;
+    void getNavigationAvailability().then((availability) => {
+      if (cancelled) return;
+      setSupported(availability.available);
+      setOfflineAvailable(availability.offlineAvailable);
+      if (!availability.available && availability.message) setError(availability.message);
+    }).catch((availabilityError: unknown) => {
+      if (cancelled && !supportsTurnByTurnNavigation()) return;
+      setSupported(false);
+      setError(availabilityError instanceof Error
+        ? availabilityError.message
+        : 'Offline navigation is unavailable on this device.');
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const persistDestination = useCallback(async (
+    value: NavigationDestination | null,
+    enabled = false,
+    routeIndex = selectedRouteIndexRef.current,
+  ) => {
+    if (!rideId) return;
+    const session = await getSession(rideId);
+    if (!session) return;
+    if (value) {
+      await saveRideSession({
+        ...session,
+        navigationDestination: value,
+        navigationEnabled: enabled,
+        navigationRouteIndex: routeIndex,
+      });
+    } else {
+      const withoutDestination = { ...session };
+      delete withoutDestination.navigationDestination;
+      delete withoutDestination.navigationEnabled;
+      delete withoutDestination.navigationRouteIndex;
+      await saveRideSession(withoutDestination);
+    }
+  }, [rideId]);
+
+  const setDestination = useCallback(async (value: NavigationDestination, routeIndex = 0) => {
+    routeOperationRef.current += 1;
+    pendingRouteRef.current = null;
+    setDestinationState(value);
+    const safeRouteIndex = Math.max(0, Number.isInteger(routeIndex) ? routeIndex : 0);
+    selectedRouteIndexRef.current = safeRouteIndex;
+    setSelectedRouteIndex(safeRouteIndex);
+    setRoute(null);
+    setError(null);
+    failedRoutePointIdRef.current = null;
+    offRouteFixCountRef.current = 0;
+    spokenManeuverRef.current = null;
+    try {
+      await persistDestination(value, false, safeRouteIndex);
+      if (location && hasFreshLocation && supported) {
+        didAutoRouteRef.current = true;
+        await routeFrom(location, value);
+      } else {
+        didAutoRouteRef.current = false;
+      }
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Could not save the destination.');
+    }
+  }, [hasFreshLocation, location, persistDestination, routeFrom, supported]);
+
+  const startGuidance = useCallback(async () => {
+    if (!hasFreshLocationRef.current) {
+      setError('Waiting for a fresh GPS fix before starting guidance.');
+      return;
+    }
+    if (!supportsTurnByTurnNavigation()) {
+      setError('Turn-by-turn navigation is available in the Android app.');
+      return;
+    }
+    const availability = await getNavigationAvailability();
+    setSupported(availability.available);
+    if (!availability.available) {
+      setError(availability.message ?? 'Offline navigation tiles are not available.');
+      return;
+    }
+    if (!hasFreshLocationRef.current) {
+      setError('Waiting for a fresh GPS fix before starting guidance.');
+      return;
+    }
+    setError(null);
+    setIsGuiding(true);
+    if (destination) {
+      try {
+        await persistDestination(destination, true);
+      } catch (saveError) {
+        setError(saveError instanceof Error ? saveError.message : 'Could not save navigation state.');
+      }
+    }
+    if (destination && location && hasFreshLocation && !route) await routeFrom(location, destination);
+  }, [destination, hasFreshLocation, location, persistDestination, route, routeFrom]);
+
+  const downloadTiles = useCallback(async () => {
+    if (isDownloadingTiles) return;
+    setIsDownloadingTiles(true);
+    setTileDownloadProgress(0);
+    setError(null);
+    try {
+      await downloadNavigationTiles(setTileDownloadProgress);
+      const availability = await getNavigationAvailability();
+      setSupported(availability.available);
+      setOfflineAvailable(availability.offlineAvailable);
+      if (!availability.available) {
+        throw new Error(availability.message ?? 'Downloaded offline map data could not be opened.');
+      }
+      setTileDownloadProgress(100);
+    } catch (downloadError) {
+      setError(downloadError instanceof Error
+        ? downloadError.message
+        : 'Offline map data could not be downloaded. Check your connection and retry.');
+    } finally {
+      setIsDownloadingTiles(false);
+      setTileDownloadProgress(null);
+    }
+  }, [isDownloadingTiles]);
+
+  const stopGuidance = useCallback(() => {
+    setIsGuiding(false);
+    offRouteFixCountRef.current = 0;
+    void persistDestination(destination, false).catch((saveError: unknown) => {
+      setError(saveError instanceof Error ? saveError.message : 'Could not save navigation state.');
+    });
+    void stopNavigationSpeech().catch(() => undefined);
+  }, [destination, persistDestination]);
+
+  const clearDestination = useCallback(async () => {
+    setDestinationState(null);
+    setRoute(null);
+    selectedRouteIndexRef.current = 0;
+    setSelectedRouteIndex(0);
+    setIsGuiding(false);
+    setError(null);
+    offRouteFixCountRef.current = 0;
+    routeOperationRef.current += 1;
+    pendingRouteRef.current = null;
+    routeInFlightRef.current = false;
+    inFlightDestinationKeyRef.current = null;
+    setIsRouting(false);
+    await persistDestination(null);
+    void stopNavigationSpeech().catch(() => undefined);
+  }, [persistDestination]);
+
+  useEffect(() => {
+    if (!didRestoreRef.current || didAutoRouteRef.current || !destination || !location || !hasFreshLocation) return;
+    if (supported) {
+      didAutoRouteRef.current = true;
+      void routeFrom(location, destination);
+    }
+  }, [destination, hasFreshLocation, location, route, routeFrom, supported]);
+
+  useEffect(() => {
+    if (
+      !didRestoreRef.current
+      || !destination
+      || !location
+      || !hasFreshLocation
+      || !supported
+      || route
+      || isRouting
+      || (isGuiding && !isTracking)
+      || failedRoutePointIdRef.current === location.pointId
+      || !failedRoutePointIdRef.current
+    ) return;
+    void routeFrom(location, destination, isGuiding);
+  }, [destination, hasFreshLocation, isGuiding, isRouting, isTracking, location, route, routeFrom, supported]);
+
+  useEffect(() => {
+    if (!hasFreshLocation) {
+      wasLocationFreshRef.current = false;
+      return;
+    }
+    const freshnessRecovered = !wasLocationFreshRef.current;
+    wasLocationFreshRef.current = true;
+    if (
+      !freshnessRecovered
+      || !location
+      || !destination
+      || !supported
+      || route
+      || isRouting
+      || !isGuiding
+      || !isTracking
+      || failedRoutePointIdRef.current !== location.pointId
+    ) return;
+    failedRoutePointIdRef.current = `fresh-recovery:${location.pointId}`;
+    void routeFrom(location, destination, true);
+  }, [destination, hasFreshLocation, isGuiding, isRouting, isTracking, location, route, routeFrom, supported]);
+
+  useEffect(() => {
+    if (!isTracking) {
+      void stopNavigationSpeech().catch(() => undefined);
+      previousTrackingRef.current = false;
+      return;
+    }
+    if (!previousTrackingRef.current && isGuiding && destination && location && route && hasFreshLocation) {
+      void routeFrom(location, destination, true);
+    }
+    previousTrackingRef.current = true;
+  }, [destination, hasFreshLocation, isGuiding, isTracking, location, route, routeFrom]);
+
+  const progress = useMemo(() => {
+    if (!location || !route) return null;
+    return nearestRouteProgress(location, route);
+  }, [location, route]);
+
+  const maneuver = progress && route
+    ? nextRouteManeuver(progress.shapeIndex, route, progress.fraction)
+    : null;
+  const isCurrentGuidance = Boolean(
+    isGuiding && isTracking && hasFreshLocation && supported && !isRouting && location && route,
+  );
+  const currentManeuver = isCurrentGuidance ? maneuver : null;
+  const distanceToNextManeuverMeters = currentManeuver && progress && route
+    ? distanceFromRouteProgressToShapeIndexMeters(
+      progress.shapeIndex,
+      progress.fraction,
+      currentManeuver.shapeIndex,
+      route,
+    )
+    : null;
+
+  useEffect(() => {
+    if (!location || !hasFreshLocation || !route || !destination || !isGuiding || !isTracking || !progress) {
+      offRouteFixCountRef.current = 0;
+      return;
+    }
+    if (lastPointIdRef.current === location.pointId) return;
+    lastPointIdRef.current = location.pointId;
+    const decision = updateOffRouteFixCount(
+      offRouteFixCountRef.current,
+      progress.distanceMeters,
+      location.accuracy,
+    );
+    offRouteFixCountRef.current = decision.count;
+    if (decision.shouldReroute && !routeInFlightRef.current) {
+      void routeFrom(location, destination, true);
+    }
+  }, [destination, hasFreshLocation, isGuiding, isTracking, location, progress, route, routeFrom]);
+
+  useEffect(() => {
+    if (!hasFreshLocation || !isTracking) {
+      void stopNavigationSpeech().catch(() => undefined);
+      spokenManeuverRef.current = null;
+      return;
+    }
+    if (!location || !route || !maneuver || !isGuiding || !supported || isRouting) return;
+    if (distanceToNextManeuverMeters == null || distanceToNextManeuverMeters > 500) return;
+    if (spokenManeuverRef.current === maneuver.id) return;
+    spokenManeuverRef.current = maneuver.id;
+    void speakNavigationPrompt(`${Math.max(0, Math.round(distanceToNextManeuverMeters / 50) * 50)} meters. ${maneuver.instruction}`)
+      .catch((speechError: unknown) => {
+        setError(speechError instanceof Error ? speechError.message : 'Voice guidance is unavailable.');
+      });
+  }, [distanceToNextManeuverMeters, hasFreshLocation, isGuiding, isRouting, isTracking, location, maneuver, route, supported]);
+
+  return {
+    destination,
+    route,
+    selectedRouteIndex,
+    nextInstruction: currentManeuver?.instruction ?? null,
+    nextStreetName: currentManeuver?.streetName ?? null,
+    distanceToNextManeuverMeters,
+    isRouting,
+    isGuiding,
+    isDownloadingTiles,
+    tileDownloadProgress,
+    error,
+    supported,
+    offlineAvailable,
+    setDestination,
+    startGuidance,
+    stopGuidance,
+    clearDestination,
+    downloadTiles,
+  };
+};

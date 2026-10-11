@@ -48,9 +48,9 @@ export default function TopicChat() {
             style={{
               padding: '10px 12px',
               borderRadius: 12,
-              background: currentTopic === t.id ? 'linear-gradient(90deg,#FF6B35,#FF8255)' : 'rgba(0,0,0,0.6)',
-              color: '#fff',
-              border: 'none',
+              background: currentTopic === t.id ? 'var(--rt-primary)' : 'var(--rt-surface)',
+              color: currentTopic === t.id ? '#fffdf5' : 'var(--rt-text)',
+              border: '1px solid var(--rt-line)',
               cursor: 'pointer'
             }}
           >
@@ -60,14 +60,14 @@ export default function TopicChat() {
       </div>
 
       {open && (
-        <div style={{ width: 300, background: 'rgba(8,10,18,0.9)', padding: 12, borderRadius: 12, boxShadow: '0 8px 30px rgba(2,6,23,0.5)' }}>
+        <div style={{ width: 300, background: 'var(--rt-paper)', padding: 12, borderRadius: 16, border: '1px solid var(--rt-line)', boxShadow: 'var(--rt-shadow)' }}>
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-            <strong style={{ color: '#fff', flex: 1 }}>{currentTopic ? TOPICS.find(t=>t.id===currentTopic)?.label : 'New message'}</strong>
-            <button onClick={() => setOpen(false)} style={{ background: 'transparent', border: 'none', color: '#94A3B8' }}>Close</button>
+            <strong style={{ color: 'var(--rt-text)', flex: 1 }}>{currentTopic ? TOPICS.find(t=>t.id===currentTopic)?.label : 'New message'}</strong>
+            <button onClick={() => setOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--rt-muted)' }}>Close</button>
           </div>
-          <textarea value={text} onChange={(e)=>setText(e.target.value)} rows={3} style={{ width: '100%', borderRadius: 8, padding: 8, border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)', color: '#fff' }} />
+          <textarea value={text} onChange={(e)=>setText(e.target.value)} rows={3} style={{ width: '100%', borderRadius: 10, padding: 9, border: '1px solid var(--rt-line)', background: 'var(--rt-surface)', color: 'var(--rt-text)' }} />
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-            <button onClick={send} style={{ padding: '8px 12px', borderRadius: 8, background: '#FF6B35', color: '#fff', border: 'none' }}>Send</button>
+            <button onClick={send} style={{ padding: '8px 12px', borderRadius: 10, background: 'var(--rt-primary)', color: '#fffdf5', border: 'none' }}>Send</button>
           </div>
         </div>
       )}

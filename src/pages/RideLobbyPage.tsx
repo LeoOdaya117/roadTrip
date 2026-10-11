@@ -1,15 +1,16 @@
 import {
   IonContent,
-  IonHeader,
   IonPage,
   IonSpinner,
-  IonTitle,
-  IonToolbar
+  IonToast,
+  IonIcon,
 } from '@ionic/react';
-import { useEffect, useMemo } from 'react';
+import { copyOutline, peopleOutline } from 'ionicons/icons';
+import { useEffect, useMemo, useState } from 'react';
 import { useHistory, useParams } from 'react-router-dom';
 import { useRideChannel } from '../hooks/useRideChannel';
 import { useRideStore } from '../store/rideStore';
+import AppHeader from '../components/AppHeader';
 
 const RideLobbyPage: React.FC = () => {
   const history = useHistory();
@@ -19,6 +20,7 @@ const RideLobbyPage: React.FC = () => {
   const currentUser = useRideStore((state) => state.currentUser);
   const setRide = useRideStore((state) => state.setRide);
   const riders = useRideStore((state) => state.riders);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (routeRideId) {
@@ -49,37 +51,51 @@ const RideLobbyPage: React.FC = () => {
     history.push(`/ride-map/${rideId}`);
   };
 
+  const handleCopyRideCode = async () => {
+    if (!rideId) return;
+    try {
+      await navigator.clipboard.writeText(rideId);
+      setCopyMessage('Ride code copied. Send it to your crew.');
+    } catch {
+      setCopyMessage('Copy was blocked. Select the ride code above to share it.');
+    }
+  };
+
   return (
     <IonPage>
-      <IonHeader>
-        <IonToolbar className="app-toolbar">
-          <IonTitle>Lobby</IonTitle>
-        </IonToolbar>
-      </IonHeader>
-      <IonContent className="app-page page-content">
+      <AppHeader title="Lobby" />
+      <IonContent className="app-page page-content lobby-page">
 
         <div className="page-hero">
-          <p className="hero-eyebrow">Ready to roll</p>
-          <h1>Your ride<br /><span>is waiting.</span></h1>
-          <p>Share the code below with your group.</p>
+          <h1>Your crew<br /><span>is assembling.</span></h1>
+          <p>Share the ride code, then start when everyone is ready.</p>
         </div>
 
         {/* Ride code */}
         <div className="ride-code-display">
           <p className="ride-code-label">Ride code</p>
-          <span className="ride-code-value">{rideId ?? '---'}</span>
+          <div className="lobby-code-row">
+            <span className="ride-code-value">{rideId ?? '---'}</span>
+            <button className="lobby-copy-code" type="button" onClick={handleCopyRideCode} disabled={!rideId}>
+              <IonIcon icon={copyOutline} aria-hidden="true" />
+              Copy invite
+            </button>
+          </div>
         </div>
 
         {/* Participants */}
         <div className="glass-card">
-          <span className="card-label">
-            Participants{riderList.length > 0 ? ` · ${riderList.length}` : ''}
-          </span>
+          <div className="card-head-left">
+            <IonIcon icon={peopleOutline} className="card-icon" aria-hidden="true" />
+            <h2 className="card-label" style={{ margin: 0 }}>
+              Riders{riderList.length > 0 ? ` · ${riderList.length}` : ''}
+            </h2>
+          </div>
           <div className="rider-list">
             {riderList.length === 0 && (
-              <div className="waiting-text">
+              <div className="waiting-text" role="status" aria-live="polite">
                 <IonSpinner name="dots" style={{ width: 16, height: 16, marginBottom: 6 }} />
-                <p style={{ margin: '4px 0 0' }}>Waiting for riders…</p>
+                <p style={{ margin: '4px 0 0' }}>Waiting for your crew to join…</p>
               </div>
             )}
             {riderList.map((rider) => (
@@ -97,12 +113,20 @@ const RideLobbyPage: React.FC = () => {
             className="btn-primary"
             style={{ marginTop: 8 }}
             onClick={handleStartRide}
+            disabled={!rideId}
           >
-            Start Ride
+            Start group ride
           </button>
         ) : (
-          <p className="waiting-text">Waiting for the host to start the ride.</p>
+          <p className="waiting-text" role="status" aria-live="polite">Waiting for the host to start the ride.</p>
         )}
+
+        <IonToast
+          isOpen={copyMessage !== null}
+          message={copyMessage ?? ''}
+          duration={2200}
+          onDidDismiss={() => setCopyMessage(null)}
+        />
 
       </IonContent>
     </IonPage>

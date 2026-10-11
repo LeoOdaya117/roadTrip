@@ -6,19 +6,36 @@ import {
   IonInput,
   IonButton
 } from '@ionic/react';
-import { locate, pause, play, send, close, stopCircle, camera, layersOutline } from 'ionicons/icons';
+import { locate, send, close, camera, layersOutline, navigate, add, remove } from 'ionicons/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { useHistory, useParams } from 'react-router-dom';
 import type L from 'leaflet';
 import RideMapView from '../components/RideMapView';
 import { useLocationTracker } from '../hooks/useLocationTracker';
+import { useRideNavigation } from '../hooks/useRideNavigation';
 import { useMockRiders } from '../hooks/useMockRiders';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useRideChannel } from '../hooks/useRideChannel';
 import { useRideLocationSync } from '../hooks/useRideLocationSync';
 import { useRideTimer } from '../hooks/useRideTimer';
-import { getLastLocation, addPhoto, getSession, saveRideSession, getTrackPoints } from '../services/offlineDb';
-import { appendTrackPoint, saveLastLocation } from '../services/offlineDb';
+import {
+  addPhoto,
+  appendTrackEvent,
+  getLastLocation,
+  getSession,
+  getTrackPoints,
+  saveRideProgress,
+  saveRideSession,
+  updateRideSession,
+} from '../services/offlineDb';
+import {
+  calculateTrackDistanceMeters,
+  haversineDistanceMeters,
+} from '../services/locationFilter';
+import type { AcceptedLocationPoint, MapMarkerStyle, PhotoRecord } from '../types/ride';
+import { searchPlaces, type PlaceSearchResult } from '../services/placeSearch';
+import { loadMapMarkerStyle, saveMapMarkerStyle } from '../services/mapPreferences';
 import { useRideStore } from '../store/rideStore';
 import maleAvatar from '../assets/images/default/user_male.png';
 import streetPreview from '../assets/images/default/Map/street.png';
@@ -26,24 +43,12 @@ import osmPreview from '../assets/images/default/Map/osm.png';
 import satellitePreview from '../assets/images/default/Map/satellite.png';
 import darkPreview from '../assets/images/default/Map/dark.png';
 import BottomSheet from '../components/BottomSheet';
+import RideMapRideActions from '../components/RideMapRideActions';
 import MapStyleSwitcher from '../components/MapStyleSwitcher';
+import NavigationPanel from '../components/RideMap/NavigationPanel';
+import NavigationGuidanceBanner from '../components/RideMap/NavigationGuidanceBanner';
 import '../styles/RideMapPage.css';
 
-    // distance helpers (available for restoring track distance)
-    const toRadians = (value: number) => (value * Math.PI) / 180;
-    const distanceBetween = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
-      const earthRadius = 6371000;
-      const deltaLat = toRadians(b.lat - a.lat);
-      const deltaLng = toRadians(b.lng - a.lng);
-      const lat1 = toRadians(a.lat);
-      const lat2 = toRadians(b.lat);
-
-      const sinLat = Math.sin(deltaLat / 2);
-      const sinLng = Math.sin(deltaLng / 2);
-
-      const h = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng;
-      return 2 * earthRadius * Math.asin(Math.sqrt(h));
-    };
 const FALLBACK_CENTER = { lat: 37.7749, lng: -122.4194 };
 
 type MapLayerOption = {
@@ -70,9 +75,9 @@ const RideMapPage: React.FC = () => {
   const currentTopic = useRideStore((state) => state.currentTopic);
 
   const QUICK_TOPICS = [
-    { id: 'fuel', label: '⛽ Fuel Stop' },
-    { id: 'help', label: '🆘 Help' },
-    { id: 'eta',  label: '🕐 ETA' },
+    { id: 'fuel', label: 'Fuel Stop' },
+    { id: 'help', label: 'Help' },
+    { id: 'eta',  label: 'ETA' },
   ];
 
   const [composeText, setComposeText] = useState('');
@@ -105,24 +110,56 @@ const RideMapPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [photoToast, setPhotoToast] = useState<string | null>(null);
   const [isTogglingTracking, setIsTogglingTracking] = useState(false);
+  const endingRideRef = useRef(false);
+  const [trackingTransition, setTrackingTransition] = useState<'pausing' | 'resuming' | null>(null);
   const [topRideStatus, setTopRideStatus] = useState<'Live' | 'Paused' | 'Resuming...' | 'Pausing...' | 'Resumed'>('Live');
   const [showMapStyleSheet, setShowMapStyleSheet] = useState(false);
+  const [currentUserMarkerStyle, setCurrentUserMarkerStyle] = useState<MapMarkerStyle>(loadMapMarkerStyle);
+  const [isSheetExpanded, setIsSheetExpanded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [photoNote, setPhotoNote] = useState<string>('');
-  const [trackPoints, setTrackPoints] = useState<{ lat: number; lng: number }[]>([]);
-  const captionInputRef = useRef<any | null>(null);
-  const handleCaptionChange = (e: any) => {
+  const photoNoteRef = useRef('');
+  const [photoSaveError, setPhotoSaveError] = useState<string | null>(null);
+  const [isSavingPhoto, setIsSavingPhoto] = useState(false);
+  const isSavingPhotoRef = useRef(false);
+  const {
+    elapsedSeconds,
+    isRunning: isTimerRunning,
+    formatted: formattedTime,
+    start: startTimer,
+    pause: pauseTimer,
+    resume: resumeTimer,
+    reset: resetTimer,
+    setElapsed,
+    setRunning,
+  } = useRideTimer();
+  const [trackPoints, setTrackPoints] = useState<
+    Array<Pick<AcceptedLocationPoint, 'lat' | 'lng' | 'segmentId' | 'timestamp'>>
+  >([]);
+  const captionInputRef = useRef<HTMLIonInputElement | null>(null);
+  const handleCaptionChange = (event: CustomEvent<{ value?: string | null }>) => {
     try {
-      const v = (e?.detail?.value ?? '');
-      console.debug('[RideMap] caption change ->', v);
+      const v = event.detail.value ?? '';
+      photoNoteRef.current = v;
       setPhotoNote(v);
-    } catch (err) {
+      setPhotoSaveError(null);
+    } catch {
+      photoNoteRef.current = '';
       setPhotoNote('');
     }
   };
   const cameraIcon = camera;
+
+  const clearPhotoDraft = () => {
+    setShowPhotoModal(false);
+    setPreviewDataUrl(null);
+    photoNoteRef.current = '';
+    setPhotoNote('');
+    setPhotoSaveError(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   useEffect(() => {
     console.debug('[RideMapPage] rideId:', rideId, 'showPhotoModal:', showPhotoModal);
@@ -134,12 +171,92 @@ const RideMapPage: React.FC = () => {
   const isOnline = useNetworkStatus();
   const {
     location,
+    hasFreshLocation,
     isTracking: trackerIsTracking,
     permission,
     error,
+    quality,
     startTracking,
-    stopTracking
-  } = useLocationTracker(Boolean(rideId));
+    stopTracking,
+    startNewSegment,
+  } = useLocationTracker(false);
+  const navigation = useRideNavigation(rideId, location, isTracking, hasFreshLocation);
+  const isAndroid = Capacitor.getPlatform() === 'android';
+  const [placeQuery, setPlaceQuery] = useState('');
+  const [placeResults, setPlaceResults] = useState<PlaceSearchResult[]>([]);
+  const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
+  const [isDebouncingPlaces, setIsDebouncingPlaces] = useState(false);
+  const [placeSearchError, setPlaceSearchError] = useState<string | null>(null);
+  const [isPickingDestination, setIsPickingDestination] = useState(false);
+  const [showNavigationPanel, setShowNavigationPanel] = useState(false);
+  const latestLocationRef = useRef(location);
+  latestLocationRef.current = location;
+
+  useEffect(() => {
+    const query = placeQuery.trim();
+    if (query.length < 3 || !isAndroid || !showNavigationPanel) {
+      setPlaceResults([]);
+      setIsSearchingPlaces(false);
+      setIsDebouncingPlaces(false);
+      setPlaceSearchError(null);
+      return;
+    }
+    const controller = new AbortController();
+    setPlaceResults([]);
+    setIsSearchingPlaces(false);
+    setPlaceSearchError(null);
+    setIsDebouncingPlaces(true);
+    const timeoutId = window.setTimeout(() => {
+      setIsDebouncingPlaces(false);
+      setIsSearchingPlaces(true);
+      setPlaceSearchError(null);
+      void searchPlaces(query, {
+        signal: controller.signal,
+        bias: latestLocationRef.current
+          ? { lat: latestLocationRef.current.lat, lng: latestLocationRef.current.lng }
+          : undefined,
+      }).then((results) => {
+        setPlaceResults(results);
+      }).catch((searchError: unknown) => {
+        if (controller.signal.aborted) return;
+        setPlaceResults([]);
+        setPlaceSearchError(searchError instanceof Error ? searchError.message : 'Place search is unavailable.');
+      }).finally(() => {
+        if (!controller.signal.aborted) setIsSearchingPlaces(false);
+      });
+    }, 450);
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [isAndroid, placeQuery, showNavigationPanel]);
+
+  useEffect(() => {
+    if (navigation.error) setErrorMessage(navigation.error);
+  }, [navigation.error]);
+
+  useEffect(() => {
+    if (isAndroid && navigation.destination) setShowNavigationPanel(true);
+  }, [isAndroid, navigation.destination]);
+
+  const handleSelectPlace = (place: PlaceSearchResult) => {
+    setPlaceQuery('');
+    setPlaceResults([]);
+    setPlaceSearchError(null);
+    setIsPickingDestination(false);
+    setShowNavigationPanel(true);
+    void navigation.setDestination({ lat: place.lat, lng: place.lng, label: place.label });
+  };
+
+  const handleMapDestinationPick = (point: { lat: number; lng: number }) => {
+    if (!isPickingDestination) return;
+    setIsPickingDestination(false);
+    setShowNavigationPanel(true);
+    void navigation.setDestination({
+      ...point,
+      label: `Map pin · ${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`,
+    });
+  };
 
   useEffect(() => {
     if (routeRideId) {
@@ -149,33 +266,7 @@ const RideMapPage: React.FC = () => {
         setSoloMode(true);
       }
     }
-  }, [routeRideId, setRide]);
-
-  useEffect(() => {
-    if (rideId) {
-      setTracking(true);
-    }
-  }, [rideId, setTracking]);
-
-  // Ensure we request location when the page mounts so the map can show current location
-  useEffect(() => {
-    (async () => {
-      try {
-        await startTracking();
-      } catch (e) {
-        // ignore errors here; hook sets error state
-      }
-    })();
-
-    return () => {
-      try {
-        stopTracking();
-      } catch (e) {
-        // ignore
-      }
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [routeRideId, setRide, setSoloMode]);
 
   useEffect(() => {
     if (!isTracking) {
@@ -224,31 +315,18 @@ const RideMapPage: React.FC = () => {
       })
       .catch(() => undefined);
 
-    // Load existing track points for solo rides so polyline shows previous path
+    // Load the device owner's complete local track for solo and group rides.
     (async () => {
       try {
-        if (isSoloMode) {
-          const pts = await getTrackPoints(rideId);
-          if (pts && pts.length) {
-            const mapped = pts.map((p) => ({ lat: p.lat, lng: p.lng }));
-            setTrackPoints(mapped);
-            // compute distance from the loaded track points to restore total distance
-            try {
-              let dist = 0;
-              for (let i = 1; i < mapped.length; i++) {
-                const a = mapped[i - 1];
-                const b = mapped[i];
-                const d = distanceBetween(a, b);
-                if (d > 0.5) dist += d;
-              }
-              if (dist > 0) setDistanceMetersTotal((_) => Math.round(dist));
-            } catch (e) {
-              // ignore
-            }
-          }
+        const points = await getTrackPoints(rideId);
+        if (points.length > 0) {
+          setTrackPoints(points);
+          setDistanceMetersTotal(
+            Math.round(calculateTrackDistanceMeters(points)),
+          );
         }
-      } catch (e) {
-        // ignore
+      } catch (loadError) {
+        console.warn('[RideMapPage] failed to restore track', loadError);
       }
     })();
 
@@ -268,27 +346,29 @@ const RideMapPage: React.FC = () => {
             }
           }
 
-          try {
-            (rideTimer as any).setElapsed?.(elapsed);
-          } catch (e) {
-            // ignore
-          }
+          setElapsed?.(elapsed);
 
-          // If session is not ended, enable tracking and start timer
+          // Only active sessions resume automatically. A stopover remains paused
+          // until the rider explicitly starts a new segment.
           if (!session.endedAt) {
-            try {
+            const segmentId = startNewSegment(session.activeSegmentId);
+            if (!session.activeSegmentId) {
+              await updateRideSession(rideId, { activeSegmentId: segmentId });
+            }
+            if (session.status !== 'paused') {
               setTracking(true);
-              (rideTimer as any).setRunning?.(true);
-            } catch (e) {
-              // ignore
+              setRunning?.(true);
             }
           }
+        } else {
+          startNewSegment();
+          setTracking(true);
         }
-      } catch (e) {
-        // ignore
+      } catch {
+        // A missing legacy session is handled as a fresh ride.
       }
     })();
-  }, [rideId]);
+  }, [rideId, setElapsed, setRunning, setTracking, startNewSegment]);
 
   // Persist running session progress (duration + distance) periodically so resume restores correctly
   useEffect(() => {
@@ -297,10 +377,9 @@ const RideMapPage: React.FC = () => {
     let stopped = false;
 
     const saveNow = async () => {
-      if (stopped) return;
+      if (stopped || endingRideRef.current) return;
       try {
-        const existing = await getSession(rideId).catch(() => undefined);
-        const base = existing ?? {
+        const fallbackSession = {
           rideId,
           userId: currentUser?.id ?? 'local-user',
           userName: currentUser?.name ?? 'Me',
@@ -308,17 +387,14 @@ const RideMapPage: React.FC = () => {
           isSolo: isSoloMode,
           createdAt: new Date().toISOString()
         };
-        const updated = {
-          ...base,
-          durationSeconds: Math.max(
-            elapsedRef.current,
-            typeof base.durationSeconds === 'number' ? base.durationSeconds : 0
-          ),
-          distanceMeters: Math.round(distanceRef.current)
-        };
-        await saveRideSession(updated).catch(() => undefined);
-      } catch (e) {
-        // ignore
+        if (stopped || endingRideRef.current) return;
+        await saveRideProgress(
+          fallbackSession,
+          elapsedRef.current,
+          Math.round(distanceRef.current),
+        ).catch(() => undefined);
+      } catch {
+        // Progress persistence is retried on the next interval.
       }
     };
 
@@ -359,20 +435,12 @@ const RideMapPage: React.FC = () => {
       timestamp: location.timestamp
     });
 
-    // Append to local trackPoints for live polyline when in solo mode
-    try {
-      if (isSoloMode && location) {
-        setTrackPoints((prev) => {
-          const last = prev[prev.length - 1];
-          if (last && Math.abs(last.lat - location.lat) < 0.000001 && Math.abs(last.lng - location.lng) < 0.000001) {
-            return prev;
-          }
-          return [...prev, { lat: location.lat, lng: location.lng }];
-        });
+    setTrackPoints((previous) => {
+      if (previous.some((point) => point.timestamp === location.timestamp)) {
+        return previous;
       }
-    } catch (e) {
-      // ignore
-    }
+      return [...previous, location];
+    });
   }, [currentUser, location, updateSingleRider, setUser]);
 
   useEffect(() => {
@@ -387,7 +455,7 @@ const RideMapPage: React.FC = () => {
 
   useRideChannel(rideId);
 
-  const { syncStatus } = useRideLocationSync({
+  const { syncStatus, persistenceError, pendingOutboxCount } = useRideLocationSync({
     rideId,
     riderId: currentUser?.id,
     isTracking,
@@ -396,14 +464,30 @@ const RideMapPage: React.FC = () => {
     location
   });
 
+  useEffect(() => {
+    if (persistenceError) setErrorMessage(persistenceError);
+  }, [persistenceError]);
+
   const riders = useMemo(() => Object.values(ridersMap), [ridersMap]);
+  const crewMembers = useMemo(() => {
+    const members = riders.map(({ id, name, avatarUrl, isHost }) => ({ id, name, avatarUrl, isHost }));
+    if (currentUser && !members.some((rider) => rider.id === currentUser.id)) {
+      members.unshift({
+        id: currentUser.id,
+        name: currentUser.name,
+        avatarUrl: currentUser.avatarUrl,
+        isHost: currentUser.isHost
+      });
+    }
+    return members;
+  }, [currentUser, riders]);
 
   const center = location
     ? { lat: location.lat, lng: location.lng }
     : fallbackCenter;
 
   // Track total distance traveled in meters for the current session (local only)
-  const lastLocationRef = useRef<{ lat: number; lng: number; timestamp?: string } | null>(null);
+  const lastLocationRef = useRef<AcceptedLocationPoint | null>(null);
   const [distanceMetersTotal, setDistanceMetersTotal] = useState<number>(0);
 
   
@@ -411,18 +495,11 @@ const RideMapPage: React.FC = () => {
   useEffect(() => {
     if (!location) return;
     const last = lastLocationRef.current;
-    const current = { lat: location.lat, lng: location.lng };
-    if (last) {
-      try {
-        const d = distanceBetween(last, current);
-        if (d > 0.5) {
-          setDistanceMetersTotal((m) => m + d);
-        }
-      } catch (e) {
-        // ignore
-      }
+    if (last && last.segmentId === location.segmentId) {
+      const distance = haversineDistanceMeters(last, location);
+      if (distance > 0) setDistanceMetersTotal((total) => total + distance);
     }
-    lastLocationRef.current = current;
+    lastLocationRef.current = location;
   }, [location]);
 
   const MAP_LAYERS: MapLayerOption[] = [
@@ -457,20 +534,20 @@ const RideMapPage: React.FC = () => {
   ];
 
   const MAP_OVERLAYS = [
-    { id: 'labels', label: 'Labels' },
     { id: 'riders', label: 'Riders' },
     { id: 'track', label: 'Ride Path' }
   ];
 
-  const [activeLayer, setActiveLayer] = useState(MAP_LAYERS[0]);
-  const [enabledOverlays, setEnabledOverlays] = useState<string[]>(['labels', 'riders', 'track']);
+  const [activeLayer, setActiveLayer] = useState(
+    () => MAP_LAYERS.find((layer) => layer.id === 'osm') ?? MAP_LAYERS[0]
+  );
+  const [enabledOverlays, setEnabledOverlays] = useState<string[]>(['riders', 'track']);
 
-  const rideTimer = useRideTimer();
 
-  const elapsedRef = useRef<number>(rideTimer.elapsedSeconds);
+  const elapsedRef = useRef<number>(elapsedSeconds);
   useEffect(() => {
-    elapsedRef.current = rideTimer.elapsedSeconds;
-  }, [rideTimer.elapsedSeconds]);
+    elapsedRef.current = elapsedSeconds;
+  }, [elapsedSeconds]);
 
   const distanceRef = useRef<number>(0);
   useEffect(() => {
@@ -535,7 +612,7 @@ const RideMapPage: React.FC = () => {
       return { label: 'Off', bars: 0 };
     }
 
-    if (!location) {
+    if (!location || quality.lastRejectedReason === 'inaccurate') {
       return { label: 'Searching', bars: 1 };
     }
 
@@ -555,19 +632,19 @@ const RideMapPage: React.FC = () => {
     }
 
     return { label: 'Poor', bars: 1 };
-  }, [permission, trackerIsTracking, location]);
+  }, [permission, quality.lastRejectedReason, trackerIsTracking, location]);
 
   // Auto-start timer when tracking begins, pause on stopover
   useEffect(() => {
     if (isTracking) {
-      if (!rideTimer.isRunning && rideTimer.elapsedSeconds === 0) {
-        rideTimer.start();
-      } else if (!rideTimer.isRunning) {
-        rideTimer.resume();
+      if (!isTimerRunning && elapsedSeconds === 0) {
+        startTimer();
+      } else if (!isTimerRunning) {
+        resumeTimer();
       }
     } else {
-      if (rideTimer.isRunning) {
-        rideTimer.pause();
+      if (isTimerRunning) {
+        pauseTimer();
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -588,6 +665,11 @@ const RideMapPage: React.FC = () => {
     setActiveLayer(layer);
   };
 
+  const handleSelectMarkerStyle = (style: MapMarkerStyle) => {
+    setCurrentUserMarkerStyle(style);
+    saveMapMarkerStyle(style);
+  };
+
   const handleToggleOverlay = (overlayId: string) => {
     setEnabledOverlays((prev) =>
       prev.includes(overlayId)
@@ -596,18 +678,6 @@ const RideMapPage: React.FC = () => {
     );
   };
 
-  const labelsTileUrl = useMemo(() => {
-    if (!enabledOverlays.includes('labels')) {
-      return undefined;
-    }
-
-    if (activeLayer.id === 'carto-dark') {
-      return 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png';
-    }
-
-    return 'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png';
-  }, [activeLayer.id, enabledOverlays]);
-
   const handlePhotoClick = () => {
     fileInputRef.current?.click();
   };
@@ -615,6 +685,9 @@ const RideMapPage: React.FC = () => {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    photoNoteRef.current = '';
+    setPhotoNote('');
+    setPhotoSaveError(null);
     try {
       const reader = new FileReader();
       reader.onload = () => {
@@ -622,7 +695,7 @@ const RideMapPage: React.FC = () => {
         setShowPhotoModal(true);
       };
       reader.readAsDataURL(file);
-    } catch (err) {
+    } catch {
       setPhotoToast('Failed to read image');
       if (e.target) e.target.value = '';
     }
@@ -652,7 +725,11 @@ const RideMapPage: React.FC = () => {
   };
 
   const handleSavePhoto = async () => {
-    if (!previewDataUrl) return;
+    if (!previewDataUrl || isSavingPhotoRef.current) return;
+    isSavingPhotoRef.current = true;
+    const noteAtSave = photoNoteRef.current;
+    setIsSavingPhoto(true);
+    setPhotoSaveError(null);
     try {
       // generate full and thumbnail blobs
       const full = await readImageAndResize(previewDataUrl, 1200, 0.85);
@@ -664,17 +741,17 @@ const RideMapPage: React.FC = () => {
         lat: location?.lat,
         lng: location?.lng,
         timestamp: new Date().toISOString(),
-        note: photoNote || undefined
-      } as any;
+        note: noteAtSave || undefined
+      } satisfies PhotoRecord;
       await addPhoto(photo);
       setPhotoToast('Photo saved to this ride');
-    } catch (err) {
-      setPhotoToast('Failed to save photo');
+      clearPhotoDraft();
+    } catch (saveError) {
+      console.error('[RideMapPage] failed to save photo', saveError);
+      setPhotoSaveError('Could not save this photo. Your photo and caption are still here; try again.');
     } finally {
-      setShowPhotoModal(false);
-      setPreviewDataUrl(null);
-      setPhotoNote('');
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      isSavingPhotoRef.current = false;
+      setIsSavingPhoto(false);
     }
   };
 
@@ -683,9 +760,9 @@ const RideMapPage: React.FC = () => {
       // focus the caption input after sheet opens
       setTimeout(() => {
         try {
-          (captionInputRef.current as any)?.setFocus?.();
-        } catch (e) {
-          // ignore
+          captionInputRef.current?.setFocus();
+        } catch {
+          // The modal may have closed before focus runs.
         }
       }, 220);
     }
@@ -694,179 +771,268 @@ const RideMapPage: React.FC = () => {
   const handleToggleTracking = async () => {
     if (isTogglingTracking) return;
     setIsTogglingTracking(true);
+    setTrackingTransition(isTracking ? 'pausing' : 'resuming');
 
     if (isTracking) {
       try {
-        setTracking(false);
+        if (!rideId) throw new Error('Ride ID is missing. Your ride is still active.');
+        const session = await getSession(rideId);
+        if (!session) throw new Error('Saved ride data could not be found. Your ride is still active.');
+        if (location) {
+          await appendTrackEvent(rideId, location, 'stopover');
+        }
+        const updatedCount = await updateRideSession(rideId, { status: 'paused' });
+        if (updatedCount === 0) throw new Error('Saved ride data could not be found. Your ride is still active.');
         stopTracking();
-        // save a stopover marker for stats
-        try {
-          if (rideId && location) {
-            appendTrackPoint(rideId, { ...location, event: 'stopover' }).catch(() => undefined);
-            // also persist last location
-            saveLastLocation(rideId, location).catch(() => undefined);
-          }
-        } catch (e) {}
-        rideTimer.pause();
+        setTracking(false);
+        pauseTimer();
+      } catch (pauseError) {
+        console.error('[RideMapPage] failed to pause ride', pauseError);
+        setErrorMessage(pauseError instanceof Error
+          ? `Could not pause ride: ${pauseError.message}`
+          : 'Could not pause ride. Your tracking is still active. Please try again.');
       } finally {
         setIsTogglingTracking(false);
+        setTrackingTransition(null);
       }
       return;
     }
 
     try {
-      setTracking(true);
+      const segmentId = startNewSegment();
+      lastLocationRef.current = null;
+      if (!rideId) throw new Error('Ride ID is missing. Your ride is still paused.');
+      // Start the provider before persisting the active state. If location startup
+      // fails, the saved session remains paused and the rider can retry safely.
       await startTracking();
-      if (rideTimer.elapsedSeconds <= 0 && !rideTimer.isRunning) {
-        rideTimer.start();
+      const session = await getSession(rideId);
+      if (!session) throw new Error('Saved ride data could not be found. Your ride is still paused.');
+      const updatedCount = await updateRideSession(rideId, {
+        status: 'active',
+        activeSegmentId: segmentId,
+      });
+      if (updatedCount === 0) throw new Error('Saved ride data could not be found. Your ride is still paused.');
+      setTracking(true);
+      if (elapsedSeconds <= 0 && !isTimerRunning) {
+        startTimer();
       } else {
-        rideTimer.resume();
+        resumeTimer();
       }
+    } catch (resumeError) {
+      stopTracking();
+      console.error('[RideMapPage] failed to resume ride', resumeError);
+      setErrorMessage(resumeError instanceof Error
+        ? `Could not resume ride: ${resumeError.message}`
+        : 'Could not resume ride. It remains paused. Please try again.');
+    } finally {
+      setIsTogglingTracking(false);
+      setTrackingTransition(null);
+    }
+  };
+
+  const handleEndRide = async () => {
+    if (isTogglingTracking || endingRideRef.current) return;
+    console.log('[RideMapPage] handleEndRide invoked', { rideId });
+    endingRideRef.current = true;
+    setIsTogglingTracking(true);
+    try {
+      if (!rideId) throw new Error('Ride ID is missing. Your ride is still active.');
+      const existing = await getSession(rideId);
+      if (!existing) throw new Error('Saved ride data could not be found. Your ride is still active.');
+
+      const updated = {
+        ...existing,
+        endedAt: new Date().toISOString(),
+        status: 'ended' as const,
+        distanceMeters: Math.round(distanceMetersTotal),
+        durationSeconds: Math.max(
+          Math.round(elapsedSeconds),
+          Math.round(elapsedRef.current),
+          typeof existing.durationSeconds === 'number' ? Math.round(existing.durationSeconds) : 0
+        )
+      };
+      await saveRideSession(updated);
+
+      stopTracking();
+      setTracking(false);
+      try {
+        localStorage.setItem(`ride:hidden:${rideId}`, '1');
+      } catch {
+        /* Local storage may be unavailable in privacy mode. */
+      }
+      try {
+        window.dispatchEvent(new CustomEvent('ride:ended', { detail: { rideId } }));
+      } catch {
+        /* Event dispatch is best-effort during teardown. */
+      }
+      clearRide();
+      resetTimer();
+      history.push('/home');
+    } catch (endError) {
+      endingRideRef.current = false;
+      console.error('[RideMapPage] failed to end ride', endError);
+      setErrorMessage(endError instanceof Error
+        ? `Could not end ride: ${endError.message}`
+        : 'Could not save the ride. Tracking remains active; please try again.');
     } finally {
       setIsTogglingTracking(false);
     }
   };
 
-  const handleEndRide = () => {
-    console.log('[RideMapPage] handleEndRide invoked', { rideId });
-    (async () => {
-      try {
-        stopTracking();
-        setTracking(false);
-
-        // mark session ended in db so home won't show resume
-        if (rideId) {
-          try {
-            console.log('[RideMapPage] fetching session before ending', { rideId });
-            const existing = await getSession(rideId);
-            console.log('[RideMapPage] existing session', existing);
-            if (existing) {
-              const updated = {
-                ...existing,
-                endedAt: new Date().toISOString(),
-                status: 'ended' as const,
-                distanceMeters: Math.round(distanceMetersTotal),
-                durationSeconds: Math.max(
-                  Math.round(rideTimer.elapsedSeconds),
-                  Math.round(elapsedRef.current),
-                  typeof existing.durationSeconds === 'number' ? Math.round(existing.durationSeconds) : 0
-                )
-              };
-              console.log('[RideMapPage] ending ride, saving session:', updated);
-              await saveRideSession(updated);
-              console.log('[RideMapPage] session saved');
-              try {
-                const verify = await getSession(rideId);
-                console.log('[RideMapPage] verify saved session', verify);
-              } catch (e) {
-                console.error('[RideMapPage] verify read failed', e);
-              }
-              try {
-                // mark this ride as hidden for resume (keeps record in DB for history)
-                if (rideId) {
-                  localStorage.setItem(`ride:hidden:${rideId}`, '1');
-                  console.log('[RideMapPage] marked ride hidden from resume', { rideId });
-                }
-              } catch (e) {
-                /* ignore */
-              }
-              try {
-                window.dispatchEvent(new CustomEvent('ride:ended', { detail: { rideId } }));
-              } catch (e) {
-                /* ignore */
-              }
-            } else {
-              console.warn('[RideMapPage] no existing session found to update', { rideId });
-            }
-          } catch (e) {
-            console.error('[RideMapPage] error saving ended session', e);
-          }
-        } else {
-          console.warn('[RideMapPage] no rideId present when ending ride');
-        }
-      } catch (err) {
-        console.error('[RideMapPage] unexpected error in handleEndRide', err);
-      } finally {
-        try {
-          // clear in-memory ride state so Home reflects no active ride
-          clearRide();
-        } catch (e) {
-          console.error('[RideMapPage] error clearing ride state', e);
-        }
-        rideTimer.reset();
-        history.push('/home');
-      }
-    })();
-  };
-
   return (
     <IonPage>
       <IonContent className="ride-map-content app-page" fullscreen scrollY={false}>
-        <div className="map-wrapper">
+        <div className={`map-wrapper${isSheetExpanded ? ' map-wrapper-sheet-expanded' : ''}`}>
           <RideMapView
             center={center}
             riders={riders}
             trackPoints={trackPoints}
             currentUserId={currentUser?.id}
             currentUserAccuracy={location?.accuracy ?? null}
+            currentUserMarkerStyle={currentUserMarkerStyle}
+            navigationRoute={navigation.route}
+            navigationDestination={navigation.destination}
+            onDestinationPick={isPickingDestination ? handleMapDestinationPick : undefined}
             onMapReady={(map) => {
               mapRef.current = map;
             }}
             tileUrl={activeLayer.url}
             attribution={activeLayer.attribution}
-            labelsTileUrl={labelsTileUrl}
-            labelsAttribution="&copy; OpenStreetMap contributors &copy; CARTO"
             showRiders={enabledOverlays.includes('riders')}
             showTrack={enabledOverlays.includes('track')}
           />
 
-          {/* ── Top bar: title + live badge only ── */}
+          {isAndroid && navigation.isGuiding && (
+            <NavigationGuidanceBanner
+              isGuiding={navigation.isGuiding}
+              isTracking={isTracking}
+              isRouting={navigation.isRouting}
+              supported={navigation.supported}
+              hasLocation={Boolean(location) && hasFreshLocation}
+              hasRoute={Boolean(navigation.route)}
+              navigationError={navigation.error}
+              instruction={navigation.nextInstruction}
+              distanceToNextManeuverMeters={navigation.distanceToNextManeuverMeters}
+              streetName={navigation.nextStreetName}
+            />
+          )}
+
+          {isAndroid && showNavigationPanel && (
+            <NavigationPanel
+              query={placeQuery}
+              onQueryChange={setPlaceQuery}
+              placeResults={placeResults}
+              isSearchingPlaces={isSearchingPlaces}
+              isDebouncingPlaces={isDebouncingPlaces}
+              placeSearchError={placeSearchError}
+              onSelectPlace={handleSelectPlace}
+              isPickingDestination={isPickingDestination}
+              onTogglePicking={() => setIsPickingDestination((picking) => !picking)}
+              onClose={() => {
+                setShowNavigationPanel(false);
+                setIsPickingDestination(false);
+              }}
+              destination={navigation.destination}
+              route={navigation.route}
+              isGuiding={navigation.isGuiding}
+              isRouting={navigation.isRouting}
+              navigationError={navigation.error}
+              supported={navigation.supported}
+              hasLocation={Boolean(location) && hasFreshLocation}
+              onToggleGuidance={() => navigation.isGuiding
+                ? navigation.stopGuidance()
+                : void navigation.startGuidance()}
+              onClearDestination={() => void navigation.clearDestination()}
+              offlineAvailable={navigation.offlineAvailable}
+              isDownloadingTiles={navigation.isDownloadingTiles}
+              tileDownloadProgress={navigation.tileDownloadProgress}
+              onDownloadTiles={() => void navigation.downloadTiles()}
+            />
+          )}
+
+          {/* ── Top bar: ride title, destination context, and live badge ── */}
           <div className="map-top-bar">
-            <span className="map-title">Live Ride</span>
+            <div className="map-title-stack" data-ride-status>
+              <span className="map-title">{isSoloMode ? 'Solo ride' : 'Group ride'}</span>
+              <span className="map-title-secondary">{navigation.destination?.label ?? 'Ride tracking'}</span>
+            </div>
             <div style={{ marginLeft: 'auto' }}>
-              <span className={topRideBadgeClass}>{topRideStatus}</span>
+              <span
+                className={topRideBadgeClass}
+                title={
+                  pendingOutboxCount > 0
+                    ? `${pendingOutboxCount} track points queued for upload`
+                    : syncStatus ?? undefined
+                }
+              >
+                {topRideStatus}
+                {pendingOutboxCount > 0 ? ` · ${pendingOutboxCount} queued` : ''}
+              </span>
             </div>
           </div>
 
           {/* ── Floating action buttons top-right ── */}
           <div className="map-fabs">
-            <button className="map-fab" onClick={handleCenterMap} title="Center map">
-              <IonIcon icon={locate} />
+            <button className="map-fab" onClick={handleCenterMap} title="Center map" aria-label="Center map on your location">
+              <IonIcon icon={locate} aria-hidden="true" />
             </button>
+            <div className="map-zoom-controls" role="group" aria-label="Map zoom controls">
+              <button className="map-fab map-zoom-fab" onClick={() => mapRef.current?.zoomIn()} title="Zoom in" aria-label="Zoom in">
+                <IonIcon icon={add} aria-hidden="true" />
+              </button>
+              <button className="map-fab map-zoom-fab" onClick={() => mapRef.current?.zoomOut()} title="Zoom out" aria-label="Zoom out">
+                <IonIcon icon={remove} aria-hidden="true" />
+              </button>
+            </div>
+            {isAndroid && (
+              <button
+                className={`map-fab${showNavigationPanel || navigation.isGuiding ? ' fab-active' : ''}`}
+                onClick={() => {
+                  setShowNavigationPanel((open) => !open);
+                  setIsPickingDestination(false);
+                }}
+                title="Navigate to a place"
+                aria-label={showNavigationPanel ? 'Close destination search' : 'Navigate to a place'}
+                aria-expanded={showNavigationPanel}
+              >
+                <IonIcon icon={navigate} />
+              </button>
+            )}
             <button
               className={`map-fab${showMapStyleSheet ? ' fab-active' : ''}`}
               onClick={() => setShowMapStyleSheet(true)}
               title="Map style"
+              aria-label="Change map style and details"
+              aria-expanded={showMapStyleSheet}
             >
-              <IonIcon icon={layersOutline} />
+              <IonIcon icon={layersOutline} aria-hidden="true" />
             </button>
-            <button className="map-fab" onClick={handlePhotoClick} title="Add photo">
-              <IonIcon icon={cameraIcon} />
-            </button>
-            <button
-              className={`map-fab${!isTracking ? ' fab-stopover' : ''}`}
-              onClick={handleToggleTracking}
-              title={isTogglingTracking ? 'Updating tracking...' : (isTracking ? 'Stopover - pause tracking' : 'Resume ride')}
-              disabled={isTogglingTracking}
-            >
-              <IonIcon icon={isTracking ? pause : play} />
+            <button className="map-fab" onClick={handlePhotoClick} title="Add photo" aria-label="Add ride photo">
+              <IonIcon icon={cameraIcon} aria-hidden="true" />
             </button>
             <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleFileChange} />
           </div>
 
           {/* ── Bottom sheet ── */}
-          <div className="bottom-sheet">
-            <div className="sheet-handle" />
+          <div className={`bottom-sheet${isSheetExpanded ? ' is-expanded' : ' is-collapsed'}`} data-sheet-state={isSheetExpanded ? 'expanded' : 'collapsed'}>
+            <button
+              type="button"
+              className="sheet-handle"
+              aria-label={isSheetExpanded ? 'Collapse ride controls' : 'Expand ride controls'}
+              aria-expanded={isSheetExpanded}
+              aria-controls="ride-controls-details"
+              onClick={() => setIsSheetExpanded((expanded) => !expanded)}
+            />
             <div className="sheet-content">
 
               {/* Stats row */}
               <div className="sheet-stats-row">
                 <div className="sheet-stat">
                   <span className="s-label">Time</span>
-                  <span className={`s-value timer-value${!rideTimer.isRunning && rideTimer.elapsedSeconds > 0 ? ' timer-paused' : ''}`}>
-                    {rideTimer.formatted}
+                  <span className={`s-value timer-value${!isTimerRunning && elapsedSeconds > 0 ? ' timer-paused' : ''}`}>
+                    {formattedTime}
                   </span>
-                  {!rideTimer.isRunning && rideTimer.elapsedSeconds > 0 && (
+                  {!isTimerRunning && elapsedSeconds > 0 && (
                     <span className="s-stopover-pill">Stopover</span>
                   )}
                 </div>
@@ -901,8 +1067,41 @@ const RideMapPage: React.FC = () => {
                 </div>
               </div>
 
+              <RideMapRideActions
+                isTracking={isTracking}
+                busy={isTogglingTracking}
+                transition={trackingTransition}
+                onToggleTracking={() => void handleToggleTracking()}
+                onEndRide={handleEndRide}
+              />
+
+              <div className="sheet-details" id="ride-controls-details" aria-hidden={!isSheetExpanded}>
+              {!isSoloMode && (
+                <div className="sheet-crew-row" aria-label={`${crewMembers.length} riders in this group ride`}>
+                  <div className="sheet-crew-copy">
+                    <span className="sheet-crew-title">Your crew · {crewMembers.length}</span>
+                    <span className="sheet-crew-caption">
+                      {crewMembers.length > 1 ? 'Riders connected to this route' : 'Waiting for rider updates'}
+                    </span>
+                  </div>
+                  <div className="sheet-crew-list">
+                    {crewMembers.slice(0, 4).map((rider) => (
+                      <span className="sheet-crew-avatar" key={rider.id} title={rider.name}>
+                        {rider.avatarUrl ? <img src={rider.avatarUrl} alt="" /> : rider.name.slice(0, 1).toUpperCase()}
+                      </span>
+                    ))}
+                    {crewMembers.length > 4 && <span className="sheet-crew-avatar">+{crewMembers.length - 4}</span>}
+                  </div>
+                </div>
+              )}
+
               {/* Topics row */}
               <div className="sheet-section-label">Quick Message</div>
+              {!isSoloMode && (
+                <p className="sheet-crew-caption" role="note">
+                  Messages and topic updates are stored on this device only. Your crew won’t receive them.
+                </p>
+              )}
               <div className="sheet-chips-row">
                 {QUICK_TOPICS.map((t) => (
                   <button
@@ -939,11 +1138,7 @@ const RideMapPage: React.FC = () => {
                 </div>
               )}
 
-              {/* End ride */}
-              <button className="btn-end-ride" onClick={handleEndRide}>
-                <IonIcon icon={stopCircle} />
-                End Ride
-              </button>
+              </div>
 
             </div>
           </div>
@@ -964,23 +1159,48 @@ const RideMapPage: React.FC = () => {
         duration={1800}
         onDidDismiss={() => setPhotoToast(null)}
       />
-      <BottomSheet isOpen={showPhotoModal} centered={true} onDidDismiss={() => { console.debug('[RideMapPage] BottomSheet onDidDismiss'); setShowPhotoModal(false); }}>
+      <BottomSheet
+        isOpen={showPhotoModal}
+        centered={true}
+        ariaLabel="Save ride photo"
+        onDidDismiss={clearPhotoDraft}
+        footer={(
+          <div className="btn-row">
+              <IonButton className="cancel" fill="clear" disabled={isSavingPhoto} onClick={clearPhotoDraft}>Cancel</IonButton>
+            <IonButton className="save" disabled={isSavingPhoto} onClick={handleSavePhoto}>
+              {isSavingPhoto ? 'Saving…' : 'Save photo'}
+            </IonButton>
+          </div>
+        )}
+      >
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <div style={{ width: 120, height: 90, overflow: 'hidden', borderRadius: 8 }}>
             {previewDataUrl && <img src={previewDataUrl} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
           </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 700, marginBottom: 6 }}>Save photo</div>
-              <IonInput ref={captionInputRef} placeholder="Add a note or caption" value={photoNote ?? ''} onIonChange={handleCaptionChange} />
+              <IonInput
+                ref={captionInputRef}
+                placeholder="Add a note or caption"
+                value={photoNote}
+                onIonInput={handleCaptionChange}
+                onIonChange={handleCaptionChange}
+              />
+              {photoSaveError && <p role="alert">{photoSaveError}</p>}
             </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 12 }} className="btn-row">
-          <IonButton className="cancel" fill="clear" onClick={() => { setShowPhotoModal(false); setPreviewDataUrl(null); setPhotoNote(''); }}>Cancel</IonButton>
-          <IonButton className="save" onClick={handleSavePhoto}>Save</IonButton>
-        </div>
       </BottomSheet>
-      <BottomSheet isOpen={showMapStyleSheet} onDidDismiss={() => setShowMapStyleSheet(false)}>
+      <BottomSheet
+        isOpen={showMapStyleSheet}
+        ariaLabel="Map style and details"
+        onDidDismiss={() => setShowMapStyleSheet(false)}
+        footer={(
+          <div className="map-style-sheet-actions">
+            <IonButton fill="clear" onClick={() => setShowMapStyleSheet(false)}>Done</IonButton>
+          </div>
+        )}
+      >
         <div className="map-style-sheet-content">
           <MapStyleSwitcher
             layers={MAP_LAYERS}
@@ -989,10 +1209,9 @@ const RideMapPage: React.FC = () => {
             overlays={MAP_OVERLAYS}
             enabledOverlays={enabledOverlays}
             onToggleOverlay={handleToggleOverlay}
+            markerStyle={currentUserMarkerStyle}
+            onChangeMarkerStyle={handleSelectMarkerStyle}
           />
-          <div className="map-style-sheet-actions">
-            <IonButton fill="clear" onClick={() => setShowMapStyleSheet(false)}>Close</IonButton>
-          </div>
         </div>
       </BottomSheet>
     </IonPage>

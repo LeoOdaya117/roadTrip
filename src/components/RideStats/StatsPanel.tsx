@@ -43,7 +43,7 @@ export default function StatsPanel({ distanceMeters, durationSeconds, avgSpeedMs
   }, [km, avgKmh, maxKmh]);
 
   return (
-    <div>
+    <div aria-label={`Ride statistics; ${Math.round(elevationGainMeters ?? 0)} meters elevation gain`}>
       <div className="rh-hero-stats" style={{ marginBottom: 12 }}>
         <div className="rh-hero-stat">
           <div className="rh-hero-value">{animKm}</div>

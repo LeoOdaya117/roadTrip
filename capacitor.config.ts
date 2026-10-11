@@ -1,9 +1,12 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'io.ionic.starter',
+  appId: 'com.github.leoodaya117.roadtrip',
   appName: 'roadTrip',
-  webDir: 'dist'
+  webDir: 'dist',
+  android: {
+    useLegacyBridge: true,
+  },
 };
 
 export default config;

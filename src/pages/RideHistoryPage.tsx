@@ -1,15 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useHistory, useLocation } from 'react-router-dom';
 import {
   IonPage,
-  IonHeader,
-  IonToolbar,
-  IonTitle,
   IonContent,
   IonSegment,
   IonSegmentButton,
   IonLabel,
-  IonButtons,
-  IonBackButton,
   IonToast,
   IonItem,
   IonItemSliding,
@@ -17,12 +13,16 @@ import {
   IonItemOption,
   IonInfiniteScroll,
   IonInfiniteScrollContent,
+  IonAlert,
+  IonButton,
 } from '@ionic/react';
-import { useHistory } from 'react-router-dom';
 import { MapContainer, TileLayer, Polyline, CircleMarker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { getSessionsPage, getTrackPoints, deleteSession, deleteTrackPoints, getPhotos } from '../services/offlineDb';
-import { RideSession } from '../types/ride';
+import { getSessionsPage, getTrackPoints, deleteSession, getPhotos } from '../services/offlineDb';
+import { splitTrackSegments } from '../services/locationFilter';
+import type { PhotoRecord, RideSession } from '../types/ride';
+import type { TrackPoint } from '../services/offlineDb';
+import AppHeader from '../components/AppHeader';
 
 const fmtDistance = (m?: number) => {
   if (!m && m !== 0) return '—';
@@ -42,61 +42,73 @@ const fmtDuration = (s?: number) => {
 const fmtDate = (iso?: string) => {
   if (!iso) return '—';
   const d = new Date(iso);
-  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  const month = months[d.getMonth()];
-  const day = d.getDate();
-  const year = d.getFullYear();
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  return `${month} ${day}, ${year} ${hh}:${mm}:${ss}`;
+  if (Number.isNaN(d.getTime())) return 'Date unavailable';
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 };
 
 const RideHistoryPage: React.FC = () => {
+  const history = useHistory();
+  const location = useLocation();
   const [sessions, setSessions] = useState<RideSession[]>([]);
-  const [filter, setFilter] = useState<'solo' | 'group'>('solo');
-  const [tracksByRide, setTracksByRide] = useState<Record<string, any[]>>({});
-  const [photosByRide, setPhotosByRide] = useState<Record<string, any[]>>({});
+  const [filter, setFilter] = useState<'solo' | 'group'>('group');
+  const [tracksByRide, setTracksByRide] = useState<Record<string, TrackPoint[]>>({});
+  const [photosByRide, setPhotosByRide] = useState<Record<string, PhotoRecord[]>>({});
   const [photoUrlsByRide, setPhotoUrlsByRide] = useState<Record<string, string[]>>({});
   const [toast, setToast] = useState<string | null>(null);
+  const [rideToDelete, setRideToDelete] = useState<string | null>(null);
+  const rideToDeleteRef = useRef<string | null>(null);
   const [page, setPage] = useState(1);
   const pageSize = 8;
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadingInitial, setLoadingInitial] = useState(true);
+  const [pageError, setPageError] = useState<{ page: number; message: string } | null>(null);
+  const [loadingDetails, setLoadingDetails] = useState<Record<string, boolean>>({});
+  const [detailErrors, setDetailErrors] = useState<Record<string, { track?: string; photos?: string }>>({});
+  const [deletingRideId, setDeletingRideId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<{ rideId: string; message: string } | null>(null);
   const [hasMore, setHasMore] = useState(true);
-  const history = useHistory();
+  const [openingSummary, setOpeningSummary] = useState(false);
+  const pageRequestInFlight = useRef(false);
 
   useEffect(() => {
-    // load first page
-    loadPage(1);
-    return () => {
-      // revoke any created object URLs when leaving
-      Object.values(photoUrlsByRide).flat().forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) {} });
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (location.pathname === '/ride-history') setOpeningSummary(false);
+  }, [location.pathname]);
+
+  const openSummary = (rideId: string) => {
+    // Tear down mini-map layers before the Ionic route transition swaps pages.
+    setOpeningSummary(true);
+    window.requestAnimationFrame(() => history.push(`/ride-history-stats/${rideId}`));
+  };
 
   // create object URLs for thumbnails when photosByRide changes
   useEffect(() => {
     const urls: Record<string, string[]> = {};
     Object.keys(photosByRide).forEach((rideId) => {
       const arr = photosByRide[rideId] || [];
-      urls[rideId] = arr.map((ph: any) => {
+      urls[rideId] = arr.map((ph) => {
         try {
           return ph.thumb ? URL.createObjectURL(ph.thumb) : (ph.data ? URL.createObjectURL(ph.data) : '');
-        } catch (e) {
+        } catch {
           return '';
         }
       });
     });
-    // revoke previous
-    Object.values(photoUrlsByRide).flat().forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) {} });
     setPhotoUrlsByRide(urls);
+    return () => {
+      Object.values(urls).flat().forEach((url) => URL.revokeObjectURL(url));
+    };
   }, [photosByRide]);
 
   // trigger a window resize when tracks are loaded so leaflet recalculates map sizes
   useEffect(() => {
     const t = setTimeout(() => {
-      try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+      window.dispatchEvent(new Event('resize'));
     }, 250);
     return () => clearTimeout(t);
   }, [tracksByRide]);
@@ -104,82 +116,131 @@ const RideHistoryPage: React.FC = () => {
   // also trigger a resize when the segment filter or sessions change
   useEffect(() => {
     const t = setTimeout(() => {
-      try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+      window.dispatchEvent(new Event('resize'));
     }, 120);
     return () => clearTimeout(t);
   }, [filter, sessions]);
 
-  const loadPage = async (pageToLoad: number) => {
-    if (!hasMore && pageToLoad !== 1) return;
-    setLoadingMore(true);
+  const loadRideDetails = useCallback(async (rideId: string) => {
+    setLoadingDetails((previous) => ({ ...previous, [rideId]: true }));
+    setDetailErrors((previous) => {
+      const next = { ...previous };
+      delete next[rideId];
+      return next;
+    });
+    const [trackResult, photosResult] = await Promise.allSettled([
+      getTrackPoints(rideId),
+      getPhotos(rideId),
+    ]);
+    if (trackResult.status === 'fulfilled') {
+      setTracksByRide((previous) => ({ ...previous, [rideId]: trackResult.value }));
+    }
+    if (photosResult.status === 'fulfilled') {
+      setPhotosByRide((previous) => ({ ...previous, [rideId]: photosResult.value }));
+    }
+    if (trackResult.status === 'rejected' || photosResult.status === 'rejected') {
+      setDetailErrors((previous) => ({
+        ...previous,
+        [rideId]: {
+          ...(trackResult.status === 'rejected' && { track: 'Could not load this route preview.' }),
+          ...(photosResult.status === 'rejected' && { photos: 'Could not load ride photos.' }),
+        },
+      }));
+    }
+    setLoadingDetails((previous) => ({ ...previous, [rideId]: false }));
+  }, []);
+
+  const loadPage = useCallback(async (pageToLoad: number) => {
+    if (pageRequestInFlight.current) return;
+    pageRequestInFlight.current = true;
+    setPageError(null);
+    if (pageToLoad === 1) setLoadingInitial(true);
+    else setLoadingMore(true);
     try {
       const rows = await getSessionsPage(pageToLoad, pageSize);
       if (!rows || rows.length === 0) {
+        if (pageToLoad === 1) setSessions([]);
         setHasMore(false);
-        setLoadingMore(false);
+        setPage(pageToLoad);
         return;
       }
       setSessions((prev) => (pageToLoad === 1 ? rows : [...prev, ...rows]));
-      // prefetch tracks and photos for this page
-      rows.forEach(async (s) => {
-        const t = await getTrackPoints(s.rideId);
-        setTracksByRide((prev) => ({ ...prev, [s.rideId]: t }));
-        const p = await getPhotos(s.rideId).catch(() => []);
-        setPhotosByRide((prev) => ({ ...prev, [s.rideId]: p }));
-      });
+      rows.forEach((session) => { void loadRideDetails(session.rideId); });
       setHasMore(rows.length === pageSize);
       setPage(pageToLoad);
+    } catch (error) {
+      setPageError({
+        page: pageToLoad,
+        message: error instanceof Error ? error.message : 'Ride history could not be loaded.',
+      });
     } finally {
+      pageRequestInFlight.current = false;
+      setLoadingInitial(false);
       setLoadingMore(false);
+    }
+  }, [loadRideDetails]);
+
+  useEffect(() => {
+    void loadPage(1);
+  }, [loadPage]);
+
+  const handleLoadTracks = async (rideId: string) => loadRideDetails(rideId);
+
+  const handleDelete = async (rideId: string) => {
+    setDeletingRideId(rideId);
+    setDeleteError(null);
+    try {
+      await deleteSession(rideId);
+      setSessions((s) => s.filter((x) => x.rideId !== rideId));
+      setTracksByRide((previous) => { const next = { ...previous }; delete next[rideId]; return next; });
+      setPhotosByRide((previous) => { const next = { ...previous }; delete next[rideId]; return next; });
+      setDetailErrors((previous) => { const next = { ...previous }; delete next[rideId]; return next; });
+      setRideToDelete(null);
+      setToast('Session deleted');
+    } catch (error) {
+      setRideToDelete(null);
+      setDeleteError({
+        rideId,
+        message: error instanceof Error ? error.message : 'The ride could not be deleted.',
+      });
+    } finally {
+      setDeletingRideId(null);
     }
   };
 
-  const handleLoadTracks = async (rideId: string) => {
-    if (tracksByRide[rideId]) return;
-    const [t, p] = await Promise.all([getTrackPoints(rideId), getPhotos(rideId).catch(() => [])]);
-    setTracksByRide((prev) => ({ ...prev, [rideId]: t }));
-    setPhotosByRide((prev) => ({ ...prev, [rideId]: p }));
-  };
-
-  const handleDelete = async (rideId: string) => {
-    const ok = window.confirm('Delete this session and its track points?');
-    if (!ok) return;
-    await deleteSession(rideId);
-    await deleteTrackPoints(rideId);
-    setSessions((s) => s.filter((x) => x.rideId !== rideId));
-    setToast('Session deleted');
-  };
-
-  const handleOpen = async (s: RideSession) => {
-    // Open the Stats page by default from the history list
-    history.push(`/ride-history-stats/${s.rideId}`);
+  const finishDeleteAlert = (role?: string) => {
+    const selectedRideId = rideToDeleteRef.current;
+    rideToDeleteRef.current = null;
+    setRideToDelete(null);
+    if (role === 'destructive' && selectedRideId) void handleDelete(selectedRideId);
   };
 
   const list = sessions.filter((s) => (filter === 'solo' ? s.isSolo : !s.isSolo));
 
-  const loadMore = async (e?: any) => {
+  const loadMore = async (event?: CustomEvent & { target: HTMLIonInfiniteScrollElement }) => {
     if (!hasMore) {
-      if (e && e.target) e.target.complete();
+      await event?.target.complete();
       return;
     }
     const next = page + 1;
     await loadPage(next);
-    if (e && e.target) e.target.complete();
+    await event?.target.complete();
   };
 
   return (
     <IonPage>
-      <IonHeader>
-        <IonToolbar className="app-toolbar">
-          <IonButtons slot="start">
-            <IonBackButton defaultHref="/home" />
-          </IonButtons>
-          <IonTitle>Ride History</IonTitle>
-        </IonToolbar>
-      </IonHeader>
-      <IonContent className="app-page page-content">
-        <div style={{ padding: '8px 0 16px' }}>
-          <IonSegment value={filter} onIonChange={(e: any) => setFilter(e.detail.value)}>
+      <AppHeader title="Ride History" backHref="/home" />
+      <IonContent className="app-page page-content history-screen">
+        <div className="history-intro">
+          <h1>Your rides</h1>
+          <p>Miles worth remembering · saved on this device</p>
+        </div>
+        <div className="history-screen-filter">
+          <IonSegment aria-label="Filter ride history" value={filter} onIonChange={(event) => {
+            if (event.detail.value === 'solo' || event.detail.value === 'group') {
+              setFilter(event.detail.value);
+            }
+          }}>
             <IonSegmentButton value="solo">
               <IonLabel>Solo</IonLabel>
             </IonSegmentButton>
@@ -190,36 +251,77 @@ const RideHistoryPage: React.FC = () => {
         </div>
 
         <div className="history-list">
-          {list.length === 0 && <p className="waiting-text">No sessions found.</p>}
+          {pageError && (
+            <div className="history-empty" role="alert">
+              <h2>{pageError.page === 1 ? 'Couldn’t load ride history' : 'Couldn’t load more rides'}</h2>
+              <p>{pageError.message}</p>
+              <IonButton onClick={() => void loadPage(pageError.page)}>
+                {pageError.page === 1 ? 'Retry loading rides' : `Retry page ${pageError.page}`}
+              </IonButton>
+            </div>
+          )}
+          {loadingInitial && <div className="history-empty" role="status">Loading your rides…</div>}
+          {!loadingInitial && !pageError && list.length === 0 && (
+            <div className="history-empty" role="status">
+              <h2>No {filter} rides yet</h2>
+              <p>Completed rides will appear here with their route, stats, and photos.</p>
+              <IonButton routerLink="/home">Start a ride</IonButton>
+            </div>
+          )}
           {list.map((s) => {
             const tracks = tracksByRide[s.rideId] || [];
             const first = tracks && tracks.length ? tracks[0] : undefined;
             const center = first ? [first.lat, first.lng] : [51.505, -0.09];
             return (
               <IonItemSliding key={s.rideId}>
-                <IonItem button className="glass-card history-card" routerLink={`/ride-history-stats/${s.rideId}`}>
+                <IonItem button className="glass-card history-card" data-ride-id={s.rideId} onClick={() => openSummary(s.rideId)}>
                   <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                    <div className="history-mini-map" onMouseEnter={() => handleLoadTracks(s.rideId)}>
-                      <MapContainer key={`map-${s.rideId}-${(tracks && tracks.length) || 0}`} center={center as [number, number]} zoom={13} maxZoom={22} style={{ width: '100%', height: '100%' }} zoomControl={false} dragging={false} doubleClickZoom={false} touchZoom={false} scrollWheelZoom={false} attributionControl={false}>
-                        <TileLayer url={'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'} />
-                        {tracks && tracks.length > 1 && (
+                    <div className="history-mini-map" aria-hidden="true" onMouseEnter={() => { if (!tracksByRide[s.rideId]) void handleLoadTracks(s.rideId); }}>
+                      {tracks.length > 1 ? openingSummary ? <div className="history-map-empty" role="status">Opening ride summary…</div> : <MapContainer key={`map-${s.rideId}-${tracks.length}`} center={center as [number, number]} zoom={13} maxZoom={22} style={{ width: '100%', height: '100%' }} zoomControl={false} dragging={false} doubleClickZoom={false} touchZoom={false} scrollWheelZoom={false}>
+                        <TileLayer
+                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                          attribution="&copy; OpenStreetMap contributors"
+                        />
+                        {tracks.length > 1 && (
                           <>
-                            <Polyline positions={tracks.map((p) => [p.lat, p.lng])} pathOptions={{ color: '#FF6B35', weight: 3 }} />
-                            <CircleMarker center={[tracks[0].lat, tracks[0].lng]} radius={5} pathOptions={{ color: '#34D399', fillColor: '#34D399' }} />
-                            <CircleMarker center={[tracks[tracks.length - 1].lat, tracks[tracks.length - 1].lng]} radius={5} pathOptions={{ color: '#FB7185', fillColor: '#FB7185' }} />
+                            {splitTrackSegments(tracks)
+                              .filter((segment) => segment.length > 1)
+                              .map((segment, segmentIndex) => (
+                                <Polyline
+                                  key={`segment-${segmentIndex}`}
+                                  positions={segment.map((point) => [point.lat, point.lng])}
+                                  pathOptions={{ color: '#285E7A', weight: 3 }}
+                                />
+                              ))}
+                            <CircleMarker center={[tracks[0].lat, tracks[0].lng]} radius={5} pathOptions={{ color: '#285E7A', fillColor: '#285E7A' }} />
+                            <CircleMarker center={[tracks[tracks.length - 1].lat, tracks[tracks.length - 1].lng]} radius={5} pathOptions={{ color: '#285E7A', fillColor: '#285E7A' }} />
                           </>
                         )}
-                      </MapContainer>
+                      </MapContainer> : <div className="history-map-empty">No route recorded</div>}
                       <div className="history-distance-badge">{fmtDistance(s.distanceMeters)}</div>
                     </div>
                     <div style={{ flex: 1 }}>
+                      {loadingDetails[s.rideId] && <div role="status">Loading route and photos…</div>}
+                      {detailErrors[s.rideId]?.track && (
+                        <div role="alert">
+                          <span>{detailErrors[s.rideId].track}</span>{' '}
+                          <IonButton fill="clear" onClick={(event) => { event.stopPropagation(); void loadRideDetails(s.rideId); }}>Retry route</IonButton>
+                        </div>
+                      )}
+                      {detailErrors[s.rideId]?.photos && (
+                        <div role="alert">
+                          <span>{detailErrors[s.rideId].photos}</span>{' '}
+                          <IonButton fill="clear" onClick={(event) => { event.stopPropagation(); void loadRideDetails(s.rideId); }}>Retry photos</IonButton>
+                        </div>
+                      )}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <div style={{ fontWeight: 800 }}>{fmtDate(s.createdAt)}</div>
+                          <div className="history-date">{fmtDate(s.createdAt)}</div>
+                          <span className="history-ride-mode">{s.isSolo ? 'Solo ride' : 'Group ride'}</span>
                           {filter !== 'solo' && (
-                            <div style={{ color: '#94A3B8', fontSize: 13 }}>{s.userName}</div>
+                            <div className="history-owner">Hosted by {s.userName}</div>
                           )}
-                          <div style={{ color: '#94A3B8', fontSize: 12, marginTop: 4 }}>
+                          <div className="history-duration">
                             Duration: {fmtDuration(s.durationSeconds)}
                           </div>
                         </div>
@@ -229,26 +331,50 @@ const RideHistoryPage: React.FC = () => {
                       </div>
                       {photosByRide[s.rideId] && photosByRide[s.rideId].length > 0 && (
                         <div className="history-photo-gallery" style={{ marginTop: 8 }}>
-                          {photosByRide[s.rideId].slice(0, 3).map((ph: any, idx: number) => (
-                            <img key={ph.id} src={photoUrlsByRide[s.rideId]?.[idx] ?? ''} className="history-photo-thumb" alt="photo" />
+                          {photosByRide[s.rideId].slice(0, 3).map((ph, idx) => (
+                            <img key={ph.id} src={photoUrlsByRide[s.rideId]?.[idx] ?? ''} className="history-photo-thumb" alt={`Ride photo ${idx + 1}`} />
                           ))}
                         </div>
                       )}
                     </div>
                   </div>
                 </IonItem>
+                {deleteError?.rideId === s.rideId && (
+                  <div role="alert" className="history-delete-error">
+                    <span>Couldn’t delete this ride. {deleteError.message}</span>{' '}
+                    <IonButton fill="clear" disabled={deletingRideId === s.rideId} onClick={() => void handleDelete(s.rideId)}>
+                      {deletingRideId === s.rideId ? 'Deleting…' : 'Retry delete'}
+                    </IonButton>
+                  </div>
+                )}
                 <IonItemOptions side="end">
-                  <IonItemOption color="danger" onClick={() => handleDelete(s.rideId)}>Delete</IonItemOption>
+                  <IonItemOption color="danger" onClick={() => {
+                    rideToDeleteRef.current = s.rideId;
+                    setRideToDelete(s.rideId);
+                  }} aria-label={`Delete ride from ${fmtDate(s.createdAt)}`}>
+                    Delete ride
+                  </IonItemOption>
                 </IonItemOptions>
               </IonItemSliding>
             );
           })}
-          <IonInfiniteScroll threshold="100px" onIonInfinite={(e) => loadMore(e)} disabled={!hasMore}>
+          <IonInfiniteScroll threshold="100px" onIonInfinite={(event) => loadMore(event)} disabled={!hasMore || loadingMore}>
             <IonInfiniteScrollContent loadingText="Loading more sessions..." />
           </IonInfiniteScroll>
         </div>
 
         <IonToast isOpen={toast !== null} message={toast ?? ''} duration={1600} onDidDismiss={() => setToast(null)} />
+        <IonAlert
+          key={rideToDelete ?? 'closed'}
+          isOpen={rideToDelete !== null}
+          header="Delete this ride?"
+          message={deletingRideId ? 'Deleting ride…' : 'This permanently removes the ride session, recorded track, and ride photos from this device.'}
+          buttons={[
+            { text: 'Cancel', role: 'cancel', handler: () => finishDeleteAlert('cancel') },
+            { text: 'Delete ride', role: 'destructive', handler: () => finishDeleteAlert('destructive') },
+          ]}
+          onDidDismiss={(event) => finishDeleteAlert(event.detail.role)}
+        />
       </IonContent>
     </IonPage>
   );

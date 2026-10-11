@@ -15,6 +15,46 @@ export type LocationPoint = {
   event?: string;
 };
 
+export type LocationSource = 'foreground' | 'background';
+
+export type AcceptedLocationPoint = LocationPoint & {
+  pointId: string;
+  segmentId: string;
+  source: LocationSource;
+};
+
+export type NavigationDestination = {
+  lat: number;
+  lng: number;
+  label: string;
+};
+
+export type MapMarkerStyle = 'circle' | 'motorcycle' | 'car' | 'bicycle';
+
+export type NavigationManeuver = {
+  id: number;
+  shapeIndex: number;
+  instruction: string;
+  /** Street name supplied by the routing maneuver, when the provider returns one. */
+  streetName?: string;
+  distanceMeters: number;
+  timeSeconds: number;
+  lat: number;
+  lng: number;
+};
+
+export type NavigationRoute = {
+  coordinates: Array<{ lat: number; lng: number }>;
+  maneuvers: NavigationManeuver[];
+  distanceMeters: number;
+  durationSeconds: number;
+};
+
+export type NavigationRouteOption = {
+  route: NavigationRoute;
+  label: string;
+};
+
 export type Rider = LocationPoint & {
   id: string;
   name: string;
@@ -45,6 +85,12 @@ export type RideSession = {
   endedAt?: string;
   distanceMeters?: number;
   durationSeconds?: number;
+  elevationGainMeters?: number;
+  activeSegmentId?: string;
+  navigationDestination?: NavigationDestination;
+  /** Index chosen from the alternatives returned during ride setup. */
+  navigationRouteIndex?: number;
+  navigationEnabled?: boolean;
   /** session lifecycle status — e.g. 'active' | 'ended' */
   status?: 'active' | 'ended' | 'paused';
 };

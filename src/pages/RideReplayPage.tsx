@@ -1,31 +1,30 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useIonViewDidEnter } from '@ionic/react';
-import { useHistory, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import {
   IonPage,
-  IonHeader,
-  IonToolbar,
-  IonTitle,
   IonContent,
-  IonButtons,
-  IonBackButton,
   IonButton,
   IonRange,
   IonIcon
 } from '@ionic/react';
 import { play, pause, playSkipBack, playSkipForward } from 'ionicons/icons';
 import { MapContainer, TileLayer, Polyline, CircleMarker, Marker } from 'react-leaflet';
-import L from 'leaflet';
+import L, { type LatLngBoundsExpression, type Map as LeafletMap } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { getTrackPoints, getSession, getPhotos } from '../services/offlineDb';
+import { getTrackPoints, getSession, getPhotos, type TrackPoint } from '../services/offlineDb';
+import { splitTrackSegments } from '../services/locationFilter';
 import { PhotoRecord } from '../types/ride';
 import { IonModal } from '@ionic/react';
+import AppHeader from '../components/AppHeader';
+
+const photoKey = (photo: PhotoRecord, index: number) => photo.id ?? -(index + 1);
 
 const RideReplayPage: React.FC = () => {
-  const AnyMapContainer = MapContainer as any;
   const { rideId } = useParams<{ rideId: string }>();
-  const history = useHistory();
-  const [points, setPoints] = useState<any[]>([]);
+  const [points, setPoints] = useState<TrackPoint[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const prevPlayingRef = useRef<boolean>(false);
@@ -33,7 +32,7 @@ const RideReplayPage: React.FC = () => {
   const [speedFactor, setSpeedFactor] = useState(1);
   const timerRef = useRef<number | null>(null);
   const [sessionLabel, setSessionLabel] = useState<string | null>(null);
-  const mapRef = useRef<any | null>(null);
+  const mapRef = useRef<LeafletMap | null>(null);
   const [photos, setPhotos] = useState<PhotoRecord[]>([]);
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoRecord | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -46,31 +45,48 @@ const RideReplayPage: React.FC = () => {
 
   useEffect(() => {
     if (!rideId) return;
+    let mounted = true;
+    setLoading(true);
+    setLoadError(null);
+    setMapReady(false);
     (async () => {
-      const t = await getTrackPoints(rideId);
-      setPoints(t || []);
-      const ph = await getPhotos(rideId).catch(() => []);
-      setPhotos(ph || []);
-      const s = await getSession(rideId);
-      setSessionLabel(s ? `${s.userName} • ${new Date(s.createdAt).toLocaleString()}` : rideId);
-      // ensure map will mount after we have session info
-      // (if view already entered, mapReady may be true)
-      // small delay helps Ionic finish layout before Leaflet mounts
-      setTimeout(() => setMapReady(true), 80);
+      try {
+        const [track, ridePhotos, session] = await Promise.all([
+          getTrackPoints(rideId),
+          getPhotos(rideId).catch(() => []),
+          getSession(rideId),
+        ]);
+        if (!session) {
+          throw new Error(`Ride ${rideId} was not found on this device.`);
+        }
+        if (!mounted) return;
+        setPoints(track || []);
+        setPhotos(ridePhotos || []);
+        setSessionLabel(session ? `${session.userName} • ${new Date(session.createdAt).toLocaleString()}` : rideId);
+        setLoading(false);
+      } catch (error) {
+        if (!mounted) return;
+        setLoadError(error instanceof Error ? error.message : 'Unable to load this ride replay.');
+        setLoading(false);
+      }
     })();
+    return () => {
+      mounted = false;
+    };
   }, [rideId]);
 
   // Create object URLs for photo blobs (thumb/full) and revoke on change
   useEffect(() => {
     const thumbs: Record<number, string> = {};
     const fulls: Record<number, string> = {};
-    photos.forEach((ph) => {
-      if (!ph.id) return;
+    photos.forEach((ph, photoIndex) => {
       try {
-        if (ph.thumb) thumbs[ph.id] = URL.createObjectURL(ph.thumb);
-        if (ph.data) fulls[ph.id] = URL.createObjectURL(ph.data);
-      } catch (e) {
-        // ignore
+        const key = photoKey(ph, photoIndex);
+        const thumb = ph.thumb ?? ph.data;
+        if (thumb) thumbs[key] = URL.createObjectURL(thumb);
+        if (ph.data) fulls[key] = URL.createObjectURL(ph.data);
+      } catch {
+        // Skip photo blobs that the browser cannot expose as object URLs.
       }
     });
     setThumbUrls(thumbs);
@@ -81,14 +97,6 @@ const RideReplayPage: React.FC = () => {
     };
   }, [photos]);
 
-  // Revoke object URLs on unmount (safety)
-  useEffect(() => {
-    return () => {
-      Object.values(thumbUrls).forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) {} });
-      Object.values(fullUrls).forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) {} });
-    };
-  }, []);
-
   // Map photos to nearest track index by timestamp for timeline interactions
   useEffect(() => {
     if (!points || points.length === 0 || !photos || photos.length === 0) {
@@ -96,12 +104,11 @@ const RideReplayPage: React.FC = () => {
       return;
     }
     const map: Record<number, number> = {};
-    photos.forEach((ph) => {
-      if (!ph.id) return;
+    photos.forEach((ph, photoIndex) => {
       const pTime = Date.parse(ph.timestamp);
       let bestIdx = 0;
       let bestDiff = Infinity;
-      points.forEach((pt: any, idx: number) => {
+      points.forEach((pt, idx) => {
         const t = pt && pt.timestamp ? Date.parse(pt.timestamp) : null;
         if (!t) return;
         const diff = Math.abs(t - pTime);
@@ -110,7 +117,7 @@ const RideReplayPage: React.FC = () => {
           bestIdx = idx;
         }
       });
-      map[ph.id] = bestIdx;
+      map[photoKey(ph, photoIndex)] = bestIdx;
     });
     setPhotoIndexes(map);
   }, [points, photos]);
@@ -168,7 +175,7 @@ const RideReplayPage: React.FC = () => {
     if (index >= points.length) {
       setIndex(points.length - 1);
     }
-  }, [points]);
+  }, [index, points]);
 
   const safeIndex = points && points.length ? Math.min(index, points.length - 1) : 0;
   const current = points && points.length ? points[safeIndex] : null;
@@ -178,27 +185,27 @@ const RideReplayPage: React.FC = () => {
     if (mapRef.current && current) {
       try {
         // When playing, animate the view to the current point; when paused, move instantly.
-        const opts = { animate: !!playing } as any;
+        const opts = { animate: playing };
         try {
           mapRef.current.setView([current.lat, current.lng], mapRef.current.getZoom() ?? 13, opts);
-        } catch (e) {
-          try { mapRef.current.panTo([current.lat, current.lng], opts); } catch (err) { }
+        } catch {
+          mapRef.current.panTo([current.lat, current.lng], opts);
         }
-      } catch (e) {
-        // ignore
+      } catch {
+        // The map may be detaching during a navigation transition.
       }
     }
-  }, [current]);
+  }, [current, playing]);
 
   // Fit bounds helper
-  const fitTrackBounds = (pad = 40) => {
+  const fitTrackBounds = useCallback((pad = 40) => {
     const map = mapRef.current;
     if (!map || !points || points.length < 2) return;
     try {
-      const latlngs = points.map((p: any) => [p.lat, p.lng]);
-      map.fitBounds(latlngs, { padding: [pad, pad] });
-    } catch (e) { /* ignore */ }
-  };
+      const latlngs = points.map((point) => [point.lat, point.lng] as [number, number]);
+      map.fitBounds(latlngs as LatLngBoundsExpression, { padding: [pad, pad] });
+    } catch { /* Ignore malformed legacy points. */ }
+  }, [points]);
 
   // Auto fit on play start and on playback end
   useEffect(() => {
@@ -211,7 +218,7 @@ const RideReplayPage: React.FC = () => {
       }
     }
     prevPlayingRef.current = playing;
-  }, [playing]);
+  }, [fitTrackBounds, playing, points]);
 
   // When playback reaches the last point, fit bounds to show full track
   useEffect(() => {
@@ -220,7 +227,7 @@ const RideReplayPage: React.FC = () => {
       // playback ended or at last point
       fitTrackBounds(40);
     }
-  }, [safeIndex]);
+  }, [fitTrackBounds, points, safeIndex]);
 
   // Ensure Leaflet recalculates size and fit bounds after Map creation / when points load.
   // Call invalidateSize multiple times and via RAF to handle Ionic layout transitions.
@@ -232,12 +239,12 @@ const RideReplayPage: React.FC = () => {
       try {
         // try immediate invalidate
         map.invalidateSize();
-      } catch (e) {
-        // ignore
+      } catch {
+        // The map may not have a rendered container yet.
       }
       // extra RAF invalidation helps when the container has just been laid out
       requestAnimationFrame(() => {
-        try { map.invalidateSize(); } catch (e) { }
+        try { map.invalidateSize(); } catch { /* Retry timers handle this. */ }
       });
     };
 
@@ -250,9 +257,9 @@ const RideReplayPage: React.FC = () => {
 
     if (points && points.length > 1) {
       try {
-        const latlngs = points.map((p: any) => [p.lat, p.lng]);
-        map.fitBounds(latlngs, { padding: [20, 20] });
-      } catch (e) { /* ignore */ }
+        const latlngs = points.map((point) => [point.lat, point.lng] as [number, number]);
+        map.fitBounds(latlngs as LatLngBoundsExpression, { padding: [20, 20] });
+      } catch { /* Ignore malformed legacy points. */ }
     }
 
     return () => { timers.forEach((t) => clearTimeout(t)); };
@@ -265,9 +272,9 @@ const RideReplayPage: React.FC = () => {
     const map = mapRef.current;
     if (!map) return;
     const doInvalidate = () => {
-      try { map.invalidateSize && map.invalidateSize(); } catch (e) { }
+      try { map.invalidateSize(); } catch { /* Retry timers handle this. */ }
       requestAnimationFrame(() => {
-        try { map.invalidateSize && map.invalidateSize(); } catch (e) { }
+        try { map.invalidateSize(); } catch { /* Retry timers handle this. */ }
       });
     };
     doInvalidate();
@@ -276,107 +283,128 @@ const RideReplayPage: React.FC = () => {
     ids.push(window.setTimeout(doInvalidate, 300));
     ids.push(window.setTimeout(doInvalidate, 800));
     if (points && points.length > 1) {
-      try { fitTrackBounds(40); } catch (e) { }
+      fitTrackBounds(40);
     }
     return () => ids.forEach((i) => clearTimeout(i));
   });
 
   return (
     <IonPage>
-      <IonHeader>
-        <IonToolbar className="app-toolbar">
-          <IonButtons slot="start">
-            <IonButton onClick={() => {
-              try {
-                history.goBack();
-              } catch (e) {
-                history.push('/ride-history');
-              }
-            }}>
-              ←
-            </IonButton>
-          </IonButtons>
-          <IonTitle>Replay</IonTitle>
-        </IonToolbar>
-      </IonHeader>
-      <IonContent className="app-page page-content">
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ fontWeight: 800 }}>{sessionLabel}</div>
+      <AppHeader title="Replay" backHref={`/ride-history-stats/${rideId}`} />
+      <IonContent className="app-page page-content replay-screen">
+        <div className="replay-page-shell">
+        {loading && <div className="screen-state" role="status">Loading ride replay…</div>}
+        {!loading && loadError && <div className="screen-state" role="alert">Couldn’t load this ride replay. {loadError}</div>}
+        {!loading && !loadError && <>
+        <div className="replay-heading">
+          <div className="replay-session-row">
+            <div className="replay-session-title">{sessionLabel}</div>
+            <span className="replay-ride-type">{rideId.startsWith('solo-') ? 'Solo route' : 'Group ride'}</span>
+          </div>
           {(!points || points.length === 0) && (
-            <div style={{ marginTop: 8, color: '#94A3B8' }}>No recorded track points available for this session.</div>
+            <div className="screen-state" role="status">No recorded track points are available for this session.</div>
           )}
         </div>
 
-        <div style={{ height: 320, borderRadius: 12, overflow: 'hidden' }}>
+        <div className="replay-map">
           {mapReady && (
-            <AnyMapContainer whenCreated={(m: any) => { mapRef.current = m; try { m.invalidateSize(); } catch (e) { } }} center={center} zoom={13} maxZoom={22} style={{ width: '100%', height: '100%' }}>
+            <MapContainer ref={mapRef} center={center} zoom={13} maxZoom={22} style={{ width: '100%', height: '100%' }}>
             
-            <TileLayer url={'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'} />
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution="&copy; OpenStreetMap contributors"
+            />
               {points && points.length > 0 && (
               <>
-                <Polyline positions={points.map((p) => [p.lat, p.lng])} pathOptions={{ color: '#FF6B35', weight: 3, opacity: 0.9 }} />
-                {points[0] && <CircleMarker center={[points[0].lat, points[0].lng]} radius={5} pathOptions={{ color: '#34D399', fillColor: '#34D399' }} />}
-                {points[points.length - 1] && <CircleMarker center={[points[points.length - 1].lat, points[points.length - 1].lng]} radius={5} pathOptions={{ color: '#FB7185', fillColor: '#FB7185' }} />}
+                {splitTrackSegments(points)
+                  .filter((segment) => segment.length > 1)
+                  .map((segment, segmentIndex) => (
+                    <Polyline
+                      key={`segment-${segmentIndex}`}
+                      positions={segment.map((point) => [point.lat, point.lng])}
+                      pathOptions={{ color: '#285E7A', weight: 4, opacity: 0.95 }}
+                    />
+                  ))}
+                {points[0] && <CircleMarker center={[points[0].lat, points[0].lng]} radius={5} pathOptions={{ color: '#285E7A', fillColor: '#285E7A' }} />}
+                {points[points.length - 1] && <CircleMarker center={[points[points.length - 1].lat, points[points.length - 1].lng]} radius={5} pathOptions={{ color: '#285E7A', fillColor: '#285E7A' }} />}
                 {current && (
-                  <CircleMarker center={[current.lat, current.lng]} radius={8} pathOptions={{ color: '#FF6B35', fillColor: '#FF6B35' }} />
+                  <CircleMarker center={[current.lat, current.lng]} radius={8} pathOptions={{ color: '#285E7A', fillColor: '#285E7A' }} />
                 )}
               </>
                 )}
-                  {photos && photos.length > 0 && photos.map((ph, pIdx) => ph.lat && ph.lng ? (
+                  {photos && photos.length > 0 && photos.map((ph, pIdx) => ph.lat != null && ph.lng != null ? (
               (() => {
-                const thumbUrl = ph.id ? thumbUrls[ph.id] : undefined;
+                const thumbUrl = thumbUrls[photoKey(ph, pIdx)];
                 const imgSrc = thumbUrl ?? '';
-                const html = `<div class="photo-thumb-icon"><img src="${imgSrc}" class="photo-thumb-img"/></div>`;
+                const html = imgSrc
+                  ? `<div class="photo-thumb-icon"><img src="${imgSrc}" class="photo-thumb-img"/></div>`
+                  : '<div class="photo-thumb-icon" aria-label="Ride photo"></div>';
                 const icon = L.divIcon({ className: 'photo-div-icon', html, iconSize: [44, 30], iconAnchor: [22, 15] });
                 return (
-                  <Marker key={ph.id} position={[ph.lat as number, ph.lng as number]} icon={icon} eventHandlers={{ click: () => { setGalleryIndex(pIdx); setShowGallery(true); } }} />
+                  <Marker key={photoKey(ph, pIdx)} position={[ph.lat as number, ph.lng as number]} icon={icon} eventHandlers={{ click: () => setSelectedPhoto(ph) }} />
                 );
               })()
             ) : null)}
-          </AnyMapContainer>
+          </MapContainer>
           )}
           
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
-          <IonButton onClick={() => { setIndex(0); setPlaying(false); }} disabled={points.length === 0}>
+        <div className="replay-controls">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+          <IonButton aria-label="Restart replay" onClick={() => { setIndex(0); setPlaying(false); }} disabled={points.length === 0}>
             <IonIcon icon={playSkipBack} />
           </IonButton>
-          <IonButton onClick={() => setPlaying((p) => !p)} disabled={points.length === 0}>
+          <IonButton aria-label={playing ? 'Pause replay' : 'Play replay'} aria-pressed={playing} onClick={() => setPlaying((p) => !p)} disabled={points.length === 0}>
             <IonIcon icon={playing ? pause : play} />
           </IonButton>
-          <IonButton onClick={() => setIndex((i) => Math.min(points.length - 1, i + 1))} disabled={points.length === 0}>
+          <IonButton aria-label="Skip forward" onClick={() => setIndex((i) => Math.min(points.length - 1, i + 1))} disabled={points.length === 0}>
             <IonIcon icon={playSkipForward} />
           </IonButton>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 12, color: '#94A3B8', marginBottom: 6 }}>Playback speed: {speedFactor}x</div>
-            <IonRange min={0.25} max={4} step={0.25} value={speedFactor} onIonChange={(e: any) => setSpeedFactor(e.detail.value)}>
+            <IonRange aria-label="Playback speed" min={0.25} max={4} step={0.25} value={speedFactor} onIonChange={(event) => {
+              if (typeof event.detail.value === 'number') setSpeedFactor(event.detail.value);
+            }}>
             </IonRange>
           </div>
         </div>
 
         <div style={{ marginTop: 8 }}>
-          <IonRange min={0} max={Math.max(0, points.length - 1)} step={1} value={safeIndex} onIonChange={(e: any) => { setIndex(e.detail.value); }}>
+          <IonRange aria-label="Replay position" min={0} max={Math.max(0, points.length - 1)} step={1} value={safeIndex} onIonChange={(event) => {
+            if (typeof event.detail.value === 'number') setIndex(event.detail.value);
+          }}>
           </IonRange>
           <div style={{ marginTop: 6 }}>{points.length === 0 ? '0 / 0' : `${safeIndex + 1} / ${points.length}`}</div>
           {photos && photos.length > 0 && (
             <div className="replay-photo-row">
               {photos.map((ph, pIdx) => {
-                const idx = ph.id ? photoIndexes[ph.id] ?? 0 : 0;
-                const thumbSrc = ph.id ? thumbUrls[ph.id] : undefined;
-                return (
-                  <img key={ph.id} src={thumbSrc ?? ''} className={`replay-photo-thumb ${safeIndex === idx ? 'active' : ''}`} onClick={() => { setIndex(idx); setGalleryIndex(pIdx); }} alt="photo" />
-                );
+                const key = photoKey(ph, pIdx);
+                const idx = photoIndexes[key] ?? 0;
+                const thumbSrc = thumbUrls[key];
+                return <button
+                  key={key}
+                  type="button"
+                  className={`replay-photo-trigger ${safeIndex === idx ? 'active' : ''}`}
+                  style={{ flex: '0 0 auto', padding: 0, border: 0, background: 'transparent', borderRadius: 9, cursor: 'pointer' }}
+                  aria-label={`Jump to photo ${pIdx + 1}${ph.note ? `: ${ph.note}` : ''}`}
+                  aria-current={safeIndex === idx ? 'true' : undefined}
+                  onClick={() => { setIndex(idx); setGalleryIndex(pIdx); setSelectedPhoto(ph); }}
+                >
+                  {thumbSrc ? <img src={thumbSrc} className={`replay-photo-thumb ${safeIndex === idx ? 'active' : ''}`} alt="" /> : <span className="replay-photo-thumb" aria-hidden="true" />}
+                </button>;
               })}
-              <button className="btn-secondary" style={{ marginLeft: 8 }} onClick={() => { setGalleryIndex(0); setShowGallery(true); }}>Open gallery</button>
+              <button className="btn-secondary" style={{ marginLeft: 8 }} onClick={() => { setGalleryIndex(0); setShowGallery(true); }}>Open photo gallery</button>
             </div>
           )}
         </div>
         <IonModal isOpen={selectedPhoto !== null} onDidDismiss={() => setSelectedPhoto(null)}>
           <div style={{ padding: 16 }}>
-            <button onClick={() => setSelectedPhoto(null)} style={{ marginBottom: 8 }}>Close</button>
+            <button type="button" aria-label="Close selected photo" onClick={() => setSelectedPhoto(null)} style={{ marginBottom: 8 }}>Close</button>
             {selectedPhoto && (
-              <img src={selectedPhoto.id ? fullUrls[selectedPhoto.id] ?? '' : ''} alt="Photo" style={{ width: '100%', borderRadius: 8 }} />
+              fullUrls[photoKey(selectedPhoto, Math.max(0, photos.indexOf(selectedPhoto)))]
+                ? <img src={fullUrls[photoKey(selectedPhoto, Math.max(0, photos.indexOf(selectedPhoto)))]} alt={selectedPhoto.note || 'Ride photo'} style={{ width: '100%', borderRadius: 8 }} />
+                : <div role="status">Photo preview is unavailable.</div>
             )}
           </div>
         </IonModal>
@@ -399,15 +427,20 @@ const RideReplayPage: React.FC = () => {
                      }}>
                   {photos && photos.length > 0 && (
                     <>
-                      <button onClick={() => setGalleryIndex((i) => Math.max(0, i - 1))} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', zIndex: 1002 }}>◀</button>
-                      <img src={(photos[galleryIndex] && photos[galleryIndex].id) ? (fullUrls[photos[galleryIndex].id] ?? '') : ''} alt="photo" style={{ maxWidth: '100%', maxHeight: '100%' }} />
-                      <button onClick={() => setGalleryIndex((i) => Math.min(photos.length - 1, i + 1))} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', zIndex: 1002 }}>▶</button>
+                      <button aria-label="Previous photo" disabled={galleryIndex <= 0} onClick={() => setGalleryIndex((i) => Math.max(0, i - 1))} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', zIndex: 1002 }}>Previous</button>
+                      {photos[galleryIndex] && fullUrls[photoKey(photos[galleryIndex], galleryIndex)]
+                        ? <img src={fullUrls[photoKey(photos[galleryIndex], galleryIndex)]} alt={photos[galleryIndex]?.note || `Ride photo ${galleryIndex + 1}`} style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                        : <div role="status" style={{ color: '#fff' }}>Photo preview is unavailable.</div>}
+                      <button aria-label="Next photo" disabled={galleryIndex >= photos.length - 1} onClick={() => setGalleryIndex((i) => Math.min(photos.length - 1, i + 1))} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', zIndex: 1002 }}>Next</button>
                       {photos[galleryIndex] && photos[galleryIndex].note && <div style={{ position: 'absolute', bottom: 20, left: 20, right: 20, color: '#fff' }}>{photos[galleryIndex].note}</div>}
                     </>
                   )}
                 </div>
           </div>
         </IonModal>
+        </div>
+        </>}
+        </div>
 
       </IonContent>
     </IonPage>

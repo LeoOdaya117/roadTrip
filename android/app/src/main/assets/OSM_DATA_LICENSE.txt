@@ -1,0 +1,10 @@
+OpenStreetMap data attribution and license
+
+The offline routing graph in valhalla_tiles.tar is derived from OpenStreetMap data for the CALABARZON and Metro Manila pilot area.
+
+© OpenStreetMap contributors. The data is available under the Open Database License (ODbL) 1.0: https://www.openstreetmap.org/copyright
+
+Source extract: Geofabrik Philippines, https://download.geofabrik.de/asia/philippines.html
+OSM data timestamp: 2026-10-06T20:21:06Z
+Valhalla tile builder: 3.9.1
+Extract bounds: 119.8,12.3,123.0,15.5 (longitude/latitude; rectangular pilot envelope)

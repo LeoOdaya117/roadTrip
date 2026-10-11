@@ -1,17 +1,18 @@
-import { useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, useMap, Polyline } from 'react-leaflet';
+import { Fragment, useEffect, useMemo } from 'react';
+import { CircleMarker, MapContainer, TileLayer, useMap, useMapEvents, Polyline } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import '../services/leafletConfig';
 import RiderMarker from './RiderMarker';
-import { Rider } from '../types/ride';
+import type { MapMarkerStyle, NavigationDestination, NavigationRoute, Rider } from '../types/ride';
 import type L from 'leaflet';
 
 type RideMapViewProps = {
   center: { lat: number; lng: number };
   riders: Rider[];
-  trackPoints?: { lat: number; lng: number }[];
+  trackPoints?: { lat: number; lng: number; segmentId?: string }[];
   currentUserId?: string;
   currentUserAccuracy?: number | null;
+  currentUserMarkerStyle?: MapMarkerStyle;
   onMapReady?: (map: L.Map) => void;
   tileUrl?: string;
   attribution?: string;
@@ -19,6 +20,16 @@ type RideMapViewProps = {
   labelsAttribution?: string;
   showRiders?: boolean;
   showTrack?: boolean;
+  navigationRoute?: NavigationRoute | null;
+  navigationDestination?: NavigationDestination | null;
+  onDestinationPick?: (point: { lat: number; lng: number }) => void;
+};
+
+const DestinationPickHandler = ({ onPick }: { onPick?: (point: { lat: number; lng: number }) => void }) => {
+  useMapEvents({
+    click: (event) => onPick?.({ lat: event.latlng.lat, lng: event.latlng.lng }),
+  });
+  return null;
 };
 
 const MapReadyHandler = ({ onReady }: { onReady?: (map: L.Map) => void }) => {
@@ -32,19 +43,19 @@ const MapReadyHandler = ({ onReady }: { onReady?: (map: L.Map) => void }) => {
     // Sometimes Leaflet needs an explicit invalidateSize when the container
     // becomes visible or its layout changes (Ionic containers, overlays).
     const t1 = setTimeout(() => {
-      try { map.invalidateSize(); } catch (e) { /* ignore */ }
+      try { map.invalidateSize(); } catch { /* Leaflet may be detaching. */ }
     }, 120);
 
     // Second pass for cases where Ionic finishes layout after a longer delay
     const t2 = setTimeout(() => {
-      try { map.invalidateSize(); } catch (e) { /* ignore */ }
+      try { map.invalidateSize(); } catch { /* Leaflet may be detaching. */ }
     }, 600);
 
     const onResize = () => {
       try {
         map.invalidateSize();
-      } catch (e) {
-        // ignore
+      } catch {
+        // Leaflet may be detaching while the resize event is delivered.
       }
     };
 
@@ -66,13 +77,17 @@ const RideMapView = ({
   trackPoints,
   currentUserId,
   currentUserAccuracy,
+  currentUserMarkerStyle = 'circle',
   onMapReady,
   tileUrl,
   attribution,
   labelsTileUrl,
   labelsAttribution,
   showRiders = true,
-  showTrack = true
+  showTrack = true,
+  navigationRoute,
+  navigationDestination,
+  onDestinationPick,
 }: RideMapViewProps) => {
   const markers = useMemo(
     () =>
@@ -82,10 +97,29 @@ const RideMapView = ({
           rider={rider}
           isCurrentUser={rider.id === currentUserId}
           accuracy={rider.id === currentUserId ? currentUserAccuracy ?? null : null}
+          markerStyle={rider.id === currentUserId ? currentUserMarkerStyle : 'circle'}
         />
       )),
-    [riders, currentUserId, currentUserAccuracy]
+    [riders, currentUserId, currentUserAccuracy, currentUserMarkerStyle]
   );
+
+  const trackSegments = useMemo(() => {
+    const segments: Array<Array<{ lat: number; lng: number }>> = [];
+    let previousPoint: { segmentId?: string } | undefined;
+    for (const point of trackPoints ?? []) {
+      if (
+        segments.length === 0 ||
+        (previousPoint?.segmentId &&
+          point.segmentId &&
+          previousPoint.segmentId !== point.segmentId)
+      ) {
+        segments.push([]);
+      }
+      segments[segments.length - 1].push(point);
+      previousPoint = point;
+    }
+    return segments.filter((segment) => segment.length > 1);
+  }, [trackPoints]);
 
   return (
     <MapContainer
@@ -98,8 +132,8 @@ const RideMapView = ({
     >
       <TileLayer
         key={tileUrl ?? 'default'}
-        attribution={attribution ?? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; CARTO'}
-        url={tileUrl ?? 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'}
+        attribution={attribution ?? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}
+        url={tileUrl ?? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'}
       />
       {labelsTileUrl && (
         <TileLayer
@@ -110,19 +144,39 @@ const RideMapView = ({
         />
       )}
       <MapReadyHandler onReady={onMapReady} />
+      <DestinationPickHandler onPick={onDestinationPick} />
       {showRiders ? markers : null}
-      {showTrack && trackPoints && trackPoints.length > 1 && (
+      {showTrack &&
+        trackSegments.map((segment, index) => (
+          <Fragment key={`track-segment-${index}`}>
+            <Polyline
+              positions={segment.map((point) => [point.lat, point.lng])}
+              pathOptions={{ color: 'rgba(0,0,0,0.14)', weight: 6, opacity: 1, lineCap: 'round' }}
+            />
+            <Polyline
+              positions={segment.map((point) => [point.lat, point.lng])}
+              pathOptions={{ color: '#285E7A', weight: 4, opacity: 0.92, lineCap: 'round' }}
+            />
+          </Fragment>
+        ))}
+      {navigationRoute && (
         <>
-          {/* subtle shadow for contrast */}
           <Polyline
-            positions={trackPoints.map((p) => [p.lat, p.lng] as [number, number])}
-            pathOptions={{ color: 'rgba(0,0,0,0.14)', weight: 6, opacity: 1, lineCap: 'round' }}
+            positions={navigationRoute.coordinates.map((point) => [point.lat, point.lng])}
+            pathOptions={{ color: '#FFFFFF', weight: 9, opacity: 0.85, lineCap: 'round' }}
           />
           <Polyline
-            positions={trackPoints.map((p) => [p.lat, p.lng] as [number, number])}
-            pathOptions={{ color: '#ff6b2d', weight: 3, opacity: 0.72, lineCap: 'round' }}
+            positions={navigationRoute.coordinates.map((point) => [point.lat, point.lng])}
+            pathOptions={{ color: '#168AAD', weight: 6, opacity: 0.98, lineCap: 'round' }}
           />
         </>
+      )}
+      {navigationDestination && (
+        <CircleMarker
+          center={[navigationDestination.lat, navigationDestination.lng]}
+          radius={9}
+          pathOptions={{ color: '#FFFFFF', weight: 3, fillColor: '#EF4444', fillOpacity: 1 }}
+        />
       )}
     </MapContainer>
   );
