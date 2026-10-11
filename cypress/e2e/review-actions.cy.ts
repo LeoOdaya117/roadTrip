@@ -87,8 +87,7 @@ describe('ride review actions: summary, replay, and share', () => {
 
   it('opens replay and exercises playback, speed, photo, gallery, then opens share', () => {
     cy.visit(`/ride-history-stats/${rideId}`);
-    cy.contains('h1', 'Ride complete').should('be.visible');
-    cy.contains('button', 'Replay ride').should('be.enabled').click();
+    cy.contains('button', 'Replay ride').scrollIntoView().should('be.enabled').click();
     cy.location('pathname').should('eq', `/ride-replay/${rideId}`);
     cy.contains('.replay-session-title', 'Review Rider').should('be.visible');
     cy.get('.replay-controls ion-button').should('have.length', 3);
@@ -112,14 +111,20 @@ describe('ride review actions: summary, replay, and share', () => {
     cy.get('button[aria-label="Next photo"]').should('be.visible').and('be.disabled');
     cy.contains('button', 'Close').click();
 
-    cy.go('back');
+    cy.get('ion-header.rt-app-header:visible ion-back-button').should('have.length', 1).click();
     cy.location('pathname').should('eq', `/ride-history-stats/${rideId}`);
+    cy.get('.summary-screen:visible').should('have.length', 1).within(() => {
+      cy.contains('button', 'Replay ride').scrollIntoView().should('be.visible');
+    });
     cy.visit(`/ride-history-stats/${rideId}?mode=replay`);
     cy.get('button[aria-label="Open route replay"]').should('be.visible').click();
     cy.location('pathname').should('eq', `/ride-replay/${rideId}`);
     cy.go('back');
     cy.location('pathname').should('eq', `/ride-history-stats/${rideId}`);
-    cy.contains('button', 'Create Share Image').should('be.enabled').click();
+    cy.get('.summary-screen:visible').should('have.length', 1).within(() => {
+      cy.get('button[aria-label="Open route replay"]').scrollIntoView().should('be.visible');
+      cy.contains('button', 'Create Share Image').scrollIntoView().should('be.enabled').click();
+    });
     cy.location('pathname').should('eq', `/ride-history-stats/${rideId}/share`);
     cy.get('button[aria-label="Use ride photo 1 as background"]').should('have.attr', 'aria-pressed', 'false').click();
     cy.get('button[aria-label="Use ride photo 1 as background"]').should('have.attr', 'aria-pressed', 'true');
@@ -156,5 +161,35 @@ describe('ride review actions: summary, replay, and share', () => {
     cy.visit(`/ride-history-stats/${missingRideId}/share`);
     cy.get('[role="alert"]').should('contain.text', 'was not found on this device');
     cy.contains('button', 'Generate Image').should('not.exist');
+  });
+
+  it('returns to a visible summary from Share and Replay pages', () => {
+    cy.visit(`/ride-history-stats/${rideId}`);
+    cy.contains('h1', 'Ride complete').should('be.visible');
+    cy.contains('button', 'Replay ride').scrollIntoView().should('be.enabled').click();
+    cy.contains('.replay-session-title', 'Review Rider').should('be.visible');
+
+    cy.go('back');
+    cy.location('pathname').should('eq', `/ride-history-stats/${rideId}`);
+    cy.get('.summary-screen:visible').should('have.length', 1).within(() => {
+      cy.contains('button', 'Create Share Image').scrollIntoView().should('be.visible').and('be.enabled').click();
+    });
+    cy.get('ion-header.rt-app-header:visible ion-title').should('have.length', 1).and('contain.text', 'Create Share Image');
+
+    cy.get('ion-header.rt-app-header:visible ion-back-button').should('have.length', 1).click();
+    cy.location('pathname').should('eq', `/ride-history-stats/${rideId}`);
+    cy.get('.summary-screen:visible').should('have.length', 1).within(() => {
+      cy.contains('button', 'Create Share Image').scrollIntoView().should('be.visible');
+    });
+    cy.get('ion-router-outlet .ion-page:visible').should('have.length', 1);
+  });
+
+  it('uses the summary header Back action to return to Ride History', () => {
+    cy.visit(`/ride-history-stats/${rideId}`);
+    cy.contains('h1', 'Ride complete').should('be.visible');
+    cy.get('ion-header.rt-app-header:visible ion-back-button').should('have.length', 1).click();
+    cy.location('pathname').should('eq', '/ride-history');
+    cy.contains('.history-intro h1', 'Your rides').should('be.visible');
+    cy.get('ion-router-outlet .ion-page:visible').should('have.length', 1);
   });
 });

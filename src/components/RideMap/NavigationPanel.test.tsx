@@ -43,8 +43,6 @@ const renderPanel = (overrides: Partial<React.ComponentProps<typeof NavigationPa
     route: null,
     isGuiding: false,
     isRouting: false,
-    nextInstruction: null,
-    distanceToNextManeuverMeters: null,
     navigationError: null,
     supported: true,
     hasLocation: true,
@@ -105,6 +103,25 @@ describe('NavigationPanel', () => {
     expect(screen.getByText('Turn-by-turn navigation is unavailable on this device.')).toBeInTheDocument();
   });
 
+  it('keeps Stop guidance enabled when GPS is stale and a route update is pending', () => {
+    const onToggleGuidance = vi.fn();
+    renderPanel({
+      destination,
+      route: null,
+      isGuiding: true,
+      isRouting: true,
+      hasLocation: false,
+      onToggleGuidance,
+    });
+
+    const stopButton = screen.getByRole('button', { name: 'Stop guidance' });
+    expect(stopButton).toBeEnabled();
+
+    fireEvent.click(stopButton);
+
+    expect(onToggleGuidance).toHaveBeenCalledOnce();
+  });
+
   it('lets the rider switch from search to selecting a map pin', () => {
     const { props } = renderPanel();
     fireEvent.click(screen.getByRole('button', { name: 'Pick on map' }));
@@ -117,15 +134,12 @@ describe('NavigationPanel', () => {
       route,
       supported: true,
       isGuiding: true,
-      nextInstruction: 'Turn left',
-      distanceToNextManeuverMeters: 90,
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Stop guidance' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit destination' }));
     expect(props.onToggleGuidance).toHaveBeenCalledOnce();
     expect(props.onClearDestination).toHaveBeenCalledOnce();
-    expect(screen.getByText(/90 m · Turn left/)).toBeInTheDocument();
 
     const searchPanel = renderPanel({ isPickingDestination: true });
     expect(screen.getByText('Tap anywhere on the map to set your destination.')).toBeInTheDocument();
@@ -148,8 +162,6 @@ const renderPanelProps = (overrides: Partial<React.ComponentProps<typeof Navigat
   route: null,
   isGuiding: false,
   isRouting: false,
-  nextInstruction: null,
-  distanceToNextManeuverMeters: null,
   navigationError: null,
   supported: true,
   hasLocation: true,

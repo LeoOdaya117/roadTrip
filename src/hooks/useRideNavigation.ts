@@ -8,7 +8,7 @@ import {
   supportsTurnByTurnNavigation,
 } from '../services/navigationEngine';
 import {
-  distanceAlongRouteMeters,
+  distanceFromRouteProgressToShapeIndexMeters,
   nearestRouteProgress,
   nextRouteManeuver,
   updateOffRouteFixCount,
@@ -26,6 +26,7 @@ export type RideNavigationState = {
   route: NavigationRoute | null;
   selectedRouteIndex: number;
   nextInstruction: string | null;
+  nextStreetName: string | null;
   distanceToNextManeuverMeters: number | null;
   isRouting: boolean;
   isGuiding: boolean;
@@ -45,6 +46,7 @@ export const useRideNavigation = (
   rideId: string | undefined,
   location: AcceptedLocationPoint | null | undefined,
   isTracking: boolean,
+  hasFreshLocation = Boolean(location),
 ): RideNavigationState => {
   const [destination, setDestinationState] = useState<NavigationDestination | null>(null);
   const [route, setRoute] = useState<NavigationRoute | null>(null);
@@ -67,10 +69,14 @@ export const useRideNavigation = (
   } | null>(null);
   const offRouteFixCountRef = useRef(0);
   const lastPointIdRef = useRef<string | null>(null);
+  const failedRoutePointIdRef = useRef<string | null>(null);
   const spokenManeuverRef = useRef<number | null>(null);
   const didRestoreRef = useRef(false);
   const didAutoRouteRef = useRef(false);
   const previousTrackingRef = useRef(isTracking);
+  const hasFreshLocationRef = useRef(hasFreshLocation);
+  const wasLocationFreshRef = useRef(hasFreshLocation);
+  hasFreshLocationRef.current = hasFreshLocation;
 
   const routeFrom = useCallback(async (
     origin: AcceptedLocationPoint,
@@ -86,6 +92,7 @@ export const useRideNavigation = (
     }
     routeInFlightRef.current = true;
     inFlightDestinationKeyRef.current = `${target.lat},${target.lng}`;
+    if (failedRoutePointIdRef.current !== origin.pointId) failedRoutePointIdRef.current = null;
     const operation = ++routeOperationRef.current;
     setIsRouting(true);
     setError(null);
@@ -95,6 +102,7 @@ export const useRideNavigation = (
       const nextRoute = routeOptions[selectedRouteIndexRef.current]?.route ?? routeOptions[0]?.route;
       if (!nextRoute) throw new Error('No route is available for this destination.');
       setRoute(nextRoute);
+      failedRoutePointIdRef.current = null;
       offRouteFixCountRef.current = 0;
       spokenManeuverRef.current = null;
       if (rerouting && isGuiding && isTracking) {
@@ -104,6 +112,7 @@ export const useRideNavigation = (
     } catch (routeError) {
       if (operation === routeOperationRef.current) {
         setRoute(null);
+        failedRoutePointIdRef.current = origin.pointId;
         setError(routeError instanceof Error
           ? routeError.message
           : 'Unable to calculate a route. Check your connection or install the regional offline map.');
@@ -134,6 +143,7 @@ export const useRideNavigation = (
     inFlightDestinationKeyRef.current = null;
     offRouteFixCountRef.current = 0;
     lastPointIdRef.current = null;
+    failedRoutePointIdRef.current = null;
     if (!rideId) return;
 
     void getSession(rideId).then((session) => {
@@ -217,11 +227,12 @@ export const useRideNavigation = (
     setSelectedRouteIndex(safeRouteIndex);
     setRoute(null);
     setError(null);
+    failedRoutePointIdRef.current = null;
     offRouteFixCountRef.current = 0;
     spokenManeuverRef.current = null;
     try {
       await persistDestination(value, false, safeRouteIndex);
-      if (location && supported) {
+      if (location && hasFreshLocation && supported) {
         didAutoRouteRef.current = true;
         await routeFrom(location, value);
       } else {
@@ -230,9 +241,13 @@ export const useRideNavigation = (
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Could not save the destination.');
     }
-  }, [location, persistDestination, routeFrom, supported]);
+  }, [hasFreshLocation, location, persistDestination, routeFrom, supported]);
 
   const startGuidance = useCallback(async () => {
+    if (!hasFreshLocationRef.current) {
+      setError('Waiting for a fresh GPS fix before starting guidance.');
+      return;
+    }
     if (!supportsTurnByTurnNavigation()) {
       setError('Turn-by-turn navigation is available in the Android app.');
       return;
@@ -241,6 +256,10 @@ export const useRideNavigation = (
     setSupported(availability.available);
     if (!availability.available) {
       setError(availability.message ?? 'Offline navigation tiles are not available.');
+      return;
+    }
+    if (!hasFreshLocationRef.current) {
+      setError('Waiting for a fresh GPS fix before starting guidance.');
       return;
     }
     setError(null);
@@ -252,8 +271,8 @@ export const useRideNavigation = (
         setError(saveError instanceof Error ? saveError.message : 'Could not save navigation state.');
       }
     }
-    if (destination && location && !route) await routeFrom(location, destination);
-  }, [destination, location, persistDestination, route, routeFrom]);
+    if (destination && location && hasFreshLocation && !route) await routeFrom(location, destination);
+  }, [destination, hasFreshLocation, location, persistDestination, route, routeFrom]);
 
   const downloadTiles = useCallback(async () => {
     if (isDownloadingTiles) return;
@@ -306,12 +325,50 @@ export const useRideNavigation = (
   }, [persistDestination]);
 
   useEffect(() => {
-    if (!didRestoreRef.current || didAutoRouteRef.current || !destination || !location) return;
+    if (!didRestoreRef.current || didAutoRouteRef.current || !destination || !location || !hasFreshLocation) return;
     if (supported) {
       didAutoRouteRef.current = true;
       void routeFrom(location, destination);
     }
-  }, [destination, location, route, routeFrom, supported]);
+  }, [destination, hasFreshLocation, location, route, routeFrom, supported]);
+
+  useEffect(() => {
+    if (
+      !didRestoreRef.current
+      || !destination
+      || !location
+      || !hasFreshLocation
+      || !supported
+      || route
+      || isRouting
+      || (isGuiding && !isTracking)
+      || failedRoutePointIdRef.current === location.pointId
+      || !failedRoutePointIdRef.current
+    ) return;
+    void routeFrom(location, destination, isGuiding);
+  }, [destination, hasFreshLocation, isGuiding, isRouting, isTracking, location, route, routeFrom, supported]);
+
+  useEffect(() => {
+    if (!hasFreshLocation) {
+      wasLocationFreshRef.current = false;
+      return;
+    }
+    const freshnessRecovered = !wasLocationFreshRef.current;
+    wasLocationFreshRef.current = true;
+    if (
+      !freshnessRecovered
+      || !location
+      || !destination
+      || !supported
+      || route
+      || isRouting
+      || !isGuiding
+      || !isTracking
+      || failedRoutePointIdRef.current !== location.pointId
+    ) return;
+    failedRoutePointIdRef.current = `fresh-recovery:${location.pointId}`;
+    void routeFrom(location, destination, true);
+  }, [destination, hasFreshLocation, isGuiding, isRouting, isTracking, location, route, routeFrom, supported]);
 
   useEffect(() => {
     if (!isTracking) {
@@ -319,11 +376,11 @@ export const useRideNavigation = (
       previousTrackingRef.current = false;
       return;
     }
-    if (!previousTrackingRef.current && isGuiding && destination && location && route) {
+    if (!previousTrackingRef.current && isGuiding && destination && location && route && hasFreshLocation) {
       void routeFrom(location, destination, true);
     }
     previousTrackingRef.current = true;
-  }, [destination, isGuiding, isTracking, location, route, routeFrom]);
+  }, [destination, hasFreshLocation, isGuiding, isTracking, location, route, routeFrom]);
 
   const progress = useMemo(() => {
     if (!location || !route) return null;
@@ -331,14 +388,23 @@ export const useRideNavigation = (
   }, [location, route]);
 
   const maneuver = progress && route
-    ? nextRouteManeuver(progress.shapeIndex, route)
+    ? nextRouteManeuver(progress.shapeIndex, route, progress.fraction)
     : null;
-  const distanceToNextManeuverMeters = maneuver && progress && route
-    ? distanceAlongRouteMeters(progress.shapeIndex, maneuver.shapeIndex, route)
+  const isCurrentGuidance = Boolean(
+    isGuiding && isTracking && hasFreshLocation && supported && !isRouting && location && route,
+  );
+  const currentManeuver = isCurrentGuidance ? maneuver : null;
+  const distanceToNextManeuverMeters = currentManeuver && progress && route
+    ? distanceFromRouteProgressToShapeIndexMeters(
+      progress.shapeIndex,
+      progress.fraction,
+      currentManeuver.shapeIndex,
+      route,
+    )
     : null;
 
   useEffect(() => {
-    if (!location || !route || !destination || !isGuiding || !isTracking || !progress) {
+    if (!location || !hasFreshLocation || !route || !destination || !isGuiding || !isTracking || !progress) {
       offRouteFixCountRef.current = 0;
       return;
     }
@@ -353,10 +419,15 @@ export const useRideNavigation = (
     if (decision.shouldReroute && !routeInFlightRef.current) {
       void routeFrom(location, destination, true);
     }
-  }, [destination, isGuiding, isTracking, location, progress, route, routeFrom]);
+  }, [destination, hasFreshLocation, isGuiding, isTracking, location, progress, route, routeFrom]);
 
   useEffect(() => {
-    if (!location || !route || !maneuver || !isGuiding || !isTracking) return;
+    if (!hasFreshLocation || !isTracking) {
+      void stopNavigationSpeech().catch(() => undefined);
+      spokenManeuverRef.current = null;
+      return;
+    }
+    if (!location || !route || !maneuver || !isGuiding || !supported || isRouting) return;
     if (distanceToNextManeuverMeters == null || distanceToNextManeuverMeters > 500) return;
     if (spokenManeuverRef.current === maneuver.id) return;
     spokenManeuverRef.current = maneuver.id;
@@ -364,13 +435,14 @@ export const useRideNavigation = (
       .catch((speechError: unknown) => {
         setError(speechError instanceof Error ? speechError.message : 'Voice guidance is unavailable.');
       });
-  }, [distanceToNextManeuverMeters, isGuiding, isTracking, location, maneuver, route]);
+  }, [distanceToNextManeuverMeters, hasFreshLocation, isGuiding, isRouting, isTracking, location, maneuver, route, supported]);
 
   return {
     destination,
     route,
     selectedRouteIndex,
-    nextInstruction: maneuver?.instruction ?? null,
+    nextInstruction: currentManeuver?.instruction ?? null,
+    nextStreetName: currentManeuver?.streetName ?? null,
     distanceToNextManeuverMeters,
     isRouting,
     isGuiding,

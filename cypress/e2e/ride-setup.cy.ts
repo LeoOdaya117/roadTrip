@@ -104,7 +104,25 @@ describe('step-by-step ride setup', () => {
       cy.get('label[for="ride-destination-search"]').should('contain.text', 'Search destination');
       cy.get('#ride-destination-search').should('be.visible').type('Tagaytay');
       cy.wait('@destinationSearch');
-      cy.get('.ride-setup-results-floating button').contains('Tagaytay').click();
+      cy.get('#ride-destination-search').should('have.attr', 'aria-expanded', 'true');
+      cy.get('#ride-destination-suggestions').should('be.visible').then(($panel) => {
+        const panel = $panel[0];
+        const panelRect = panel.getBoundingClientRect();
+        expect(panel.parentElement).to.equal(Cypress.$('.ride-setup-search-floating')[0].parentElement);
+        expect(getComputedStyle(panel).position, `${name}: suggestions follow the search in document flow`).to.equal('static');
+        assertInsideViewport($panel, width, height);
+
+        cy.get('.ride-setup-search-floating').then(($searchCard) => {
+          const searchRect = $searchCard[0].getBoundingClientRect();
+          expect(panelRect.top, `${name}: suggestions touch the search card`).to.be.closeTo(searchRect.bottom, 1);
+          expect(panelRect.left, `${name}: suggestions share the search card left edge`).to.be.closeTo(searchRect.left, 1);
+          expect(panelRect.right, `${name}: suggestions share the search card right edge`).to.be.closeTo(searchRect.right, 1);
+        });
+      });
+      cy.get('.ride-setup-results button').contains('Tagaytay').click();
+      cy.get('#ride-destination-search').should('be.focused');
+      cy.get('#ride-destination-search').should('have.attr', 'aria-expanded', 'false');
+      cy.get('#ride-destination-suggestions').should('not.be.visible');
       cy.get('.ride-setup-map-hint').should('contain.text', 'Selected · Tagaytay');
       cy.contains('.ride-setup-actions button', 'Use destination').should('be.visible').then(($button) => {
         assertInsideViewport($button, width, height);
@@ -138,7 +156,7 @@ describe('step-by-step ride setup', () => {
     cy.get('.ride-setup-map-error').should('be.visible');
     cy.get('#ride-destination-search').type('Tagaytay');
     cy.wait('@destinationSearch');
-    cy.get('.ride-setup-results-floating button').contains('Tagaytay').should('be.visible');
+    cy.get('.ride-setup-results button').contains('Tagaytay').should('be.visible');
     cy.get('@failedMapTile.all').should('have.length.greaterThan', 0);
   });
 

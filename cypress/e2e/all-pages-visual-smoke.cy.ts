@@ -13,6 +13,7 @@ const viewports = [
   { name: 'phone portrait', width: 360, height: 640 },
   { name: 'phone portrait large', width: 390, height: 844 },
   { name: 'phone landscape', width: 844, height: 390 },
+  { name: 'tablet portrait', width: 768, height: 1024 },
   { name: 'desktop', width: 1280, height: 800 },
 ];
 
@@ -36,6 +37,28 @@ describe('all routed pages: viewport and theme smoke audit', () => {
           cy.visit(page.route, {
             onBeforeLoad(win) {
               win.localStorage.setItem('roadtrip:theme-preference', theme);
+              const position = {
+                coords: {
+                  latitude: 14.5995,
+                  longitude: 120.9842,
+                  accuracy: 5,
+                  altitude: null,
+                  altitudeAccuracy: null,
+                  heading: null,
+                  speed: 0,
+                  toJSON: () => ({}),
+                },
+                timestamp: Date.now(),
+                toJSON: () => ({}),
+              } as GeolocationPosition;
+              Object.defineProperty(win.navigator, 'geolocation', {
+                configurable: true,
+                value: {
+                  getCurrentPosition(success: PositionCallback) { success(position); },
+                  watchPosition(success: PositionCallback) { success(position); return 1; },
+                  clearWatch() {},
+                },
+              });
             },
           });
           cy.document().its('documentElement.dataset.themePreference').should('equal', theme);
@@ -105,6 +128,23 @@ describe('all routed pages: viewport and theme smoke audit', () => {
           } else {
             cy.contains(page.heading, page.headingText).should('be.visible');
           }
+          cy.get('ion-router-outlet .ion-page:visible').should('have.length', 1);
+          if (page.name !== 'Live map' && page.name !== 'Ride summary') {
+            cy.get('ion-content.page-content').should('be.visible').then(($content) => {
+              const ionContent = $content[0] as HTMLElement & { getScrollElement: () => Promise<HTMLElement> };
+              const expectedGutter = viewport.width >= 760 ? 32 : 20;
+              const expectedTop = viewport.name === 'phone landscape' ? 6 : viewport.width >= 760 ? 28 : 18;
+              return ionContent.getScrollElement().then((scroller) => {
+                const style = getComputedStyle(scroller);
+                expect(Number.parseFloat(style.paddingLeft), `${page.name} ${viewport.name} left content gutter`).to.equal(expectedGutter);
+                expect(Number.parseFloat(style.paddingRight), `${page.name} ${viewport.name} right content gutter`).to.equal(expectedGutter);
+                expect(Number.parseFloat(style.paddingTop), `${page.name} ${viewport.name} top content gutter`).to.equal(expectedTop);
+                if (page.name === 'Home and setup entry' && viewport.name === 'phone landscape') {
+                  expect(Number.parseFloat(style.paddingBottom), 'short landscape content uses its compact bottom clearance').to.equal(62);
+                }
+              });
+            });
+          }
           if (page.name === 'Ride summary') {
             cy.get('.summary-screen .ride-history-page').then(($page) => {
               const pageElement = $page[0] as HTMLElement;
@@ -112,13 +152,17 @@ describe('all routed pages: viewport and theme smoke audit', () => {
               const pageStyles = getComputedStyle(pageElement);
               const paddingLeft = Number.parseFloat(pageStyles.paddingLeft);
               const paddingRight = Number.parseFloat(pageStyles.paddingRight);
+              const paddingTop = Number.parseFloat(pageStyles.paddingTop);
               const headingBounds = pageElement.querySelector('.summary-heading')!.getBoundingClientRect();
               const mapBounds = pageElement.querySelector('.rh-map')!.getBoundingClientRect();
               const cardBounds = pageElement.querySelector('.rh-side .rh-card')!.getBoundingClientRect();
               const cardPadding = Number.parseFloat(getComputedStyle(pageElement.querySelector('.rh-card')!).paddingLeft);
 
-              expect(paddingLeft, `${viewport.name} summary left page padding`).to.be.at.least(12);
-              expect(paddingRight, `${viewport.name} summary right page padding`).to.be.at.least(12);
+              const expectedGutter = viewport.width >= 760 ? 32 : 20;
+              expect(paddingLeft, `${viewport.name} summary left page padding`).to.equal(expectedGutter);
+              expect(paddingRight, `${viewport.name} summary right page padding`).to.equal(expectedGutter);
+              const expectedTop = viewport.name === 'phone landscape' ? 6 : viewport.width >= 760 ? 28 : 18;
+              expect(paddingTop, `${viewport.name} summary top page padding`).to.equal(expectedTop);
               expect(Math.abs(headingBounds.left - (pageBounds.left + paddingLeft)), `${viewport.name} heading left inset`).to.be.at.most(1);
               expect(Math.abs(mapBounds.left - headingBounds.left), `${viewport.name} map and heading left alignment`).to.be.at.most(1);
               expect(Math.abs(cardBounds.right - (pageBounds.right - paddingRight)), `${viewport.name} card right inset`).to.be.at.most(1);

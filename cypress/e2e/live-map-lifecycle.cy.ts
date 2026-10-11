@@ -184,6 +184,15 @@ describe('live ride lifecycle', () => {
       expect(session.durationSeconds).to.be.at.least(12);
     });
     cy.window().its('localStorage').invoke('getItem', `ride:hidden:${rideId}`).should('equal', '1');
+
+    cy.go('back');
+    cy.location('pathname').should('eq', `/ride-map/${rideId}`);
+    cy.get('.ride-map-content').should('be.visible');
+    cy.get('ion-router-outlet .ion-page:visible').should('have.length', 1);
+    readSession(rideId).should((session) => expect(session.status).to.equal('ended'));
+    cy.go('forward');
+    cy.location('pathname').should('eq', '/home');
+    cy.get('.crew-create-card').should('be.visible');
   });
 
   it('keeps a failed photo save draft open and saves the caption on retry', () => {

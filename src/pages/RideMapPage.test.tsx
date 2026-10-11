@@ -5,10 +5,16 @@ import { useRideStore } from '../store/rideStore';
 
 const mocks = vi.hoisted(() => ({
   routeRideId: 'solo-test-ride',
+  platform: 'web',
+  trackerHasFreshLocation: true,
+  navigationFreshness: null as boolean | null,
+  navigationState: {} as Record<string, unknown>,
   historyPush: vi.fn(),
   getSession: vi.fn(),
   getTrackPoints: vi.fn(),
   saveRideSession: vi.fn(),
+  saveRideProgress: vi.fn(),
+  updateRideSession: vi.fn(),
   appendTrackEvent: vi.fn(),
   getLastLocation: vi.fn(),
   addPhoto: vi.fn(),
@@ -52,7 +58,7 @@ vi.mock('react-router-dom', () => ({
   useParams: () => ({ rideId: mocks.routeRideId }),
 }));
 
-vi.mock('@capacitor/core', () => ({ Capacitor: { getPlatform: () => 'web' } }));
+vi.mock('@capacitor/core', () => ({ Capacitor: { getPlatform: () => mocks.platform } }));
 vi.mock('../hooks/useLocationTracker', () => ({
   useLocationTracker: () => ({
     location: {
@@ -65,6 +71,7 @@ vi.mock('../hooks/useLocationTracker', () => ({
       segmentId: 'segment-current',
       source: 'foreground',
     },
+    hasFreshLocation: mocks.trackerHasFreshLocation,
     isTracking: true,
     permission: 'granted',
     error: null,
@@ -75,24 +82,10 @@ vi.mock('../hooks/useLocationTracker', () => ({
   }),
 }));
 vi.mock('../hooks/useRideNavigation', () => ({
-  useRideNavigation: () => ({
-    destination: null,
-    route: null,
-    error: null,
-    isGuiding: false,
-    isRouting: false,
-    nextInstruction: null,
-    distanceToNextManeuverMeters: null,
-    supported: false,
-    offlineAvailable: false,
-    isDownloadingTiles: false,
-    tileDownloadProgress: null,
-    setDestination: vi.fn(),
-    startGuidance: vi.fn(),
-    stopGuidance: vi.fn(),
-    clearDestination: vi.fn(),
-    downloadTiles: vi.fn(),
-  }),
+  useRideNavigation: (...args: unknown[]) => {
+    mocks.navigationFreshness = args[3] === true;
+    return mocks.navigationState;
+  },
 }));
 vi.mock('../hooks/useMockRiders', () => ({ useMockRiders: vi.fn() }));
 vi.mock('../hooks/useNetworkStatus', () => ({ useNetworkStatus: () => true }));
@@ -119,7 +112,9 @@ vi.mock('../services/offlineDb', () => ({
   getLastLocation: mocks.getLastLocation,
   getSession: mocks.getSession,
   getTrackPoints: mocks.getTrackPoints,
+  saveRideProgress: mocks.saveRideProgress,
   saveRideSession: mocks.saveRideSession,
+  updateRideSession: mocks.updateRideSession,
 }));
 vi.mock('../services/mapPreferences', () => ({
   loadMapMarkerStyle: () => 'circle',
@@ -156,7 +151,13 @@ vi.mock('../components/BottomSheet', () => ({
   ) : null,
 }));
 vi.mock('../components/MapStyleSwitcher', () => ({ default: () => null }));
-vi.mock('../components/RideMap/NavigationPanel', () => ({ default: () => null }));
+vi.mock('../components/RideMap/NavigationPanel', () => ({
+  default: ({ onClose, hasLocation }: { onClose: () => void; hasLocation: boolean }) => (
+    <section aria-label="Destination panel" data-location-fresh={hasLocation}>
+      <button type="button" onClick={onClose}>Close navigation panel</button>
+    </section>
+  ),
+}));
 
 import RideMapPage from './RideMapPage';
 
@@ -189,10 +190,34 @@ const renderRideMap = (isTracking: boolean, isSoloMode = true) => {
 describe('RideMapPage ride lifecycle actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.platform = 'web';
+    mocks.trackerHasFreshLocation = true;
+    mocks.navigationFreshness = null;
+    mocks.navigationState = {
+      destination: null,
+      route: null,
+      error: null,
+      isGuiding: false,
+      isRouting: false,
+      nextInstruction: null,
+      nextStreetName: null,
+      distanceToNextManeuverMeters: null,
+      supported: false,
+      offlineAvailable: false,
+      isDownloadingTiles: false,
+      tileDownloadProgress: null,
+      setDestination: vi.fn(),
+      startGuidance: vi.fn(),
+      stopGuidance: vi.fn(),
+      clearDestination: vi.fn(),
+      downloadTiles: vi.fn(),
+    };
     mocks.getSession.mockResolvedValue(activeSession);
     mocks.getLastLocation.mockResolvedValue(undefined);
     mocks.getTrackPoints.mockResolvedValue([]);
     mocks.saveRideSession.mockResolvedValue(undefined);
+    mocks.saveRideProgress.mockResolvedValue(undefined);
+    mocks.updateRideSession.mockResolvedValue(1);
     mocks.appendTrackEvent.mockResolvedValue(undefined);
     mocks.startTracking.mockResolvedValue(undefined);
     mocks.startNewSegment.mockReturnValue('segment-next');
@@ -231,13 +256,13 @@ describe('RideMapPage ride lifecycle actions', () => {
       expect.objectContaining({ pointId: 'point-1' }),
       'stopover',
     );
-    expect(mocks.saveRideSession).toHaveBeenCalledWith(expect.objectContaining({ status: 'paused' }));
+    expect(mocks.updateRideSession).toHaveBeenCalledWith('solo-test-ride', { status: 'paused' });
     expect(mocks.stopTracking).toHaveBeenCalled();
     expect(mocks.pauseTimer).toHaveBeenCalled();
   });
 
   it('keeps tracking active and reports an error when pause persistence fails', async () => {
-    mocks.saveRideSession.mockRejectedValue(new Error('storage unavailable'));
+    mocks.updateRideSession.mockRejectedValue(new Error('storage unavailable'));
     renderRideMap(true);
 
     fireEvent.click(screen.getByRole('button', { name: 'Pause ride' }));
@@ -258,7 +283,7 @@ describe('RideMapPage ride lifecycle actions', () => {
     await waitFor(() => expect(useRideStore.getState().isTracking).toBe(true));
     expect(mocks.startNewSegment).toHaveBeenCalled();
     expect(mocks.startTracking).toHaveBeenCalled();
-    expect(mocks.saveRideSession).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mocks.updateRideSession).toHaveBeenCalledWith('solo-test-ride', expect.objectContaining({
       status: 'active',
       activeSegmentId: 'segment-next',
     }));
@@ -267,7 +292,7 @@ describe('RideMapPage ride lifecycle actions', () => {
 
   it('stops a newly started provider and remains paused when resume persistence fails', async () => {
     mocks.getSession.mockResolvedValue({ ...activeSession, status: 'paused' });
-    mocks.saveRideSession.mockRejectedValue(new Error('storage unavailable'));
+    mocks.updateRideSession.mockRejectedValue(new Error('storage unavailable'));
     renderRideMap(false);
 
     fireEvent.click(screen.getByRole('button', { name: 'Resume ride' }));
@@ -394,5 +419,76 @@ describe('RideMapPage ride lifecycle actions', () => {
     expect(screen.getByRole('note')).toHaveTextContent(
       'Messages and topic updates are stored on this device only. Your crew won’t receive them.',
     );
+  });
+
+  it('keeps the active guidance banner visible when the optional destination panel closes', async () => {
+    mocks.platform = 'android';
+    mocks.navigationState = {
+      destination: { lat: 14.6, lng: 121, label: 'Destination' },
+      route: { coordinates: [{ lat: 14.6, lng: 121 }, { lat: 14.7, lng: 121 }], maneuvers: [], distanceMeters: 100, durationSeconds: 60 },
+      error: null,
+      isGuiding: true,
+      isRouting: false,
+      nextInstruction: 'Turn right',
+      nextStreetName: 'Highland Avenue',
+      distanceToNextManeuverMeters: 120,
+      supported: true,
+      offlineAvailable: true,
+      isDownloadingTiles: false,
+      tileDownloadProgress: null,
+      setDestination: vi.fn(),
+      startGuidance: vi.fn(),
+      stopGuidance: vi.fn(),
+      clearDestination: vi.fn(),
+      downloadTiles: vi.fn(),
+    };
+    renderRideMap(true);
+
+    const banner = await screen.findByLabelText('Turn-by-turn guidance');
+    expect(banner).toHaveTextContent('120 m');
+    expect(banner).toHaveTextContent('Turn right');
+    expect(screen.getByRole('region', { name: 'Destination panel' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close navigation panel' }));
+
+    expect(screen.queryByRole('region', { name: 'Destination panel' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Turn-by-turn guidance')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Navigate to a place' }));
+    expect(screen.getByRole('region', { name: 'Destination panel' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Turn-by-turn guidance')).toBeInTheDocument();
+  });
+
+  it('gates turn details and destination actions on fresh GPS even while retaining the accepted location', async () => {
+    mocks.platform = 'android';
+    mocks.trackerHasFreshLocation = false;
+    mocks.navigationState = {
+      destination: { lat: 14.6, lng: 121, label: 'Destination' },
+      route: { coordinates: [{ lat: 14.6, lng: 121 }, { lat: 14.7, lng: 121 }], maneuvers: [], distanceMeters: 100, durationSeconds: 60 },
+      error: null,
+      isGuiding: true,
+      isRouting: false,
+      nextInstruction: 'Turn right',
+      nextStreetName: 'Highland Avenue',
+      distanceToNextManeuverMeters: 120,
+      supported: true,
+      offlineAvailable: true,
+      isDownloadingTiles: false,
+      tileDownloadProgress: null,
+      setDestination: vi.fn(),
+      startGuidance: vi.fn(),
+      stopGuidance: vi.fn(),
+      clearDestination: vi.fn(),
+      downloadTiles: vi.fn(),
+    };
+    renderRideMap(true);
+
+    const banner = await screen.findByLabelText('Turn-by-turn guidance');
+    expect(mocks.navigationFreshness).toBe(false);
+    expect(banner).toHaveTextContent('Waiting for GPS');
+    expect(banner).not.toHaveTextContent('Turn right');
+    expect(banner).not.toHaveTextContent('120 m');
+
+    expect(screen.getByRole('region', { name: 'Destination panel' })).toHaveAttribute('data-location-fresh', 'false');
   });
 });

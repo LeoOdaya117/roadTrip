@@ -22,7 +22,10 @@ vi.mock('../services/placeSearch', () => ({
   PLACE_SEARCH_ATTRIBUTION: 'Photon attribution',
   searchPlaces: mocks.searchPlaces,
 }));
-vi.mock('@ionic/react', () => ({ IonSpinner: () => <span aria-label="Loading" /> }));
+vi.mock('@ionic/react', () => ({
+  IonIcon: ({ className }: { className?: string }) => <span className={className} aria-hidden="true" />,
+  IonSpinner: () => <span aria-label="Loading" />,
+}));
 vi.mock('react-leaflet', () => ({
   MapContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   TileLayer: () => null,
@@ -48,7 +51,11 @@ const chooseModeAndDestination = async (mode: 'Solo ride' | 'Group ride' = 'Solo
 const chooseSearchResult = async () => {
   fireEvent.change(screen.getByRole('searchbox', { name: 'Search destination' }), { target: { value: 'Tagaytay' } });
   const result = await screen.findByRole('button', { name: /Tagaytay/ }, { timeout: 1500 });
+  const search = screen.getByRole('searchbox', { name: 'Search destination' });
+  result.focus();
   fireEvent.click(result);
+  expect(search).toHaveFocus();
+  expect(search).toHaveAttribute('aria-expanded', 'false');
   expect(screen.getByRole('heading', { name: 'Choose your destination' })).toBeInTheDocument();
   return result;
 };
@@ -195,6 +202,38 @@ describe('RideSetupWizard', () => {
     fireEvent(document, new CustomEvent('ionBackButton', { detail: { register } }));
     expect(register).toHaveBeenCalledWith(1000, expect.any(Function));
     register.mock.calls[0][1]();
+    expect(onCancel).toHaveBeenCalledTimes(2);
+  });
+
+  it('dismisses destination suggestions before Escape or Android back cancels setup', async () => {
+    const onCancel = vi.fn();
+    render(<RideSetupWizard busy={false} onCancel={onCancel} onContinue={vi.fn()} />);
+    await chooseModeAndDestination();
+    const search = screen.getByRole('searchbox', { name: 'Search destination' });
+    fireEvent.change(search, { target: { value: 'Tagaytay' } });
+    expect(await screen.findByRole('button', { name: /Tagaytay/ })).toBeInTheDocument();
+    const suggestions = screen.getByRole('group', { name: 'Destination search results' }).parentElement;
+    expect(search).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(suggestions).toHaveAttribute('hidden'));
+    expect(search).toHaveAttribute('aria-expanded', 'false');
+    expect(onCancel).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+
+    fireEvent.focus(search);
+    expect(await screen.findByRole('button', { name: /Tagaytay/ })).toBeInTheDocument();
+    const register = vi.fn();
+    fireEvent(document, new CustomEvent('ionBackButton', { detail: { register } }));
+    act(() => register.mock.calls[0][1]());
+    await waitFor(() => expect(search).toHaveAttribute('aria-expanded', 'false'));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+
+    const registerAgain = vi.fn();
+    fireEvent(document, new CustomEvent('ionBackButton', { detail: { register: registerAgain } }));
+    registerAgain.mock.calls[0][1]();
     expect(onCancel).toHaveBeenCalledTimes(2);
   });
 

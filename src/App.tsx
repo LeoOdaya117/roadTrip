@@ -1,8 +1,10 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useContext, useEffect, type ReactNode } from 'react';
 import { Redirect, Route, type RouteComponentProps } from 'react-router-dom';
 import {
   IonApp,
   IonRouterOutlet,
+  IonSpinner,
+  RouteManagerContext,
   setupIonicReact,
 } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
@@ -10,6 +12,7 @@ import { StatusBar, Style } from '@capacitor/status-bar';
 import { Capacitor } from '@capacitor/core';
 import ThemeProvider from './context/ThemeProvider';
 import AppNavigation from './components/AppNavigation';
+import { createIonicBrowserHistory } from './navigation/createIonicBrowserHistory';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
 const RideLobbyPage = lazy(() => import('./pages/RideLobbyPage'));
@@ -37,6 +40,40 @@ import './styles/crew-board.css';
 
 setupIonicReact();
 
+const appHistory = createIonicBrowserHistory();
+
+function BrowserForwardRestorer() {
+  const routeManager = useContext(RouteManagerContext);
+
+  useEffect(() => {
+    const discardStaleForwardView = (event: Event) => {
+      const { path } = (event as CustomEvent<{ path: string }>).detail;
+      const pathname = new URL(path, window.location.origin).pathname;
+      const staleView = routeManager.findViewItemByPathname(pathname);
+      if (staleView) routeManager.unMountViewItem(staleView);
+    };
+    window.addEventListener('roadtrip:history-forward', discardStaleForwardView);
+    return () => window.removeEventListener('roadtrip:history-forward', discardStaleForwardView);
+  }, [routeManager]);
+
+  return null;
+}
+
+function RouteLoadingOverlay() {
+  return (
+    <div className="route-loading-overlay">
+      <div className="route-loading-state" role="status" aria-live="polite">
+        <IonSpinner name="crescent" aria-hidden="true" />
+        <span>Loading page…</span>
+      </div>
+    </div>
+  );
+}
+
+const withRouteLoading = (page: ReactNode) => (
+  <Suspense fallback={<RouteLoadingOverlay />}>{page}</Suspense>
+);
+
 const App: React.FC = () => {
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -47,47 +84,50 @@ const App: React.FC = () => {
   return (
     <ThemeProvider>
       <IonApp>
-        <IonReactRouter>
-          <Suspense fallback={null}>
+        <IonReactRouter history={appHistory}>
+          <BrowserForwardRestorer />
           <IonRouterOutlet>
             <Route exact path="/home">
-              <HomePage />
+              {withRouteLoading(<HomePage />)}
             </Route>
             <Route exact path="/ride-lobby/:rideId">
-              <RideLobbyPage />
+              {withRouteLoading(<RideLobbyPage />)}
             </Route>
             <Route exact path="/ride-map/:rideId">
-              <RideMapPage />
+              {withRouteLoading(<RideMapPage />)}
             </Route>
             <Route exact path="/account">
-              <AccountPage />
+              {withRouteLoading(<AccountPage />)}
             </Route>
             <Route exact path="/ride-history">
-              <RideHistoryPage />
+              {withRouteLoading(<RideHistoryPage />)}
             </Route>
             <Route
               exact
               path="/ride-history-stats/:rideId/share"
               render={(props: RouteComponentProps<{ rideId: string }>) => (
-                <ShareImagePage rideId={props.match.params.rideId ?? 'demo1'} />
+                withRouteLoading(
+                  <ShareImagePage rideId={props.match.params.rideId ?? 'demo1'} />,
+                )
               )}
             />
             <Route
               exact
               path="/ride-history-stats/:rideId"
               render={(props: RouteComponentProps<{ rideId: string }>) => (
-                <RideHistoryStatsPage rideId={props.match.params.rideId ?? 'demo1'} />
+                withRouteLoading(
+                  <RideHistoryStatsPage rideId={props.match.params.rideId ?? 'demo1'} />,
+                )
               )}
             />
             <Route exact path="/ride-replay/:rideId">
-              <RideReplayPage />
+              {withRouteLoading(<RideReplayPage />)}
             </Route>
             <Route exact path="/">
               <Redirect to="/home" />
             </Route>
           </IonRouterOutlet>
-            <AppNavigation />
-          </Suspense>
+          <AppNavigation />
         </IonReactRouter>
       </IonApp>
     </ThemeProvider>

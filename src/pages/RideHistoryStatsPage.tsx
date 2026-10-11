@@ -28,10 +28,11 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
   }, []);
 
   useEffect(() => {
-    // update replay mode if query changes
     const p = new URLSearchParams(location.search);
     setReplayMode(p.get('mode') === 'replay');
+  }, [location.search]);
 
+  useEffect(() => {
     let mounted = true;
     let photoUrls: string[] = [];
     setLoading(true);
@@ -57,7 +58,7 @@ export default function RideHistoryStatsPage({ rideId }: Props) {
       mounted = false;
       photoUrls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [location.search, rideId]);
+  }, [rideId]);
 
   useEffect(() => {
     if (location.pathname === `/ride-history-stats/${rideId}`) {

@@ -25,7 +25,9 @@ import {
   getLastLocation,
   getSession,
   getTrackPoints,
+  saveRideProgress,
   saveRideSession,
+  updateRideSession,
 } from '../services/offlineDb';
 import {
   calculateTrackDistanceMeters,
@@ -44,6 +46,7 @@ import BottomSheet from '../components/BottomSheet';
 import RideMapRideActions from '../components/RideMapRideActions';
 import MapStyleSwitcher from '../components/MapStyleSwitcher';
 import NavigationPanel from '../components/RideMap/NavigationPanel';
+import NavigationGuidanceBanner from '../components/RideMap/NavigationGuidanceBanner';
 import '../styles/RideMapPage.css';
 
 const FALLBACK_CENTER = { lat: 37.7749, lng: -122.4194 };
@@ -168,6 +171,7 @@ const RideMapPage: React.FC = () => {
   const isOnline = useNetworkStatus();
   const {
     location,
+    hasFreshLocation,
     isTracking: trackerIsTracking,
     permission,
     error,
@@ -176,7 +180,7 @@ const RideMapPage: React.FC = () => {
     stopTracking,
     startNewSegment,
   } = useLocationTracker(false);
-  const navigation = useRideNavigation(rideId, location, isTracking);
+  const navigation = useRideNavigation(rideId, location, isTracking, hasFreshLocation);
   const isAndroid = Capacitor.getPlatform() === 'android';
   const [placeQuery, setPlaceQuery] = useState('');
   const [placeResults, setPlaceResults] = useState<PlaceSearchResult[]>([]);
@@ -349,7 +353,7 @@ const RideMapPage: React.FC = () => {
           if (!session.endedAt) {
             const segmentId = startNewSegment(session.activeSegmentId);
             if (!session.activeSegmentId) {
-              await saveRideSession({ ...session, activeSegmentId: segmentId });
+              await updateRideSession(rideId, { activeSegmentId: segmentId });
             }
             if (session.status !== 'paused') {
               setTracking(true);
@@ -375,8 +379,7 @@ const RideMapPage: React.FC = () => {
     const saveNow = async () => {
       if (stopped || endingRideRef.current) return;
       try {
-        const existing = await getSession(rideId).catch(() => undefined);
-        const base = existing ?? {
+        const fallbackSession = {
           rideId,
           userId: currentUser?.id ?? 'local-user',
           userName: currentUser?.name ?? 'Me',
@@ -384,16 +387,12 @@ const RideMapPage: React.FC = () => {
           isSolo: isSoloMode,
           createdAt: new Date().toISOString()
         };
-        const updated = {
-          ...base,
-          durationSeconds: Math.max(
-            elapsedRef.current,
-            typeof base.durationSeconds === 'number' ? base.durationSeconds : 0
-          ),
-          distanceMeters: Math.round(distanceRef.current)
-        };
         if (stopped || endingRideRef.current) return;
-        await saveRideSession(updated).catch(() => undefined);
+        await saveRideProgress(
+          fallbackSession,
+          elapsedRef.current,
+          Math.round(distanceRef.current),
+        ).catch(() => undefined);
       } catch {
         // Progress persistence is retried on the next interval.
       }
@@ -782,7 +781,8 @@ const RideMapPage: React.FC = () => {
         if (location) {
           await appendTrackEvent(rideId, location, 'stopover');
         }
-        await saveRideSession({ ...session, status: 'paused' });
+        const updatedCount = await updateRideSession(rideId, { status: 'paused' });
+        if (updatedCount === 0) throw new Error('Saved ride data could not be found. Your ride is still active.');
         stopTracking();
         setTracking(false);
         pauseTimer();
@@ -807,11 +807,11 @@ const RideMapPage: React.FC = () => {
       await startTracking();
       const session = await getSession(rideId);
       if (!session) throw new Error('Saved ride data could not be found. Your ride is still paused.');
-      await saveRideSession({
-        ...session,
+      const updatedCount = await updateRideSession(rideId, {
         status: 'active',
         activeSegmentId: segmentId,
       });
+      if (updatedCount === 0) throw new Error('Saved ride data could not be found. Your ride is still paused.');
       setTracking(true);
       if (elapsedSeconds <= 0 && !isTimerRunning) {
         startTimer();
@@ -902,6 +902,21 @@ const RideMapPage: React.FC = () => {
             showTrack={enabledOverlays.includes('track')}
           />
 
+          {isAndroid && navigation.isGuiding && (
+            <NavigationGuidanceBanner
+              isGuiding={navigation.isGuiding}
+              isTracking={isTracking}
+              isRouting={navigation.isRouting}
+              supported={navigation.supported}
+              hasLocation={Boolean(location) && hasFreshLocation}
+              hasRoute={Boolean(navigation.route)}
+              navigationError={navigation.error}
+              instruction={navigation.nextInstruction}
+              distanceToNextManeuverMeters={navigation.distanceToNextManeuverMeters}
+              streetName={navigation.nextStreetName}
+            />
+          )}
+
           {isAndroid && showNavigationPanel && (
             <NavigationPanel
               query={placeQuery}
@@ -921,11 +936,9 @@ const RideMapPage: React.FC = () => {
               route={navigation.route}
               isGuiding={navigation.isGuiding}
               isRouting={navigation.isRouting}
-              nextInstruction={navigation.nextInstruction}
-              distanceToNextManeuverMeters={navigation.distanceToNextManeuverMeters}
               navigationError={navigation.error}
               supported={navigation.supported}
-              hasLocation={Boolean(location)}
+              hasLocation={Boolean(location) && hasFreshLocation}
               onToggleGuidance={() => navigation.isGuiding
                 ? navigation.stopGuidance()
                 : void navigation.startGuidance()}

@@ -18,8 +18,6 @@ type Props = {
   route: NavigationRoute | null;
   isGuiding: boolean;
   isRouting: boolean;
-  nextInstruction: string | null;
-  distanceToNextManeuverMeters: number | null;
   navigationError: string | null;
   supported: boolean;
   hasLocation: boolean;
@@ -46,8 +44,6 @@ const NavigationPanel: React.FC<Props> = ({
   route,
   isGuiding,
   isRouting,
-  nextInstruction,
-  distanceToNextManeuverMeters,
   navigationError,
   supported,
   hasLocation,
@@ -61,7 +57,7 @@ const NavigationPanel: React.FC<Props> = ({
   const hasEnoughQuery = query.trim().length >= 3;
 
   return (
-    <section className="navigation-panel" aria-label="Turn-by-turn navigation">
+    <section className={`navigation-panel${isGuiding ? ' navigation-panel-guiding' : ''}`} aria-label="Destination search and route options">
       <header className="navigation-panel-header">
         <div>
           <h2>Where to?</h2>
@@ -136,13 +132,6 @@ const NavigationPanel: React.FC<Props> = ({
                 <strong>{Math.max(1, Math.round(route.durationSeconds / 60))} min</strong>
               </span>
             )}
-            {isGuiding && nextInstruction && (
-              <span className="navigation-next-turn">
-                {distanceToNextManeuverMeters != null
-                  ? `${Math.round(distanceToNextManeuverMeters)} m · `
-                  : ''}{nextInstruction}
-              </span>
-            )}
             {isRouting && <span role="status">Calculating route…</span>}
             {!hasLocation && <span className="navigation-search-note" role="status">Waiting for your location to calculate the route.</span>}
             {!supported && <span className="navigation-search-note" role="status">Turn-by-turn navigation is unavailable on this device.</span>}
@@ -151,7 +140,7 @@ const NavigationPanel: React.FC<Props> = ({
             <IonButton
               size="small"
               onClick={onToggleGuidance}
-              disabled={!supported || !hasLocation || !route || isRouting}
+              disabled={!isGuiding && (!supported || !hasLocation || !route || isRouting)}
             >
               {isGuiding ? 'Stop guidance' : 'Start ride'}
             </IonButton>

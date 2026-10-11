@@ -38,10 +38,10 @@
 }
 
 .page-content {
-  --padding-start:  var(--space-md);
-  --padding-end:    var(--space-md);
-  --padding-top:    var(--space-lg);
-  --padding-bottom: var(--space-2xl);
+  --padding-start:  var(--rt-page-gutter, var(--space-md));
+  --padding-end:    var(--rt-page-gutter, var(--space-md));
+  --padding-top:    var(--rt-page-top-gutter, var(--space-lg));
+  --padding-bottom: calc(var(--rt-page-bottom-clearance, 96px) + env(safe-area-inset-bottom, 0px));
 }
 
 /* ── Toolbar ── */
@@ -1286,8 +1286,8 @@ ion-modal.photo-sheet .modal-wrapper {
 html,body,ion-app { background:var(--rt-bg);color:var(--rt-text);font-family:var(--ion-font-family); }
 ::selection { background:color-mix(in srgb,var(--rt-primary) 28%,transparent);color:var(--rt-text); }
 .app-page { --background:var(--rt-bg);color:var(--rt-text); }
-.page-content { --padding-start:clamp(16px,3vw,28px);--padding-end:clamp(16px,3vw,28px);--padding-top:20px;--padding-bottom:calc(96px + env(safe-area-inset-bottom,0px)); }
-.page-content::part(scroll) { padding-bottom:calc(96px + env(safe-area-inset-bottom,0px)); }
+.page-content { --padding-start:var(--rt-page-gutter,20px);--padding-end:var(--rt-page-gutter,20px);--padding-top:var(--rt-page-top-gutter,20px);--padding-bottom:calc(var(--rt-page-bottom-clearance,96px) + env(safe-area-inset-bottom,0px)); }
+.page-content::part(scroll) { padding-bottom:calc(var(--rt-page-bottom-clearance,96px) + env(safe-area-inset-bottom,0px)); }
 .app-toolbar { --background:var(--rt-bg);--color:var(--rt-text);--border-color:var(--rt-line); }
 .app-toolbar ion-title { color:var(--rt-text);font-family:var(--ion-font-family);font-size:16px;font-weight:700; }
 .page-hero h1,.rh-page-title,.rh-section-title,.map-title { color:var(--rt-text);font-family:var(--ion-font-family); }
@@ -1379,7 +1379,7 @@ ion-button:focus-visible::part(native) { outline:3px solid var(--rt-route);outli
     background:var(--rt-surface);box-shadow:var(--rt-shadow-floating);
   }
   .route-navigation-item { min-height:64px;font-size:12px; }
-  .page-content { --padding-start:124px;--padding-end:32px; }
+  .page-content { --padding-start:var(--rt-page-gutter-wide,32px);--padding-end:var(--rt-page-gutter-wide,32px); }
 }
 @media (max-width:759px) {
   .route-navigation {

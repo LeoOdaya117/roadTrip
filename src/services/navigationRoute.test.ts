@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import type { NavigationRoute } from '../types/ride';
 import {
   decodeValhallaPolyline,
+  distanceFromRouteProgressToShapeIndexMeters,
   nearestRouteProgress,
   nextRouteManeuver,
   normalizeValhallaRoute,
@@ -51,8 +53,8 @@ describe('navigationRoute', () => {
           shape: encodePolyline(points),
           summary: { length: 1.25, time: 240 },
           maneuvers: [
-            { begin_shape_index: 0, instruction: 'Head north', length: 0.5, time: 90 },
-            { begin_shape_index: 2, verbal_transition_alert_instruction: 'Turn right', length: 0.75, time: 150 },
+            { begin_shape_index: 0, instruction: '  Head   north  ', length: 0.5, time: 90 },
+            { begin_shape_index: 2, verbal_transition_alert_instruction: 'Turn right', street_names: ['  Highland Ave  '], length: 0.75, time: 150 },
           ],
         }],
       },
@@ -61,9 +63,11 @@ describe('navigationRoute', () => {
     expect(result.coordinates).toEqual(points);
     expect(result.distanceMeters).toBe(1250);
     expect(result.durationSeconds).toBe(240);
+    expect(result.maneuvers[0].instruction).toBe('Head north');
     expect(result.maneuvers[1]).toMatchObject({
       shapeIndex: 2,
       instruction: 'Turn right',
+      streetName: 'Highland Ave',
       lat: points[2].lat,
       lng: points[2].lng,
     });
@@ -98,6 +102,56 @@ describe('navigationRoute', () => {
     const progress = nearestRouteProgress({ lat: 14.6002, lng: 121.0002 }, route);
     expect(progress.distanceMeters).toBeLessThan(1);
     expect(nextRouteManeuver(progress.shapeIndex, route)?.instruction).toBe('Turn left');
+  });
+
+  it('returns no maneuver after the final turn and measures progress within the current segment', () => {
+    const route = normalizeValhallaRoute(JSON.stringify({
+      trip: { legs: [{
+        shape: encodePolyline(points),
+        summary: { length: 0.1, time: 20 },
+        maneuvers: [{ begin_shape_index: 1, instruction: 'Turn left', length: 0.05, time: 10 }],
+      }] },
+    }));
+    const beforeTurn = nearestRouteProgress({ lat: 14.6001, lng: 121.0001 }, route);
+    const closerToTurn = nearestRouteProgress({ lat: 14.60018, lng: 121.00018 }, route);
+    const distanceBefore = distanceFromRouteProgressToShapeIndexMeters(
+      beforeTurn.shapeIndex,
+      beforeTurn.fraction,
+      1,
+      route,
+    );
+    const distanceCloser = distanceFromRouteProgressToShapeIndexMeters(
+      closerToTurn.shapeIndex,
+      closerToTurn.fraction,
+      1,
+      route,
+    );
+
+    expect(distanceCloser).toBeLessThan(distanceBefore);
+    expect(nextRouteManeuver(1, route)).toBeNull();
+    expect(nextRouteManeuver(2, route)).toBeNull();
+    const finalPointManeuverRoute: NavigationRoute = {
+      ...route,
+      maneuvers: [{ ...route.maneuvers[0], shapeIndex: 2 }],
+    };
+    expect(nextRouteManeuver(1, finalPointManeuverRoute, 1)).toBeNull();
+    expect(nextRouteManeuver(0, { ...route, maneuvers: [] })).toBeNull();
+  });
+
+  it('keeps a maneuver street name optional and accepts Valhalla begin street names as a fallback', () => {
+    const makeRoute = (maneuver: Record<string, unknown>) => normalizeValhallaRoute(JSON.stringify({
+      trip: { legs: [{
+        shape: encodePolyline(points),
+        summary: { length: 0.1, time: 20 },
+        maneuvers: [{ begin_shape_index: 1, instruction: 'Turn left', ...maneuver }],
+      }] },
+    }));
+
+    expect(makeRoute({}).maneuvers[0].streetName).toBeUndefined();
+    expect(makeRoute({ street_names: [], begin_street_names: ['Lake Road'] }).maneuvers[0].streetName)
+      .toBe('Lake Road');
+    expect(makeRoute({ street_names: ['', 'River Road'], begin_street_names: ['Lake Road'] }).maneuvers[0].streetName)
+      .toBe('River Road');
   });
 
   it('applies the minimum and accuracy-based off-route threshold', () => {
