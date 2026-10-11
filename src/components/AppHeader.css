@@ -1,0 +1,126 @@
+.rt-app-header {
+  z-index: 10;
+  --box-shadow: none;
+  box-shadow: none;
+  border: 0;
+}
+
+.rt-app-header::after {
+  display: none;
+  background: none;
+}
+
+.rt-app-header__toolbar {
+  --background: var(--ion-background-color);
+  --color: var(--ion-text-color);
+  --border-color: transparent;
+  --border-width: 0;
+  --border-style: none;
+  --box-shadow: none;
+  --min-height: 64px;
+  padding-inline: clamp(12px, 3vw, 20px);
+  border: 0;
+  box-shadow: none;
+}
+
+.rt-app-header__toolbar::part(container) {
+  position: relative;
+  gap: 8px;
+}
+
+.rt-app-header__title {
+  --color: var(--ion-text-color);
+  --padding-start: 0;
+  --padding-end: 0;
+  position: relative;
+  display: flex;
+  width: auto;
+  height: auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(calc(100vw - 128px), 480px);
+  color: var(--ion-text-color);
+  font-family: var(--ion-font-family, inherit);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rt-app-header__identity {
+  display: flex;
+  min-width: 0;
+  max-width: min(calc(100vw - 128px), 520px);
+  min-height: 44px;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.rt-app-header__identity--page {
+  position: absolute;
+  left: 50%;
+  max-width: min(calc(100vw - 128px), 520px);
+  transform: translateX(-50%);
+}
+
+.rt-app-header__back {
+  display: flex;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--rt-surface-raised, var(--ion-background-color));
+  box-shadow: none;
+}
+
+.rt-app-header__toolbar ion-back-button {
+  --color: var(--ion-text-color);
+  --icon-font-size: 20px;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+}
+
+.rt-app-header__actions {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.rt-app-header__actions .home-account-btn {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border: 1px solid var(--rt-line, var(--ion-border-color));
+  background: var(--rt-surface-raised, var(--ion-background-color));
+  color: var(--ion-text-color);
+}
+
+.rt-app-header__actions .home-account-initials {
+  color: var(--ion-text-color);
+}
+
+@media (max-width: 360px) {
+  .rt-app-header__toolbar {
+    --min-height: 60px;
+    padding-inline: 6px;
+  }
+
+  .rt-app-header__identity {
+    max-width: calc(100vw - 112px);
+    min-height: 44px;
+    gap: 0;
+    padding: 0;
+  }
+
+  .rt-app-header__identity--page {
+    max-width: calc(100vw - 112px);
+  }
+}
