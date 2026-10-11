@@ -1,6 +1,7 @@
 import '../styles/MapStyleSwitcher.css';
 import { IonIcon } from '@ionic/react';
 import { bicycle, carSport } from 'ionicons/icons';
+import { useRef } from 'react';
 import type { MapMarkerStyle } from '../types/ride';
 type MapLayerOption = {
   id: string;
@@ -43,19 +44,46 @@ const MapStyleSwitcher: React.FC<MapStyleSwitcherProps> = ({
   markerStyle,
   onChangeMarkerStyle,
 }) => {
+  const styleTabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  const focusStyleTab = (index: number) => {
+    const tab = styleTabRefs.current[index];
+    if (!tab) return;
+    tab.focus();
+    tab.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    const layer = layers[index];
+    if (layer) onChange(layer);
+  };
+
   return (
     <div>
       <div className="sheet-section-label">Map Type</div>
-      <div className="map-style-row" role="tablist" aria-label="Map style selector">
-        {layers.map((layer) => {
+      <div className="map-style-row" role="tablist" aria-label="Map style selector" aria-orientation="horizontal">
+        {layers.map((layer, index) => {
           const isActive = activeLayerId === layer.id;
           return (
             <button
               key={layer.id}
+              ref={(element) => { styleTabRefs.current[index] = element; }}
+              type="button"
               role="tab"
               aria-selected={isActive}
+              tabIndex={isActive ? 0 : -1}
               aria-label={`Switch map to ${layer.label}`}
               onClick={() => onChange(layer)}
+              onFocus={(event) => event.currentTarget.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })}
+              onKeyDown={(event) => {
+                if (!layers.length) return;
+                let nextIndex: number | null = null;
+                if (event.key === 'ArrowRight') nextIndex = (index + 1) % layers.length;
+                if (event.key === 'ArrowLeft') nextIndex = (index - 1 + layers.length) % layers.length;
+                if (event.key === 'Home') nextIndex = 0;
+                if (event.key === 'End') nextIndex = layers.length - 1;
+                if (nextIndex !== null) {
+                  event.preventDefault();
+                  focusStyleTab(nextIndex);
+                }
+              }}
               className={`map-style-card${isActive ? ' map-style-card-active' : ''}`}
             >
               <span className={`map-style-thumb map-style-thumb-${layer.id}`}>

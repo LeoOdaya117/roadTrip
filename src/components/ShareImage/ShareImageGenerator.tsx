@@ -20,6 +20,8 @@ function extractCoords(geo: GeoJSON.GeoJSON): [number, number][] {
 
 export default function ShareImageGenerator({ ride }: Props) {
   const [generating, setGenerating] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [retryAction, setRetryAction] = useState<'generate' | 'download' | 'share' | null>(null);
   const [pngUrl, setPngUrl] = useState<string | null>(null);
   const [overlayColor, setOverlayColor] = useState('#285E7A');
   const [bgImageUrl, setBgImageUrl] = useState<string | null>(null);
@@ -48,6 +50,8 @@ export default function ShareImageGenerator({ ride }: Props) {
   }, [pngUrl]);
 
   async function generate() {
+    setActionError(null);
+    setRetryAction(null);
     setGenerating(true);
     try {
       const outW = 1080;
@@ -552,6 +556,8 @@ export default function ShareImageGenerator({ ride }: Props) {
       });
     } catch (err) {
       console.error('Failed to generate share image', err);
+      setActionError(err instanceof Error ? `Couldn’t generate the image: ${err.message}` : 'Couldn’t generate the image. Check your settings and try again.');
+      setRetryAction('generate');
     } finally {
       setGenerating(false);
     }
@@ -559,10 +565,12 @@ export default function ShareImageGenerator({ ride }: Props) {
 
   async function download() {
     if (!pngUrl) return;
-    console.log('Download clicked, pngUrl:', pngUrl);
+    setActionError(null);
+    setRetryAction(null);
     try {
       // Fetch the blob
       const resp = await fetch(pngUrl);
+      if (!resp.ok) throw new Error('The generated image is no longer available. Generate it again.');
       const blob = await resp.blob();
       
       // If running in native (Capacitor) environment
@@ -599,33 +607,32 @@ export default function ShareImageGenerator({ ride }: Props) {
           alert(`Image saved successfully!\nFile: ${fileName}`);
         } catch (fsError) {
           console.error('Filesystem error:', fsError);
-          // Fallback to share if write fails
-          alert('Could not save to Downloads. Opening share dialog...');
-          await share();
+          throw new Error('Could not save the image on this device. Try Share or retry the download.');
         }
         return;
       }
 
       // Web fallback: fetch blob and trigger anchor download
-      console.log('Web platform, using anchor download');
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `ride-${ride.id}.png`;
       document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
-      console.log('Download triggered');
+      try { a.click(); } finally {
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      }
     } catch (e) {
       console.error('Download error:', e);
-      // fallback: open in new tab
-      window.open(pngUrl, '_blank');
+      setActionError(e instanceof Error ? `Couldn’t download the image: ${e.message}` : 'Couldn’t download the image. Try again.');
+      setRetryAction('download');
     }
   }
 
   async function share() {
     if (!pngUrl) return;
+    setActionError(null);
+    setRetryAction(null);
     try {
       if (Capacitor.getPlatform && Capacitor.getPlatform() !== 'web') {
         const resp = await fetch(pngUrl);
@@ -645,11 +652,20 @@ export default function ShareImageGenerator({ ride }: Props) {
         return;
       }
       // web fallback: open image in new tab for user to share manually
-      window.open(pngUrl, '_blank');
+      if (!window.open(pngUrl, '_blank', 'noopener,noreferrer')) {
+        throw new Error('Your browser blocked the image tab. Allow pop-ups or retry Share.');
+      }
     } catch (e) {
       console.warn('Share failed', e);
-      window.open(pngUrl, '_blank');
+      setActionError(e instanceof Error ? `Couldn’t share the image: ${e.message}` : 'Couldn’t share the image. Try again.');
+      setRetryAction('share');
     }
+  }
+
+  function retryLastAction() {
+    if (retryAction === 'generate') void generate();
+    if (retryAction === 'download') void download();
+    if (retryAction === 'share') void share();
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -866,10 +882,15 @@ export default function ShareImageGenerator({ ride }: Props) {
                 gap: 8
               }}>
                 {ride.photoUrls.map((p, idx) => (
-                  <div 
+                  <button
+                    type="button"
                     key={p + idx} 
+                    aria-label={`Use ride photo ${idx + 1} as background`}
+                    aria-pressed={bgImageUrl === p}
                     onClick={() => setBgImageUrl(bgImageUrl === p ? null : p)}
                     style={{ 
+                      width: '100%',
+                      display: 'block',
                       position: 'relative', 
                       paddingBottom: '100%',
                       cursor: 'pointer',
@@ -908,7 +929,7 @@ export default function ShareImageGenerator({ ride }: Props) {
                         fontWeight: 'bold'
                       }}>✓</div>
                     )}
-                  </div>
+                  </button>
                 ))}
               </div>
             </>
@@ -1003,6 +1024,12 @@ export default function ShareImageGenerator({ ride }: Props) {
 
         {/* Action Buttons */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {actionError && (
+            <div role="alert" style={{ padding: 12, borderRadius: 8, border: '1px solid #b42318', background: 'rgba(180,35,24,.1)', color: 'var(--ion-text-color)' }}>
+              <div>{actionError}</div>
+              {retryAction && <button type="button" onClick={retryLastAction} style={{ marginTop: 8, minHeight: 44 }}>Retry</button>}
+            </div>
+          )}
           <button 
             className="rh-generate-btn" 
             onClick={generate} 

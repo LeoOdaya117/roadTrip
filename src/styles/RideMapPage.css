@@ -47,12 +47,27 @@
 
 .map-fabs {
   position: absolute;
-  top: calc(max(env(safe-area-inset-top, 0px), 10px) + 48px);
-  right: 14px;
+  top: calc(max(env(safe-area-inset-top, 0px), 10px) + 56px);
+  right: max(12px, env(safe-area-inset-right, 0px));
+  bottom: calc(150px + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  gap: 7px;
   z-index: 1002;
+  max-height: calc(100% - max(env(safe-area-inset-top, 0px), 10px) - 210px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding: 2px;
+}
+
+.map-fabs::-webkit-scrollbar { display: none; }
+
+.map-fabs > *,
+.map-fabs .map-fab {
+  flex: 0 0 auto;
 }
 
 .map-fab {
@@ -75,6 +90,36 @@
 
 .map-fab:focus-visible { outline:2px solid #62c2dd; outline-offset:3px; }
 
+.ride-map-content .map-fab {
+  width: 44px;
+  height: 44px;
+  border-radius: 15px;
+  border: 1px solid rgb(255 255 255 / 15%);
+  background: rgb(16 26 35 / 92%);
+  color: #f1f5f9;
+  box-shadow: 0 7px 18px rgb(4 12 20 / 30%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.ride-map-content .map-fab:hover,
+.ride-map-content .map-fab:focus-visible {
+  background: rgb(32 52 65 / 96%);
+  color: #fff;
+}
+
+.ride-map-content .map-fab.fab-active {
+  background: var(--rt-action, #174f9f);
+  border-color: rgb(255 255 255 / 28%);
+  color: var(--rt-on-action, #fff);
+}
+
+.ride-map-content .map-fab.fab-stopover {
+  background: #684516;
+  border-color: #e9bc67;
+  color: #fff2cf;
+}
+
 .map-zoom-controls {
   display: flex;
   flex-direction: column;
@@ -89,8 +134,8 @@
 }
 
 .map-fab.map-zoom-fab {
-  width: 40px;
-  height: 38px;
+  width: 44px;
+  height: 40px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -156,24 +201,306 @@
 .bottom-sheet { display:flex; flex-direction:column; max-height:min(68dvh,calc(100dvh - env(safe-area-inset-top,0px) - 96px)); overflow:hidden; }
 .bottom-sheet .sheet-handle { flex:0 0 28px; width:100%; min-height:28px; padding:10px 0 4px; border:0; border-radius:16px 16px 0 0; background:transparent; cursor:pointer; touch-action:manipulation; }
 .bottom-sheet .sheet-handle:focus-visible { outline:2px solid #62c2dd; outline-offset:-3px; }
-.bottom-sheet .sheet-content { min-height:0; overflow-y:auto; overscroll-behavior:contain; padding-bottom:calc(12px + env(safe-area-inset-bottom,0px)); }
+.bottom-sheet .sheet-content { min-height:0; overflow-y:auto; overscroll-behavior:contain; padding-bottom:8px; }
 .bottom-sheet.is-collapsed .sheet-content { overflow:hidden; }
 .sheet-details { display:block; }
 .bottom-sheet.is-collapsed .sheet-details { display:none; }
 .bottom-sheet.is-expanded .sheet-stats-row { position:sticky; top:-8px; z-index:1; background:rgba(10,12,18,.98); padding-top:10px; }
 .bottom-sheet .sheet-stats-row { gap:6px; }
 .bottom-sheet .sheet-stat { min-width:0; }
-.bottom-sheet .s-label { font-size:8px; letter-spacing:.09em; }
-.bottom-sheet .s-value { font-size:13px; white-space:nowrap; }
-.bottom-sheet .sheet-handle::before { background:rgba(203,213,225,.42); }
+.bottom-sheet .s-label { font-size:11px; line-height:1.2; letter-spacing:.06em; }
+.bottom-sheet .s-value { font-size:16px; line-height:1.25; font-weight:750; white-space:nowrap; }
+.bottom-sheet .sheet-handle::before { background:rgba(203,213,225,.58); }
+
+/* The collapsed metrics panel remains a compact control dock. Ride actions are
+   deliberately outside the expandable crew/message details so they never hide. */
+.ride-map-content .bottom-sheet {
+  z-index: 1003;
+  left: max(12px, env(safe-area-inset-left, 0px));
+  right: max(12px, env(safe-area-inset-right, 0px));
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  width: auto;
+  max-width: 760px;
+  margin-inline: auto;
+  border: 1px solid rgb(255 255 255 / 15%);
+  border-radius: 20px;
+  background: rgb(16 26 35 / 94%);
+  color: #f1f5f9;
+  box-shadow: 0 12px 32px rgb(4 12 20 / 36%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.ride-map-content .bottom-sheet.is-collapsed {
+  height: auto;
+  max-height: min(42dvh, 190px);
+}
+
+.ride-map-content .bottom-sheet.is-expanded {
+  height: min(68dvh, 620px);
+  max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 82px);
+}
+
+.ride-map-content .bottom-sheet.is-expanded .sheet-stats-row {
+  background: rgb(16 26 35 / 97%);
+}
+
+/* The grab handle is the dock's sole horizontal separator. Use spacing to
+   separate metrics from the actions instead of stacking divider lines. */
+.ride-map-content .bottom-sheet .sheet-stats-row {
+  margin-bottom: 0;
+  border-bottom: 0;
+  padding-bottom: 8px;
+}
+
+.ride-action-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 9px;
+  padding: 8px 0 2px;
+  border-top: 0;
+}
+
+.ride-map-ride-actions {
+  position: relative;
+  z-index: 2;
+}
+
+.ride-action-bar button {
+  min-height: 48px;
+  border-radius: 13px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 750;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ride-action-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  border: 1px solid var(--rt-action, #174f9f);
+  background: var(--rt-action, #174f9f);
+  color: var(--rt-on-action, #fff);
+  box-shadow: 0 5px 14px rgb(23 79 159 / 28%);
+}
+
+.ride-action-primary:hover:not(:disabled) { filter: brightness(1.08); }
+.ride-action-primary:disabled { opacity: .66; cursor: wait; }
+
+.ride-action-end {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  box-sizing: border-box;
+  min-width: 92px;
+  min-height: 48px;
+  padding: 0 13px;
+  border: 1px solid rgb(248 113 113 / 46%);
+  background: rgb(127 29 29 / 28%);
+  color: #fecaca;
+}
+
+.ride-action-end ion-icon {
+  flex: 0 0 auto;
+}
+
+.ride-action-end span {
+  line-height: 1.2;
+}
+
+.ride-action-end:hover { background: rgb(127 29 29 / 52%); }
+
+.ride-action-bar button:focus-visible,
+.ride-end-confirmation button:focus-visible {
+  outline: 3px solid #91c8ff;
+  outline-offset: 3px;
+}
+
+.ride-end-confirmation-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 19999;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  padding: max(16px, env(safe-area-inset-top, 0px))
+    max(16px, env(safe-area-inset-right, 0px))
+    max(16px, env(safe-area-inset-bottom, 0px))
+    max(16px, env(safe-area-inset-left, 0px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgb(3 10 16 / 38%);
+  pointer-events: auto;
+}
+
+.ride-end-confirmation {
+  position: relative;
+  z-index: 1;
+  width: min(440px, 100%);
+  max-height: calc(100vh - max(16px, env(safe-area-inset-top, 0px)) - max(16px, env(safe-area-inset-bottom, 0px)));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+  margin: auto;
+  padding: 14px;
+  border: 1px solid rgb(248 113 113 / 45%);
+  border-radius: 13px;
+  background: rgb(70 24 29 / 96%);
+  color: #fff1f2;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 38%);
+}
+
+.ride-end-confirmation-copy h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.ride-end-confirmation-copy p {
+  margin: 5px 0 12px;
+  color: #ffe4e6;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ride-end-confirmation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ride-end-confirmation-actions button {
+  min-height: 44px;
+  padding: 0 13px;
+  border: 1px solid rgb(255 255 255 / 30%);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 9%);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ride-end-confirmation-actions button:last-child {
+  border-color: #dc4c56;
+  background: #b4232f;
+}
+
+.ride-end-confirmation button { min-height: 44px; }
+
+.ride-map-content .map-top-bar {
+  display: flex;
+  align-items: flex-start;
+  min-height: calc(48px + max(env(safe-area-inset-top, 0px), 10px));
+  padding-top: max(env(safe-area-inset-top, 0px), 10px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: linear-gradient(to bottom, rgb(16 26 35 / 91%), rgb(16 26 35 / 52%) 70%, transparent);
+}
+
+.ride-map-content .map-title-stack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding-top: 2px;
+}
+
+.ride-map-content .map-title {
+  line-height: 1.2;
+}
+
+.ride-map-content .map-title-secondary {
+  max-width: min(60vw, 420px);
+  overflow: hidden;
+  color: rgb(241 245 249 / 84%);
+  font-size: 12px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ride-map-content .map-title,
+.ride-map-content .live-badge {
+  text-shadow: 0 1px 5px rgb(0 0 0 / 46%);
+}
+
+.ride-map-content .live-badge {
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 999px;
+  background: rgb(16 26 35 / 88%);
+  color: #f1f5f9;
+  letter-spacing: .08em;
+}
+
+.ride-map-content .live-badge::before {
+  background: #4ade80;
+  box-shadow: 0 0 0 3px rgb(74 222 128 / 20%);
+}
+
+.ride-map-content .live-badge.live-badge-paused { background: rgb(104 69 22 / 94%); color: #fff2cf; }
+.ride-map-content .live-badge.live-badge-transition { background: rgb(31 59 77 / 94%); color: #e0f2fe; }
+
+.map-container .leaflet-control-attribution {
+  margin-right: 6px;
+  margin-bottom: 5px;
+  border-radius: 5px 0 0 0;
+  background: rgb(255 255 255 / 86%);
+  color: #25343d;
+  font-size: 10px;
+}
+
+/* Keep Leaflet's required attribution above the live metrics/action dock. */
+.ride-map-content .map-container .leaflet-bottom.leaflet-right {
+  bottom: calc(184px + env(safe-area-inset-bottom, 0px));
+  left: 6px;
+  right: auto;
+}
+
+.ride-map-content .map-wrapper-sheet-expanded .map-container .leaflet-bottom.leaflet-right {
+  bottom: calc(min(68dvh, 620px, calc(100dvh - env(safe-area-inset-top, 0px) - 82px)) + 18px + env(safe-area-inset-bottom, 0px));
+}
+
+.map-container .leaflet-control-attribution a { color: #174f9f; }
 
 @media (max-height: 560px) {
   .navigation-panel { max-height:calc(100dvh - env(safe-area-inset-top,0px) - 122px); }
-  .bottom-sheet { max-height:calc(100dvh - env(safe-area-inset-top,0px) - 76px); }
+  .ride-map-content .bottom-sheet { max-height:calc(100dvh - env(safe-area-inset-top,0px) - 62px); }
+  .ride-map-content .bottom-sheet.is-collapsed { max-height:170px; }
+  .ride-map-content .map-fabs {
+    top: calc(max(env(safe-area-inset-top, 0px), 8px) + 48px);
+    right: max(10px, env(safe-area-inset-right, 0px));
+    bottom: auto;
+    left: auto;
+    max-width: calc(100% - 24px);
+    max-height: none;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 5px;
+    overflow-x: auto;
+    overflow-y: visible;
+    padding: 2px;
+  }
+  .ride-map-content .map-fab { width: 36px; height: 36px; border-radius: 12px; }
+  .ride-map-content .map-zoom-controls { flex-direction: row; flex: 0 0 auto; }
+  .ride-map-content .map-fab.map-zoom-fab { width: 34px; height: 36px; }
+  .ride-map-content .map-fab.map-zoom-fab + .map-zoom-fab { border-top: 0; border-left: 1px solid rgb(255 255 255 / 12%); }
+  .ride-map-content .navigation-panel { top: calc(max(env(safe-area-inset-top, 0px), 8px) + 92px); }
   .navigation-offline-note { display:none; }
 }
 
 @media (min-width: 768px) {
   .navigation-panel { max-height:min(72dvh,620px); }
-  .bottom-sheet { left:auto; right:20px; width:min(430px,calc(100% - 40px)); }
+  .ride-map-content .map-fabs { right:24px; }
+  .ride-map-content .bottom-sheet { left:50%; right:auto; width:min(760px,calc(100% - 48px)); transform:translateX(-50%); }
+  .ride-map-content .bottom-sheet.is-collapsed { max-height:180px; }
 }

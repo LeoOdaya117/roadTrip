@@ -66,6 +66,7 @@
   left: 50%;
   max-width: min(calc(100vw - 128px), 520px);
   transform: translateX(-50%);
+  pointer-events: none;
 }
 
 .rt-app-header__back {

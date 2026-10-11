@@ -127,4 +127,46 @@ describe('shared standard page header', () => {
       cy.get('body').type('{esc}', { force: true });
     });
   });
+
+  it('returns from Ride History to Home when its back control is clicked at 384x824', () => {
+    cy.viewport(384, 824);
+    visitLight('/ride-history');
+
+    cy.get('ion-header.rt-app-header ion-back-button')
+      .should('be.visible')
+      .then(($backButton) => {
+        const backButton = $backButton[0];
+        const rect = backButton.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        let hitTarget: Element | null = backButton.ownerDocument.elementFromPoint(centerX, centerY);
+        while (hitTarget?.shadowRoot && 'elementFromPoint' in hitTarget.shadowRoot) {
+          const shadowHit = (hitTarget.shadowRoot as ShadowRoot & { elementFromPoint: (x: number, y: number) => Element | null })
+            .elementFromPoint(centerX, centerY);
+          if (!shadowHit || shadowHit === hitTarget) break;
+          hitTarget = shadowHit;
+        }
+
+        const belongsToBackButton = (candidate: Element | null) => {
+          let current = candidate;
+          while (current) {
+            if (current === backButton) return true;
+            const root = current.getRootNode();
+            const shadowHost = 'host' in root ? (root as ShadowRoot).host : null;
+            current = current.parentElement ?? shadowHost;
+          }
+          return false;
+        };
+
+        expect(rect.width, 'back control has a usable width').to.be.at.least(44);
+        expect(rect.height, 'back control has a usable touch target').to.be.at.least(44);
+        expect(
+          belongsToBackButton(hitTarget),
+          `center hit target resolves to the back button (hit=${hitTarget?.tagName ?? 'null'} ${hitTarget?.outerHTML.slice(0, 160) ?? ''})`,
+        ).to.equal(true);
+      });
+
+    cy.get('ion-header.rt-app-header ion-back-button').click('center');
+    cy.location('pathname').should('eq', '/home');
+  });
 });

@@ -6,7 +6,7 @@ import {
   IonInput,
   IonButton
 } from '@ionic/react';
-import { locate, pause, play, send, close, stopCircle, camera, layersOutline, navigate, add, remove } from 'ionicons/icons';
+import { locate, send, close, camera, layersOutline, navigate, add, remove } from 'ionicons/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { useHistory, useParams } from 'react-router-dom';
@@ -41,6 +41,7 @@ import osmPreview from '../assets/images/default/Map/osm.png';
 import satellitePreview from '../assets/images/default/Map/satellite.png';
 import darkPreview from '../assets/images/default/Map/dark.png';
 import BottomSheet from '../components/BottomSheet';
+import RideMapRideActions from '../components/RideMapRideActions';
 import MapStyleSwitcher from '../components/MapStyleSwitcher';
 import NavigationPanel from '../components/RideMap/NavigationPanel';
 import '../styles/RideMapPage.css';
@@ -106,6 +107,8 @@ const RideMapPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [photoToast, setPhotoToast] = useState<string | null>(null);
   const [isTogglingTracking, setIsTogglingTracking] = useState(false);
+  const endingRideRef = useRef(false);
+  const [trackingTransition, setTrackingTransition] = useState<'pausing' | 'resuming' | null>(null);
   const [topRideStatus, setTopRideStatus] = useState<'Live' | 'Paused' | 'Resuming...' | 'Pausing...' | 'Resumed'>('Live');
   const [showMapStyleSheet, setShowMapStyleSheet] = useState(false);
   const [currentUserMarkerStyle, setCurrentUserMarkerStyle] = useState<MapMarkerStyle>(loadMapMarkerStyle);
@@ -114,6 +117,10 @@ const RideMapPage: React.FC = () => {
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [photoNote, setPhotoNote] = useState<string>('');
+  const photoNoteRef = useRef('');
+  const [photoSaveError, setPhotoSaveError] = useState<string | null>(null);
+  const [isSavingPhoto, setIsSavingPhoto] = useState(false);
+  const isSavingPhotoRef = useRef(false);
   const {
     elapsedSeconds,
     isRunning: isTimerRunning,
@@ -132,13 +139,24 @@ const RideMapPage: React.FC = () => {
   const handleCaptionChange = (event: CustomEvent<{ value?: string | null }>) => {
     try {
       const v = event.detail.value ?? '';
-      console.debug('[RideMap] caption change ->', v);
+      photoNoteRef.current = v;
       setPhotoNote(v);
+      setPhotoSaveError(null);
     } catch {
+      photoNoteRef.current = '';
       setPhotoNote('');
     }
   };
   const cameraIcon = camera;
+
+  const clearPhotoDraft = () => {
+    setShowPhotoModal(false);
+    setPreviewDataUrl(null);
+    photoNoteRef.current = '';
+    setPhotoNote('');
+    setPhotoSaveError(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   useEffect(() => {
     console.debug('[RideMapPage] rideId:', rideId, 'showPhotoModal:', showPhotoModal);
@@ -355,7 +373,7 @@ const RideMapPage: React.FC = () => {
     let stopped = false;
 
     const saveNow = async () => {
-      if (stopped) return;
+      if (stopped || endingRideRef.current) return;
       try {
         const existing = await getSession(rideId).catch(() => undefined);
         const base = existing ?? {
@@ -374,6 +392,7 @@ const RideMapPage: React.FC = () => {
           ),
           distanceMeters: Math.round(distanceRef.current)
         };
+        if (stopped || endingRideRef.current) return;
         await saveRideSession(updated).catch(() => undefined);
       } catch {
         // Progress persistence is retried on the next interval.
@@ -667,6 +686,9 @@ const RideMapPage: React.FC = () => {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    photoNoteRef.current = '';
+    setPhotoNote('');
+    setPhotoSaveError(null);
     try {
       const reader = new FileReader();
       reader.onload = () => {
@@ -704,7 +726,11 @@ const RideMapPage: React.FC = () => {
   };
 
   const handleSavePhoto = async () => {
-    if (!previewDataUrl) return;
+    if (!previewDataUrl || isSavingPhotoRef.current) return;
+    isSavingPhotoRef.current = true;
+    const noteAtSave = photoNoteRef.current;
+    setIsSavingPhoto(true);
+    setPhotoSaveError(null);
     try {
       // generate full and thumbnail blobs
       const full = await readImageAndResize(previewDataUrl, 1200, 0.85);
@@ -716,17 +742,17 @@ const RideMapPage: React.FC = () => {
         lat: location?.lat,
         lng: location?.lng,
         timestamp: new Date().toISOString(),
-        note: photoNote || undefined
+        note: noteAtSave || undefined
       } satisfies PhotoRecord;
       await addPhoto(photo);
       setPhotoToast('Photo saved to this ride');
-    } catch {
-      setPhotoToast('Failed to save photo');
+      clearPhotoDraft();
+    } catch (saveError) {
+      console.error('[RideMapPage] failed to save photo', saveError);
+      setPhotoSaveError('Could not save this photo. Your photo and caption are still here; try again.');
     } finally {
-      setShowPhotoModal(false);
-      setPreviewDataUrl(null);
-      setPhotoNote('');
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      isSavingPhotoRef.current = false;
+      setIsSavingPhoto(false);
     }
   };
 
@@ -746,23 +772,28 @@ const RideMapPage: React.FC = () => {
   const handleToggleTracking = async () => {
     if (isTogglingTracking) return;
     setIsTogglingTracking(true);
+    setTrackingTransition(isTracking ? 'pausing' : 'resuming');
 
     if (isTracking) {
       try {
-        setTracking(false);
-        stopTracking();
-        if (rideId) {
-          if (location) {
-            await appendTrackEvent(rideId, location, 'stopover');
-          }
-          const session = await getSession(rideId);
-          if (session) {
-            await saveRideSession({ ...session, status: 'paused' });
-          }
+        if (!rideId) throw new Error('Ride ID is missing. Your ride is still active.');
+        const session = await getSession(rideId);
+        if (!session) throw new Error('Saved ride data could not be found. Your ride is still active.');
+        if (location) {
+          await appendTrackEvent(rideId, location, 'stopover');
         }
+        await saveRideSession({ ...session, status: 'paused' });
+        stopTracking();
+        setTracking(false);
         pauseTimer();
+      } catch (pauseError) {
+        console.error('[RideMapPage] failed to pause ride', pauseError);
+        setErrorMessage(pauseError instanceof Error
+          ? `Could not pause ride: ${pauseError.message}`
+          : 'Could not pause ride. Your tracking is still active. Please try again.');
       } finally {
         setIsTogglingTracking(false);
+        setTrackingTransition(null);
       }
       return;
     }
@@ -770,104 +801,88 @@ const RideMapPage: React.FC = () => {
     try {
       const segmentId = startNewSegment();
       lastLocationRef.current = null;
-      if (rideId) {
-        const session = await getSession(rideId);
-        if (session) {
-          await saveRideSession({
-            ...session,
-            status: 'active',
-            activeSegmentId: segmentId,
-          });
-        }
-      }
-      setTracking(true);
+      if (!rideId) throw new Error('Ride ID is missing. Your ride is still paused.');
+      // Start the provider before persisting the active state. If location startup
+      // fails, the saved session remains paused and the rider can retry safely.
       await startTracking();
+      const session = await getSession(rideId);
+      if (!session) throw new Error('Saved ride data could not be found. Your ride is still paused.');
+      await saveRideSession({
+        ...session,
+        status: 'active',
+        activeSegmentId: segmentId,
+      });
+      setTracking(true);
       if (elapsedSeconds <= 0 && !isTimerRunning) {
         startTimer();
       } else {
         resumeTimer();
       }
+    } catch (resumeError) {
+      stopTracking();
+      console.error('[RideMapPage] failed to resume ride', resumeError);
+      setErrorMessage(resumeError instanceof Error
+        ? `Could not resume ride: ${resumeError.message}`
+        : 'Could not resume ride. It remains paused. Please try again.');
+    } finally {
+      setIsTogglingTracking(false);
+      setTrackingTransition(null);
+    }
+  };
+
+  const handleEndRide = async () => {
+    if (isTogglingTracking || endingRideRef.current) return;
+    console.log('[RideMapPage] handleEndRide invoked', { rideId });
+    endingRideRef.current = true;
+    setIsTogglingTracking(true);
+    try {
+      if (!rideId) throw new Error('Ride ID is missing. Your ride is still active.');
+      const existing = await getSession(rideId);
+      if (!existing) throw new Error('Saved ride data could not be found. Your ride is still active.');
+
+      const updated = {
+        ...existing,
+        endedAt: new Date().toISOString(),
+        status: 'ended' as const,
+        distanceMeters: Math.round(distanceMetersTotal),
+        durationSeconds: Math.max(
+          Math.round(elapsedSeconds),
+          Math.round(elapsedRef.current),
+          typeof existing.durationSeconds === 'number' ? Math.round(existing.durationSeconds) : 0
+        )
+      };
+      await saveRideSession(updated);
+
+      stopTracking();
+      setTracking(false);
+      try {
+        localStorage.setItem(`ride:hidden:${rideId}`, '1');
+      } catch {
+        /* Local storage may be unavailable in privacy mode. */
+      }
+      try {
+        window.dispatchEvent(new CustomEvent('ride:ended', { detail: { rideId } }));
+      } catch {
+        /* Event dispatch is best-effort during teardown. */
+      }
+      clearRide();
+      resetTimer();
+      history.push('/home');
+    } catch (endError) {
+      endingRideRef.current = false;
+      console.error('[RideMapPage] failed to end ride', endError);
+      setErrorMessage(endError instanceof Error
+        ? `Could not end ride: ${endError.message}`
+        : 'Could not save the ride. Tracking remains active; please try again.');
     } finally {
       setIsTogglingTracking(false);
     }
   };
 
-  const handleEndRide = () => {
-    console.log('[RideMapPage] handleEndRide invoked', { rideId });
-    (async () => {
-      try {
-        stopTracking();
-        setTracking(false);
-
-        // mark session ended in db so home won't show resume
-        if (rideId) {
-          try {
-            console.log('[RideMapPage] fetching session before ending', { rideId });
-            const existing = await getSession(rideId);
-            console.log('[RideMapPage] existing session', existing);
-            if (existing) {
-              const updated = {
-                ...existing,
-                endedAt: new Date().toISOString(),
-                status: 'ended' as const,
-                distanceMeters: Math.round(distanceMetersTotal),
-                durationSeconds: Math.max(
-                  Math.round(elapsedSeconds),
-                  Math.round(elapsedRef.current),
-                  typeof existing.durationSeconds === 'number' ? Math.round(existing.durationSeconds) : 0
-                )
-              };
-              console.log('[RideMapPage] ending ride, saving session:', updated);
-              await saveRideSession(updated);
-              console.log('[RideMapPage] session saved');
-              try {
-                const verify = await getSession(rideId);
-                console.log('[RideMapPage] verify saved session', verify);
-              } catch (verifyError) {
-                console.error('[RideMapPage] verify read failed', verifyError);
-              }
-              try {
-                // mark this ride as hidden for resume (keeps record in DB for history)
-                if (rideId) {
-                  localStorage.setItem(`ride:hidden:${rideId}`, '1');
-                  console.log('[RideMapPage] marked ride hidden from resume', { rideId });
-                }
-              } catch {
-                /* Local storage may be unavailable in privacy mode. */
-              }
-              try {
-                window.dispatchEvent(new CustomEvent('ride:ended', { detail: { rideId } }));
-              } catch {
-                /* Event dispatch is best-effort during teardown. */
-              }
-            } else {
-              console.warn('[RideMapPage] no existing session found to update', { rideId });
-            }
-          } catch (e) {
-            console.error('[RideMapPage] error saving ended session', e);
-          }
-        } else {
-          console.warn('[RideMapPage] no rideId present when ending ride');
-        }
-      } catch (err) {
-        console.error('[RideMapPage] unexpected error in handleEndRide', err);
-      } finally {
-        try {
-          // clear in-memory ride state so Home reflects no active ride
-          clearRide();
-        } catch (e) {
-          console.error('[RideMapPage] error clearing ride state', e);
-        }
-        resetTimer();
-        history.push('/home');
-      }
-    })();
-  };
-
   return (
     <IonPage>
       <IonContent className="ride-map-content app-page" fullscreen scrollY={false}>
-        <div className="map-wrapper">
+        <div className={`map-wrapper${isSheetExpanded ? ' map-wrapper-sheet-expanded' : ''}`}>
           <RideMapView
             center={center}
             riders={riders}
@@ -922,9 +937,12 @@ const RideMapPage: React.FC = () => {
             />
           )}
 
-          {/* ── Top bar: title + live badge only ── */}
+          {/* ── Top bar: ride title, destination context, and live badge ── */}
           <div className="map-top-bar">
-            <span className="map-title">{isSoloMode ? 'Solo ride' : 'Group ride'}</span>
+            <div className="map-title-stack" data-ride-status>
+              <span className="map-title">{isSoloMode ? 'Solo ride' : 'Group ride'}</span>
+              <span className="map-title-secondary">{navigation.destination?.label ?? 'Ride tracking'}</span>
+            </div>
             <div style={{ marginLeft: 'auto' }}>
               <span
                 className={topRideBadgeClass}
@@ -979,20 +997,11 @@ const RideMapPage: React.FC = () => {
             <button className="map-fab" onClick={handlePhotoClick} title="Add photo" aria-label="Add ride photo">
               <IonIcon icon={cameraIcon} aria-hidden="true" />
             </button>
-            <button
-              className={`map-fab${!isTracking ? ' fab-stopover' : ''}`}
-              onClick={handleToggleTracking}
-              title={isTogglingTracking ? 'Updating tracking...' : (isTracking ? 'Stopover - pause tracking' : 'Resume ride')}
-              disabled={isTogglingTracking}
-              aria-label={isTogglingTracking ? 'Updating ride tracking' : (isTracking ? 'Pause ride tracking' : 'Resume ride tracking')}
-            >
-              <IonIcon icon={isTracking ? pause : play} aria-hidden="true" />
-            </button>
             <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleFileChange} />
           </div>
 
           {/* ── Bottom sheet ── */}
-          <div className={`bottom-sheet${isSheetExpanded ? ' is-expanded' : ' is-collapsed'}`}>
+          <div className={`bottom-sheet${isSheetExpanded ? ' is-expanded' : ' is-collapsed'}`} data-sheet-state={isSheetExpanded ? 'expanded' : 'collapsed'}>
             <button
               type="button"
               className="sheet-handle"
@@ -1045,6 +1054,14 @@ const RideMapPage: React.FC = () => {
                 </div>
               </div>
 
+              <RideMapRideActions
+                isTracking={isTracking}
+                busy={isTogglingTracking}
+                transition={trackingTransition}
+                onToggleTracking={() => void handleToggleTracking()}
+                onEndRide={handleEndRide}
+              />
+
               <div className="sheet-details" id="ride-controls-details" aria-hidden={!isSheetExpanded}>
               {!isSoloMode && (
                 <div className="sheet-crew-row" aria-label={`${crewMembers.length} riders in this group ride`}>
@@ -1067,6 +1084,11 @@ const RideMapPage: React.FC = () => {
 
               {/* Topics row */}
               <div className="sheet-section-label">Quick Message</div>
+              {!isSoloMode && (
+                <p className="sheet-crew-caption" role="note">
+                  Messages and topic updates are stored on this device only. Your crew won’t receive them.
+                </p>
+              )}
               <div className="sheet-chips-row">
                 {QUICK_TOPICS.map((t) => (
                   <button
@@ -1103,11 +1125,6 @@ const RideMapPage: React.FC = () => {
                 </div>
               )}
 
-              {/* End ride */}
-              <button className="btn-end-ride" onClick={handleEndRide}>
-                <IonIcon icon={stopCircle} />
-                End Ride
-              </button>
               </div>
 
             </div>
@@ -1133,11 +1150,13 @@ const RideMapPage: React.FC = () => {
         isOpen={showPhotoModal}
         centered={true}
         ariaLabel="Save ride photo"
-        onDidDismiss={() => { setShowPhotoModal(false); }}
+        onDidDismiss={clearPhotoDraft}
         footer={(
           <div className="btn-row">
-            <IonButton className="cancel" fill="clear" onClick={() => { setShowPhotoModal(false); setPreviewDataUrl(null); setPhotoNote(''); }}>Cancel</IonButton>
-            <IonButton className="save" onClick={handleSavePhoto}>Save photo</IonButton>
+              <IonButton className="cancel" fill="clear" disabled={isSavingPhoto} onClick={clearPhotoDraft}>Cancel</IonButton>
+            <IonButton className="save" disabled={isSavingPhoto} onClick={handleSavePhoto}>
+              {isSavingPhoto ? 'Saving…' : 'Save photo'}
+            </IonButton>
           </div>
         )}
       >
@@ -1147,7 +1166,14 @@ const RideMapPage: React.FC = () => {
           </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 700, marginBottom: 6 }}>Save photo</div>
-              <IonInput ref={captionInputRef} placeholder="Add a note or caption" value={photoNote ?? ''} onIonChange={handleCaptionChange} />
+              <IonInput
+                ref={captionInputRef}
+                placeholder="Add a note or caption"
+                value={photoNote}
+                onIonInput={handleCaptionChange}
+                onIonChange={handleCaptionChange}
+              />
+              {photoSaveError && <p role="alert">{photoSaveError}</p>}
             </div>
         </div>
 

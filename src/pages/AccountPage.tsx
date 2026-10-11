@@ -1,11 +1,6 @@
 import {
   IonContent,
-  IonHeader,
   IonPage,
-  IonTitle,
-  IonToolbar,
-  IonButtons,
-  IonBackButton,
   IonToast,
   IonIcon,
 } from '@ionic/react';
@@ -15,6 +10,7 @@ import { useRideStore } from '../store/rideStore';
 import { loadUserProfile, saveUserProfile } from '../services/user';
 import { useThemePreference } from '../context/useThemePreference';
 import type { ThemePreference } from '../context/themePreference';
+import AppHeader from '../components/AppHeader';
 
 const AccountPage: React.FC = () => {
   const currentUser = useRideStore((s) => s.currentUser);
@@ -38,6 +34,8 @@ const AccountPage: React.FC = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setSaved(false);
+    setSaveError(null);
     // Resize the image to avoid localStorage quota blowups
     const resizeToDataUrl = (file: File, maxWidth = 512, quality = 0.8): Promise<string> => {
       return new Promise((resolve, reject) => {
@@ -78,13 +76,20 @@ const AccountPage: React.FC = () => {
     e.target.value = '';
   };
 
-  const handleRemoveAvatar = () => setAvatarUrl(undefined);
+  const handleRemoveAvatar = () => {
+    setAvatarUrl(undefined);
+    setSaved(false);
+    setSaveError(null);
+  };
 
   const handleSave = () => {
     const trimmedName = name.trim();
     if (!trimmedName) return;
+    setSaved(false);
     setSaveError(null);
-    const ok = saveUserProfile({ name: trimmedName, avatarUrl });
+    // The profile service treats `undefined` as "leave unchanged". An empty
+    // string explicitly removes the saved avatar from local storage.
+    const ok = saveUserProfile({ name: trimmedName, avatarUrl: avatarUrl ?? '' });
     if (!ok) {
       setSaveError('Failed to save profile — image may be too large. Try a smaller photo.');
       return;
@@ -99,16 +104,14 @@ const AccountPage: React.FC = () => {
 
   return (
     <IonPage>
-      <IonHeader>
-        <IonToolbar className="app-toolbar">
-          <IonButtons slot="start">
-            <IonBackButton defaultHref="/home" />
-          </IonButtons>
-          <IonTitle>Account</IonTitle>
-        </IonToolbar>
-      </IonHeader>
+      <AppHeader title="Account" backHref="/home" />
 
       <IonContent className="app-page page-content account-screen">
+        <div className="page-hero account-intro">
+          <h1>Your profile<br /><span>your name on the road.</span></h1>
+          <p>Personalize your profile and appearance.</p>
+        </div>
+
         {/* Avatar */}
         <div className="account-avatar-section">
           <button className="account-avatar-btn" onClick={handleAvatarClick} aria-label="Change profile photo">
@@ -129,6 +132,7 @@ const AccountPage: React.FC = () => {
             ref={fileInputRef}
             type="file"
             accept="image/*"
+            aria-label="Choose a profile photo"
             style={{ display: 'none' }}
             onChange={handleFileChange}
           />
@@ -136,14 +140,19 @@ const AccountPage: React.FC = () => {
 
         {/* Name */}
         <div className="glass-card">
-          <span className="card-label">Display Name</span>
+          <label className="card-label" htmlFor="profile-name">Display name</label>
           <div className="input-group" style={{ marginBottom: 0 }}>
             <input
+              id="profile-name"
               className="custom-input"
               type="text"
-              placeholder="Your rider name"
+              placeholder="Enter your rider name"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                setSaved(false);
+                setSaveError(null);
+              }}
               maxLength={30}
               autoComplete="off"
               autoCorrect="off"
@@ -177,6 +186,7 @@ const AccountPage: React.FC = () => {
         >
           Save Profile
         </button>
+        {saveError && <p className="home-inline-error" role="alert">{saveError}</p>}
 
         <IonToast
           isOpen={saved}
@@ -184,13 +194,6 @@ const AccountPage: React.FC = () => {
           duration={1800}
           color="success"
           onDidDismiss={() => setSaved(false)}
-        />
-        <IonToast
-          isOpen={!!saveError}
-          message={saveError ?? ''}
-          duration={3500}
-          color="warning"
-          onDidDismiss={() => setSaveError(null)}
         />
       </IonContent>
     </IonPage>

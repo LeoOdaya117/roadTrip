@@ -11,6 +11,9 @@
 # production
 /dist
 
+# local agentic ticket work
+/tickets/
+
 # misc
 .DS_Store
 .env.local
