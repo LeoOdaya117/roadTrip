@@ -35,7 +35,7 @@ const acceptedPoint = (
   timestamp: '2026-08-09T00:00:00.000Z',
 });
 
-describe('rideDb v5 persistence', () => {
+describe('rideDb v6 persistence', () => {
   beforeEach(async () => {
     rideDb.close();
     await Dexie.delete('rideTrackerDb');
@@ -303,7 +303,7 @@ describe('rideDb migration', () => {
     legacy.close();
 
     await rideDb.open();
-    expect(rideDb.verno).toBe(5);
+    expect(rideDb.verno).toBe(6);
     if (legacyVersion >= 2) {
       const [migrated] = await getTrackPoints('legacy-ride');
       expect(migrated).toMatchObject({
@@ -312,6 +312,68 @@ describe('rideDb migration', () => {
         source: 'foreground',
       });
     }
+    rideDb.close();
+    await Dexie.delete('rideTrackerDb');
+  });
+
+  it('upgrades v5 data and adds an empty saved-places table', async () => {
+    rideDb.close();
+    await Dexie.delete('rideTrackerDb');
+    const legacy = new Dexie('rideTrackerDb');
+    legacy.version(5).stores({
+      sessions: 'rideId, createdAt, status',
+      locations: 'rideId',
+      tracks: '++id, rideId, timestamp, &pointId, segmentId',
+      photos: '++id, rideId, timestamp',
+      outbox: '&pointId, rideId, status, nextAttemptAt, timestamp',
+    });
+    await legacy.table('sessions').put({
+      rideId: 'v5-ride',
+      userId: 'rider-1',
+      userName: 'Rider',
+      isHost: true,
+      createdAt: '2026-10-01T00:00:00.000Z',
+      status: 'active',
+    });
+    await legacy.table('tracks').put({
+      rideId: 'v5-ride',
+      pointId: 'v5-point',
+      segmentId: 'v5-segment',
+      source: 'foreground',
+      lat: 14.1,
+      lng: 120.9,
+      speed: null,
+      timestamp: '2026-10-01T00:00:01.000Z',
+    });
+    await legacy.table('photos').put({ rideId: 'v5-ride', timestamp: '2026-10-01T00:00:02.000Z' });
+    await legacy.table('outbox').put({
+      rideId: 'v5-ride',
+      riderId: 'rider-1',
+      pointId: 'v5-outbox-point',
+      segmentId: 'v5-segment',
+      source: 'foreground',
+      lat: 14.1,
+      lng: 120.9,
+      speed: null,
+      timestamp: '2026-10-01T00:00:03.000Z',
+      status: 'pending',
+      attempts: 0,
+      nextAttemptAt: 0,
+      createdAt: '2026-10-01T00:00:03.000Z',
+    });
+    legacy.close();
+
+    await rideDb.open();
+
+    expect(rideDb.verno).toBe(6);
+    expect(await rideDb.sessions.get('v5-ride')).toMatchObject({ status: 'active' });
+    expect(await getTrackPoints('v5-ride')).toMatchObject([
+      { pointId: 'v5-point', segmentId: 'v5-segment' },
+    ]);
+    expect(await rideDb.photos.where('rideId').equals('v5-ride').count()).toBe(1);
+    expect(await rideDb.outbox.get('v5-outbox-point')).toMatchObject({ status: 'pending' });
+    expect(await rideDb.savedPlaces.count()).toBe(0);
+
     rideDb.close();
     await Dexie.delete('rideTrackerDb');
   });

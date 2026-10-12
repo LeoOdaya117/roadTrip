@@ -1,8 +1,9 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { PlaceSearchResult } from '../../services/placeSearch';
 import type { NavigationDestination, NavigationRoute } from '../../types/ride';
+import type { SavedPlace } from '../../types/savedPlace';
 import NavigationPanel from './NavigationPanel';
 
 vi.mock('@ionic/react', () => ({
@@ -20,6 +21,14 @@ const place: PlaceSearchResult = {
 };
 
 const destination: NavigationDestination = { lat: place.lat, lng: place.lng, label: place.label };
+const savedHome: SavedPlace = {
+  id: 'home',
+  kind: 'home',
+  name: 'Home',
+  addressLabel: 'Original home address, Manila',
+  lat: 14.6,
+  lng: 121,
+};
 const route: NavigationRoute = {
   coordinates: [{ lat: 14, lng: 121 }, { lat: place.lat, lng: place.lng }],
   maneuvers: [],
@@ -36,6 +45,12 @@ const renderPanel = (overrides: Partial<React.ComponentProps<typeof NavigationPa
     isDebouncingPlaces: false,
     placeSearchError: null,
     onSelectPlace: vi.fn(),
+    savedPlaces: [],
+    isSavedPlacesLoading: false,
+    savedPlacesError: null,
+    destinationAddressLabel: null,
+    onSelectSavedPlace: vi.fn(),
+    onSavePlace: vi.fn().mockResolvedValue(savedHome),
     isPickingDestination: false,
     onTogglePicking: vi.fn(),
     onClose: vi.fn(),
@@ -65,6 +80,22 @@ describe('NavigationPanel', () => {
     fireEvent.click(screen.getByRole('option', { name: /Tagaytay/ }));
 
     expect(onSelectPlace).toHaveBeenCalledWith(place);
+  });
+
+  it('shows saved shortcuts with an empty query and forwards selection to the page', () => {
+    const onSelectSavedPlace = vi.fn();
+    renderPanel({ savedPlaces: [savedHome], onSelectSavedPlace });
+
+    fireEvent.click(screen.getByRole('button', { name: /Home.*Original home address/ }));
+
+    expect(onSelectSavedPlace).toHaveBeenCalledWith(savedHome);
+  });
+
+  it('explains how to add a saved place when the shortcut list is empty', () => {
+    renderPanel();
+
+    expect(screen.getByRole('group', { name: 'Saved places' })).toBeInTheDocument();
+    expect(screen.getByText('Add Home, Work, or a custom place in Account to use a shortcut here.')).toBeInTheDocument();
   });
 
   it('shows searching, no-results, and search-error states', () => {
@@ -122,6 +153,31 @@ describe('NavigationPanel', () => {
     expect(onToggleGuidance).toHaveBeenCalledOnce();
   });
 
+  it('quick-saves the selected destination using the original address label', async () => {
+    const onSavePlace = vi.fn().mockResolvedValue(savedHome);
+    renderPanel({ destination, destinationAddressLabel: 'Original search result label', onSavePlace });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save as Home' }));
+
+    await waitFor(() => expect(onSavePlace).toHaveBeenCalledWith({
+      kind: 'home',
+      addressLabel: 'Original search result label',
+      lat: destination.lat,
+      lng: destination.lng,
+    }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved Home');
+  });
+
+  it('shows saved-place service errors beside quick-save actions', async () => {
+    const onSavePlace = vi.fn().mockRejectedValue(new Error('Custom place name is already used.'));
+    renderPanel({ destination, onSavePlace });
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Custom place name' }), { target: { value: 'Cabin' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save custom place' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Custom place name is already used.');
+  });
+
   it('lets the rider switch from search to selecting a map pin', () => {
     const { props } = renderPanel();
     fireEvent.click(screen.getByRole('button', { name: 'Pick on map' }));
@@ -155,6 +211,12 @@ const renderPanelProps = (overrides: Partial<React.ComponentProps<typeof Navigat
   isDebouncingPlaces: false,
   placeSearchError: null,
   onSelectPlace: vi.fn(),
+  savedPlaces: [],
+  isSavedPlacesLoading: false,
+  savedPlacesError: null,
+  destinationAddressLabel: null,
+  onSelectSavedPlace: vi.fn(),
+  onSavePlace: vi.fn().mockResolvedValue(savedHome),
   isPickingDestination: false,
   onTogglePicking: vi.fn(),
   onClose: vi.fn(),

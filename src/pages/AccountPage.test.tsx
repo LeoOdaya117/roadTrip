@@ -9,6 +9,16 @@ const mocks = vi.hoisted(() => ({
   updateCurrentUser: vi.fn(),
   loadUserProfile: vi.fn(),
   saveUserProfile: vi.fn(),
+  searchPlaces: vi.fn(),
+  enterAccount: vi.fn(),
+  savedPlacesState: {
+    savedPlaces: [] as Array<{ id: string; kind: 'home' | 'work' | 'custom'; name: string; addressLabel: string; lat: number; lng: number }> ,
+    isLoading: false,
+    loadError: null as string | null,
+    refresh: vi.fn(),
+    save: vi.fn(),
+    remove: vi.fn(),
+  },
 }));
 
 vi.mock('@ionic/react', () => ({
@@ -21,6 +31,7 @@ vi.mock('@ionic/react', () => ({
   IonBackButton: () => <button type="button">Back</button>,
   IonToast: ({ isOpen, message }: { isOpen: boolean; message: string }) => isOpen ? <div role="status">{message}</div> : null,
   IonIcon: () => null,
+  useIonViewWillEnter: (callback: () => void) => { mocks.enterAccount.mockImplementation(callback); },
 }));
 
 vi.mock('../store/rideStore', () => ({
@@ -35,6 +46,15 @@ vi.mock('../services/user', () => ({
   saveUserProfile: mocks.saveUserProfile,
 }));
 
+vi.mock('../services/placeSearch', () => ({
+  PLACE_SEARCH_ATTRIBUTION: 'Geocoding by Photon · © OpenStreetMap contributors',
+  searchPlaces: mocks.searchPlaces,
+}));
+
+vi.mock('../hooks/useSavedPlaces', () => ({
+  useSavedPlaces: () => mocks.savedPlacesState,
+}));
+
 const renderAccount = () => render(<ThemeProvider><AccountPage /></ThemeProvider>);
 
 describe('AccountPage', () => {
@@ -45,6 +65,25 @@ describe('AccountPage', () => {
     mocks.currentUser.avatarUrl = undefined;
     mocks.loadUserProfile.mockReturnValue({ name: 'Rider One', avatarUrl: 'data:image/jpeg;base64,old-avatar' });
     mocks.saveUserProfile.mockReturnValue(true);
+    mocks.searchPlaces.mockResolvedValue([{
+      label: 'Tagaytay, Cavite, Philippines',
+      lat: 14.1,
+      lng: 120.9,
+      attribution: 'Photon',
+    }]);
+    mocks.savedPlacesState.savedPlaces = [];
+    mocks.savedPlacesState.isLoading = false;
+    mocks.savedPlacesState.loadError = null;
+    mocks.savedPlacesState.refresh.mockReset();
+    mocks.savedPlacesState.save.mockReset().mockImplementation(async (input) => ({
+      id: input.id ?? input.kind,
+      kind: input.kind,
+      name: input.kind === 'custom' ? input.name ?? 'Custom place' : input.kind === 'home' ? 'Home' : 'Work',
+      addressLabel: input.addressLabel,
+      lat: input.lat,
+      lng: input.lng,
+    }));
+    mocks.savedPlacesState.remove.mockReset().mockResolvedValue(undefined);
   });
 
   it('uploads and removes an avatar, clearing a stale saved notice after either edit', async () => {
@@ -139,5 +178,133 @@ describe('AccountPage', () => {
     await waitFor(() => expect(localStorage.getItem('roadtrip:theme-preference')).toBe('system'));
     expect(screen.getByRole('button', { name: 'System' })).toHaveAttribute('aria-pressed', 'true');
     expect(mocks.saveUserProfile).not.toHaveBeenCalled();
+  });
+
+  it('refreshes saved places whenever the cached Account view enters', () => {
+    renderAccount();
+
+    mocks.enterAccount();
+
+    expect(mocks.savedPlacesState.refresh).toHaveBeenCalledOnce();
+  });
+
+  it('shows an empty state for device-local saved places', () => {
+    renderAccount();
+
+    expect(screen.getByRole('heading', { name: 'Saved places' })).toBeInTheDocument();
+    expect(screen.getByText('No saved places yet. Add a place below to use it in ride setup and navigation.')).toBeInTheDocument();
+  });
+
+  it('shows saved-place load errors and offers a retry', () => {
+    mocks.savedPlacesState.loadError = 'Saved places could not be loaded.';
+    renderAccount();
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Saved places could not be loaded.');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(mocks.savedPlacesState.refresh).toHaveBeenCalledOnce();
+  });
+
+  it('adds a custom place from a selected Photon result', async () => {
+    renderAccount();
+    fireEvent.change(screen.getByLabelText('Shortcut type'), { target: { value: 'custom' } });
+    fireEvent.change(screen.getByLabelText('Place name'), { target: { value: 'Weekend cabin' } });
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search for a location' }), { target: { value: 'Tagaytay' } });
+    fireEvent.click(await screen.findByRole('option', { name: /Tagaytay, Cavite/ }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save custom place' }));
+
+    await waitFor(() => expect(mocks.savedPlacesState.save).toHaveBeenCalledWith({
+      kind: 'custom',
+      name: 'Weekend cabin',
+      addressLabel: 'Tagaytay, Cavite, Philippines',
+      lat: 14.1,
+      lng: 120.9,
+    }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved Weekend cabin');
+  });
+
+  it('reports saved-place persistence failures inline', async () => {
+    mocks.savedPlacesState.save.mockRejectedValueOnce(new Error('Local storage is unavailable.'));
+    renderAccount();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search for a location' }), { target: { value: 'Tagaytay' } });
+    fireEvent.click(await screen.findByRole('option', { name: /Tagaytay, Cavite/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Home' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Local storage is unavailable.');
+  });
+
+  it('edits a custom name and replaces its location with another search result', async () => {
+    mocks.savedPlacesState.savedPlaces = [{
+      id: 'custom-1',
+      kind: 'custom',
+      name: 'Old cabin',
+      addressLabel: 'Old road, Tagaytay',
+      lat: 14.2,
+      lng: 120.8,
+    }];
+    renderAccount();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Old cabin' }));
+    fireEvent.change(screen.getByLabelText('Place name'), { target: { value: 'Family cabin' } });
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search for a location' }), { target: { value: 'Tagaytay' } });
+    fireEvent.click(await screen.findByRole('option', { name: /Tagaytay, Cavite/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(mocks.savedPlacesState.save).toHaveBeenCalledWith({
+      id: 'custom-1',
+      kind: 'custom',
+      name: 'Family cabin',
+      addressLabel: 'Tagaytay, Cavite, Philippines',
+      lat: 14.1,
+      lng: 120.9,
+    }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Updated Family cabin');
+  });
+
+  it('updates a saved Home location from a selected search result', async () => {
+    mocks.savedPlacesState.savedPlaces = [{
+      id: 'home',
+      kind: 'home',
+      name: 'Home',
+      addressLabel: 'Current home, Manila',
+      lat: 14.6,
+      lng: 121,
+    }];
+    renderAccount();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Home' }));
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search for a location' }), { target: { value: 'Tagaytay' } });
+    fireEvent.click(await screen.findByRole('option', { name: /Tagaytay, Cavite/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(mocks.savedPlacesState.save).toHaveBeenCalledWith({
+      id: 'home',
+      kind: 'home',
+      addressLabel: 'Tagaytay, Cavite, Philippines',
+      lat: 14.1,
+      lng: 120.9,
+    }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Updated Home');
+  });
+
+  it('explains Home replacement and confirms a removal before calling persistence', async () => {
+    mocks.savedPlacesState.savedPlaces = [{
+      id: 'home',
+      kind: 'home',
+      name: 'Home',
+      addressLabel: 'Current home, Manila',
+      lat: 14.6,
+      lng: 121,
+    }];
+    renderAccount();
+
+    expect(screen.getByText('Saving Home replaces the current shortcut.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Home' }));
+    expect(mocks.savedPlacesState.remove).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm remove Home' }));
+
+    await waitFor(() => expect(mocks.savedPlacesState.remove).toHaveBeenCalledWith('home'));
+    expect(await screen.findByRole('status')).toHaveTextContent('Removed Home');
   });
 });

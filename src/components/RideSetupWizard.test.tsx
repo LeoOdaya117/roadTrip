@@ -2,6 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NavigationRouteOption } from '../types/ride';
+import type { SavedPlace } from '../types/savedPlace';
 import RideSetupWizard from './RideSetupWizard';
 
 const mocks = vi.hoisted(() => ({
@@ -42,6 +43,29 @@ const routes: NavigationRouteOption[] = [
   { label: 'Alternative 1', route: { coordinates: [{ lat: 14.6, lng: 121 }, destination], maneuvers: [], distanceMeters: 52_000, durationSeconds: 6000 } },
 ];
 
+const savedHome: SavedPlace = {
+  id: 'home',
+  kind: 'home',
+  name: 'Home',
+  addressLabel: 'Original home address, Manila',
+  lat: 14.6,
+  lng: 121,
+};
+
+const renderWizard = (props: Partial<React.ComponentProps<typeof RideSetupWizard>> = {}) => render(
+  <RideSetupWizard
+    busy={false}
+    onCancel={vi.fn()}
+    onContinue={vi.fn()}
+    savedPlaces={[]}
+    isSavedPlacesLoading={false}
+    savedPlacesError={null}
+    onSelectSavedPlace={vi.fn()}
+    onSavePlace={vi.fn().mockResolvedValue(savedHome)}
+    {...props}
+  />,
+);
+
 const chooseModeAndDestination = async (mode: 'Solo ride' | 'Group ride' = 'Solo ride') => {
   fireEvent.click(screen.getByRole('radio', { name: new RegExp(mode) }));
   fireEvent.click(screen.getByRole('button', { name: 'Choose destination' }));
@@ -72,7 +96,7 @@ describe('RideSetupWizard', () => {
   });
 
   it('uses native radio controls and delays requesting location until destination selection', async () => {
-    render(<RideSetupWizard busy={false} onCancel={vi.fn()} onContinue={vi.fn()} />);
+    renderWizard();
     expect(screen.getByRole('radio', { name: /Solo ride/ })).toHaveAttribute('type', 'radio');
     expect(mocks.getCurrentLocationFix).not.toHaveBeenCalled();
     await chooseModeAndDestination();
@@ -81,7 +105,7 @@ describe('RideSetupWizard', () => {
 
   it('requires the same Use destination action for search results and map pins', async () => {
     const onContinue = vi.fn();
-    render(<RideSetupWizard busy={false} onCancel={vi.fn()} onContinue={onContinue} />);
+    renderWizard({ onContinue });
     await chooseModeAndDestination();
     const result = await chooseSearchResult();
     expect(result).toHaveAttribute('aria-pressed', 'true');
@@ -108,7 +132,7 @@ describe('RideSetupWizard', () => {
 
   it('compares Android routes, lets the rider choose one, and creates only on review confirmation', async () => {
     const onContinue = vi.fn();
-    render(<RideSetupWizard busy={false} onCancel={vi.fn()} onContinue={onContinue} />);
+    renderWizard({ onContinue });
     await chooseModeAndDestination('Group ride');
     await chooseSearchResult();
     fireEvent.click(screen.getByRole('button', { name: 'Use destination' }));
@@ -126,7 +150,7 @@ describe('RideSetupWizard', () => {
   it('uses three web stages and omits route estimates from the web review', async () => {
     mocks.supportsTurnByTurnNavigation.mockReturnValue(false);
     const onContinue = vi.fn();
-    render(<RideSetupWizard busy={false} onCancel={vi.fn()} onContinue={onContinue} />);
+    renderWizard({ onContinue });
     expect(screen.getByLabelText('Step 1 of 3')).toBeInTheDocument();
     await chooseModeAndDestination();
     expect(screen.getByLabelText('Step 2 of 3')).toBeInTheDocument();
@@ -142,10 +166,70 @@ describe('RideSetupWizard', () => {
     expect(mocks.calculateRouteOptions).not.toHaveBeenCalled();
   });
 
+  it('offers saved shortcuts without searching and hands the saved name and coordinates to ride setup', async () => {
+    mocks.supportsTurnByTurnNavigation.mockReturnValue(false);
+    const onContinue = vi.fn();
+    const onSelectSavedPlace = vi.fn();
+    renderWizard({ savedPlaces: [savedHome], onContinue, onSelectSavedPlace });
+    await chooseModeAndDestination();
+
+    expect(screen.getByRole('group', { name: 'Saved places' })).toBeInTheDocument();
+    expect(mocks.searchPlaces).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /Home.*Original home address/ }));
+    expect(onSelectSavedPlace).toHaveBeenCalledWith(savedHome);
+    expect(await screen.findByText('Selected · Home')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use destination' }));
+    expect(await screen.findByRole('heading', { name: 'Review your ride' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Start solo ride' }));
+    expect(onContinue).toHaveBeenCalledWith('solo', { lat: 14.6, lng: 121, label: 'Home' }, 0);
+    expect(mocks.searchPlaces).not.toHaveBeenCalled();
+  });
+
+  it('uses a saved shortcut for group route comparison and ride creation', async () => {
+    const onContinue = vi.fn();
+    const onSelectSavedPlace = vi.fn();
+    renderWizard({ savedPlaces: [savedHome], onContinue, onSelectSavedPlace });
+    await chooseModeAndDestination('Group ride');
+
+    fireEvent.click(screen.getByRole('button', { name: /Home.*Original home address/ }));
+    expect(onSelectSavedPlace).toHaveBeenCalledWith(savedHome);
+    fireEvent.click(screen.getByRole('button', { name: 'Use destination' }));
+    expect(await screen.findByRole('heading', { name: 'Choose your route' })).toBeInTheDocument();
+    await waitFor(() => expect(mocks.calculateRouteOptions).toHaveBeenCalledWith(
+      { lat: location.lat, lng: location.lng },
+      { lat: savedHome.lat, lng: savedHome.lng, label: 'Home' },
+    ));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review ride' }));
+    expect(await screen.findByRole('heading', { name: 'Review your ride' })).toBeInTheDocument();
+    expect(screen.getByText('Home')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create group ride' }));
+    expect(onContinue).toHaveBeenCalledWith('group', { lat: savedHome.lat, lng: savedHome.lng, label: 'Home' }, 0);
+    expect(mocks.searchPlaces).not.toHaveBeenCalled();
+  });
+
+  it('quick-saves the selected Photon result with its original address label and coordinates', async () => {
+    const onSavePlace = vi.fn().mockResolvedValue({ ...savedHome, name: 'Home' });
+    renderWizard({ onSavePlace });
+    await chooseModeAndDestination();
+    await chooseSearchResult();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save as Home' }));
+
+    await waitFor(() => expect(onSavePlace).toHaveBeenCalledWith({
+      kind: 'home',
+      addressLabel: 'Tagaytay, Cavite',
+      lat: 14.1,
+      lng: 120.9,
+    }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved Home');
+  });
+
   it('offers Retry and Continue without guidance when route calculation fails', async () => {
     mocks.calculateRouteOptions.mockRejectedValueOnce(new Error('Routing service offline.'));
     const onContinue = vi.fn();
-    render(<RideSetupWizard busy={false} onCancel={vi.fn()} onContinue={onContinue} />);
+    renderWizard({ onContinue });
     await chooseModeAndDestination();
     await chooseSearchResult();
     fireEvent.click(screen.getByRole('button', { name: 'Use destination' }));
@@ -162,7 +246,7 @@ describe('RideSetupWizard', () => {
       .mockRejectedValueOnce(new Error('Location permission denied.'))
       .mockResolvedValueOnce(location);
     const onContinue = vi.fn();
-    render(<RideSetupWizard busy={false} onCancel={vi.fn()} onContinue={onContinue} />);
+    renderWizard({ onContinue });
     await chooseModeAndDestination('Group ride');
     await chooseSearchResult();
     fireEvent.click(screen.getByRole('button', { name: 'Use destination' }));
@@ -181,7 +265,7 @@ describe('RideSetupWizard', () => {
   it('allows continuing without guidance after location fails', async () => {
     mocks.getCurrentLocationFix.mockRejectedValue(new Error('Location permission denied.'));
     const onContinue = vi.fn();
-    render(<RideSetupWizard busy={false} onCancel={vi.fn()} onContinue={onContinue} />);
+    renderWizard({ onContinue });
     await chooseModeAndDestination('Group ride');
     await chooseSearchResult();
     fireEvent.click(screen.getByRole('button', { name: 'Use destination' }));
@@ -194,7 +278,7 @@ describe('RideSetupWizard', () => {
 
   it('closes setup on Escape and Android back from any stage', async () => {
     const onCancel = vi.fn();
-    render(<RideSetupWizard busy={false} onCancel={onCancel} onContinue={vi.fn()} />);
+    renderWizard({ onCancel });
     await chooseModeAndDestination();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onCancel).toHaveBeenCalledTimes(1);
@@ -207,7 +291,7 @@ describe('RideSetupWizard', () => {
 
   it('dismisses destination suggestions before Escape or Android back cancels setup', async () => {
     const onCancel = vi.fn();
-    render(<RideSetupWizard busy={false} onCancel={onCancel} onContinue={vi.fn()} />);
+    renderWizard({ onCancel });
     await chooseModeAndDestination();
     const search = screen.getByRole('searchbox', { name: 'Search destination' });
     fireEvent.change(search, { target: { value: 'Tagaytay' } });
@@ -239,7 +323,7 @@ describe('RideSetupWizard', () => {
 
   it('does not cancel setup while ride creation is busy', () => {
     const onCancel = vi.fn();
-    render(<RideSetupWizard busy onCancel={onCancel} onContinue={vi.fn()} />);
+    renderWizard({ busy: true, onCancel });
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onCancel).not.toHaveBeenCalled();
   });

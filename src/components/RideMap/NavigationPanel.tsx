@@ -2,6 +2,8 @@ import { IonButton, IonIcon } from '@ionic/react';
 import { closeOutline } from 'ionicons/icons';
 import { PLACE_SEARCH_ATTRIBUTION, type PlaceSearchResult } from '../../services/placeSearch';
 import type { NavigationDestination, NavigationRoute } from '../../types/ride';
+import type { SavedPlace, SavedPlaceInput } from '../../types/savedPlace';
+import { useState } from 'react';
 
 type Props = {
   query: string;
@@ -11,6 +13,12 @@ type Props = {
   isDebouncingPlaces: boolean;
   placeSearchError: string | null;
   onSelectPlace: (place: PlaceSearchResult) => void;
+  savedPlaces: SavedPlace[];
+  isSavedPlacesLoading: boolean;
+  savedPlacesError: string | null;
+  destinationAddressLabel?: string | null;
+  onSelectSavedPlace: (place: SavedPlace) => void;
+  onSavePlace: (input: SavedPlaceInput) => Promise<SavedPlace>;
   isPickingDestination: boolean;
   onTogglePicking: () => void;
   onClose: () => void;
@@ -37,6 +45,12 @@ const NavigationPanel: React.FC<Props> = ({
   isDebouncingPlaces,
   placeSearchError,
   onSelectPlace,
+  savedPlaces,
+  isSavedPlacesLoading,
+  savedPlacesError,
+  destinationAddressLabel,
+  onSelectSavedPlace,
+  onSavePlace,
   isPickingDestination,
   onTogglePicking,
   onClose,
@@ -55,6 +69,34 @@ const NavigationPanel: React.FC<Props> = ({
   onDownloadTiles,
 }) => {
   const hasEnoughQuery = query.trim().length >= 3;
+  const [customPlaceName, setCustomPlaceName] = useState('');
+  const [isSavingPlace, setIsSavingPlace] = useState(false);
+  const [savedPlaceError, setSavedPlaceError] = useState<string | null>(null);
+  const [savedPlaceStatus, setSavedPlaceStatus] = useState<string | null>(null);
+
+  const saveDestination = async (kind: 'home' | 'work' | 'custom') => {
+    if (!destination) return;
+    const name = customPlaceName.trim();
+    if (kind === 'custom' && !name) return;
+    setSavedPlaceError(null);
+    setSavedPlaceStatus(null);
+    setIsSavingPlace(true);
+    try {
+      const savedPlace = await onSavePlace({
+        kind,
+        ...(kind === 'custom' ? { name } : {}),
+        addressLabel: destinationAddressLabel ?? destination.label,
+        lat: destination.lat,
+        lng: destination.lng,
+      });
+      setSavedPlaceStatus(`Saved ${savedPlace.name}.`);
+      if (kind === 'custom') setCustomPlaceName('');
+    } catch (error) {
+      setSavedPlaceError(error instanceof Error ? error.message : 'Could not save this place.');
+    } finally {
+      setIsSavingPlace(false);
+    }
+  };
 
   return (
     <section className={`navigation-panel${isGuiding ? ' navigation-panel-guiding' : ''}`} aria-label="Destination search and route options">
@@ -94,6 +136,22 @@ const NavigationPanel: React.FC<Props> = ({
           <p className="navigation-search-help" id="navigation-search-help">
             {isPickingDestination ? 'Tap anywhere on the map to set your destination.' : 'Search results are limited to the Philippines.'}
           </p>
+          {!query.trim() && (
+            <div className="navigation-favorite-list" role="group" aria-label="Saved places">
+              <div className="navigation-favorite-heading">Saved places</div>
+              {savedPlacesError && <p className="navigation-favorite-error" role="alert">{savedPlacesError}</p>}
+              {isSavedPlacesLoading && <p className="navigation-favorite-status" role="status">Loading saved places…</p>}
+              {!isSavedPlacesLoading && !savedPlacesError && savedPlaces.length === 0 && (
+                <p className="navigation-favorite-status">Add Home, Work, or a custom place in Account to use a shortcut here.</p>
+              )}
+              {savedPlaces.map((place) => (
+                <button type="button" className="navigation-favorite" key={place.id} onClick={() => onSelectSavedPlace(place)}>
+                  <span><strong>{place.name}</strong><small>{place.addressLabel}</small></span>
+                  <span aria-hidden="true">›</span>
+                </button>
+              ))}
+            </div>
+          )}
           {placeResults.length > 0 && (
             <div className="navigation-place-results" role="listbox" aria-label="Place search results">
               {placeResults.map((place, index) => (
@@ -147,6 +205,31 @@ const NavigationPanel: React.FC<Props> = ({
             <IonButton size="small" fill="clear" onClick={onClearDestination}>
               Edit destination
             </IonButton>
+          </div>
+          <div className="navigation-save-place" aria-label="Save selected destination">
+            <span className="navigation-save-place-title">Save this place</span>
+            <div className="navigation-save-place-actions">
+              <button type="button" onClick={() => void saveDestination('home')} disabled={isSavingPlace}>
+                {savedPlaces.some((place) => place.kind === 'home') ? 'Replace Home' : 'Save as Home'}
+              </button>
+              <button type="button" onClick={() => void saveDestination('work')} disabled={isSavingPlace}>
+                {savedPlaces.some((place) => place.kind === 'work') ? 'Replace Work' : 'Save as Work'}
+              </button>
+            </div>
+            <label className="navigation-save-place-name">
+              <span className="sr-only">Custom place name</span>
+              <input
+                value={customPlaceName}
+                onChange={(event) => setCustomPlaceName(event.target.value)}
+                placeholder="Name a custom place"
+                maxLength={60}
+              />
+            </label>
+            <button type="button" onClick={() => void saveDestination('custom')} disabled={isSavingPlace || !customPlaceName.trim()}>
+              {isSavingPlace ? 'Saving…' : 'Save custom place'}
+            </button>
+            {savedPlaceError && <p className="navigation-favorite-error" role="alert">{savedPlaceError}</p>}
+            {savedPlaceStatus && <p className="navigation-favorite-status" role="status">{savedPlaceStatus}</p>}
           </div>
         </div>
       )}

@@ -25,6 +25,15 @@ const mocks = vi.hoisted(() => ({
   resumeTimer: vi.fn(),
   startTimer: vi.fn(),
   resetTimer: vi.fn(),
+  savedPlaces: [] as Array<{
+    id: string;
+    kind: 'home' | 'work' | 'custom';
+    name: string;
+    addressLabel: string;
+    lat: number;
+    lng: number;
+  }>,
+  savePlace: vi.fn(),
 }));
 
 vi.mock('@ionic/react', () => ({
@@ -86,6 +95,16 @@ vi.mock('../hooks/useRideNavigation', () => ({
     mocks.navigationFreshness = args[3] === true;
     return mocks.navigationState;
   },
+}));
+vi.mock('../hooks/useSavedPlaces', () => ({
+  useSavedPlaces: () => ({
+    savedPlaces: mocks.savedPlaces,
+    isLoading: false,
+    loadError: null,
+    refresh: vi.fn(),
+    save: mocks.savePlace,
+    remove: vi.fn(),
+  }),
 }));
 vi.mock('../hooks/useMockRiders', () => ({ useMockRiders: vi.fn() }));
 vi.mock('../hooks/useNetworkStatus', () => ({ useNetworkStatus: () => true }));
@@ -152,8 +171,21 @@ vi.mock('../components/BottomSheet', () => ({
 }));
 vi.mock('../components/MapStyleSwitcher', () => ({ default: () => null }));
 vi.mock('../components/RideMap/NavigationPanel', () => ({
-  default: ({ onClose, hasLocation }: { onClose: () => void; hasLocation: boolean }) => (
+  default: ({
+    onClose,
+    hasLocation,
+    savedPlaces,
+    onSelectSavedPlace,
+  }: {
+    onClose: () => void;
+    hasLocation: boolean;
+    savedPlaces: typeof mocks.savedPlaces;
+    onSelectSavedPlace: (place: (typeof mocks.savedPlaces)[number]) => void;
+  }) => (
     <section aria-label="Destination panel" data-location-fresh={hasLocation}>
+      {savedPlaces.map((place) => (
+        <button type="button" key={place.id} onClick={() => onSelectSavedPlace(place)}>{place.name}</button>
+      ))}
       <button type="button" onClick={onClose}>Close navigation panel</button>
     </section>
   ),
@@ -212,6 +244,8 @@ describe('RideMapPage ride lifecycle actions', () => {
       clearDestination: vi.fn(),
       downloadTiles: vi.fn(),
     };
+    mocks.savedPlaces = [];
+    mocks.savePlace.mockResolvedValue(undefined);
     mocks.getSession.mockResolvedValue(activeSession);
     mocks.getLastLocation.mockResolvedValue(undefined);
     mocks.getTrackPoints.mockResolvedValue([]);
@@ -457,6 +491,26 @@ describe('RideMapPage ride lifecycle actions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Navigate to a place' }));
     expect(screen.getByRole('region', { name: 'Destination panel' })).toBeInTheDocument();
     expect(screen.getByLabelText('Turn-by-turn guidance')).toBeInTheDocument();
+  });
+
+  it('uses the saved place name and coordinates in the existing navigation destination flow', async () => {
+    mocks.platform = 'android';
+    const setDestination = vi.fn().mockResolvedValue(undefined);
+    mocks.navigationState = { ...mocks.navigationState, setDestination };
+    mocks.savedPlaces = [{
+      id: 'home',
+      kind: 'home',
+      name: 'Home',
+      addressLabel: 'Quezon City, Philippines',
+      lat: 14.65,
+      lng: 121.05,
+    }];
+    renderRideMap(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Navigate to a place' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Home' }));
+
+    expect(setDestination).toHaveBeenCalledWith({ lat: 14.65, lng: 121.05, label: 'Home' });
   });
 
   it('gates turn details and destination actions on fresh GPS even while retaining the accepted location', async () => {

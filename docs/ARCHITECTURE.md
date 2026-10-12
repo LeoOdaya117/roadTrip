@@ -247,7 +247,7 @@ values are metres unless a UI formatter explicitly converts them.
 
 ### IndexedDB
 
-Database name: `rideTrackerDb`. The current schema is version 5.
+Database name: `rideTrackerDb`. The current schema is version 6.
 
 | Table | Key/indexes | Purpose |
 | --- | --- | --- |
@@ -256,11 +256,14 @@ Database name: `rideTrackerDb`. The current schema is version 5.
 | `tracks` | Auto key `id`; indexes `rideId`, `timestamp`, unique `pointId`, `segmentId` | Filtered owner track and stopovers |
 | `photos` | Auto key `id`; indexes `rideId`, `timestamp` | Full/thumbnail blobs and metadata |
 | `outbox` | Unique key `pointId`; indexes ride, status, retry time, timestamp | Durable feature-gated group batches |
+| `savedPlaces` | Primary key `id`; unique normalized `nameKey`; index `kind` | Device-local Home, Work, and custom destinations |
 
 Schema history is meaningful: v1 created sessions/locations, v2 added tracks, v3
 indexed session creation time, v4 added photos, and v5 added point/segment metadata
-plus the outbox. The v5 upgrade backfills legacy tracks deterministically. A schema
-change requires a new Dexie version and an explicit compatibility/migration decision.
+plus the outbox. The v5 upgrade backfills legacy tracks deterministically. Version 6
+adds saved places without changing ride records. Saved places remain on this device
+and are available offline; they are not synchronized to the backend. A schema change
+requires a new Dexie version and an explicit compatibility/migration decision.
 
 ### Local storage
 

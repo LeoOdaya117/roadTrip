@@ -7,11 +7,17 @@ import { calculateRouteOptions, supportsTurnByTurnNavigation } from '../services
 import { getCurrentLocationFix } from '../services/currentLocation';
 import { PLACE_SEARCH_ATTRIBUTION, searchPlaces, type PlaceSearchResult } from '../services/placeSearch';
 import type { LocationPoint, NavigationDestination, NavigationRouteOption } from '../types/ride';
+import type { SavedPlace, SavedPlaceInput, SavedPlaceKind } from '../types/savedPlace';
 
 type Props = {
   busy: boolean;
   errorMessage?: string | null;
   isModalPresented?: boolean;
+  savedPlaces: SavedPlace[];
+  isSavedPlacesLoading: boolean;
+  savedPlacesError: string | null;
+  onSelectSavedPlace: (place: SavedPlace) => void;
+  onSavePlace: (input: SavedPlaceInput) => Promise<SavedPlace>;
   onCancel: () => void;
   onContinue: (mode: 'group' | 'solo', destination: NavigationDestination, routeIndex: number) => void;
 };
@@ -78,7 +84,18 @@ type IonicBackButtonEvent = CustomEvent<{
   register: (priority: number, handler: () => void) => void;
 }>;
 
-const RideSetupWizard: React.FC<Props> = ({ busy, errorMessage, isModalPresented, onCancel, onContinue }) => {
+const RideSetupWizard: React.FC<Props> = ({
+  busy,
+  errorMessage,
+  isModalPresented,
+  savedPlaces,
+  isSavedPlacesLoading,
+  savedPlacesError,
+  onSelectSavedPlace,
+  onSavePlace,
+  onCancel,
+  onContinue,
+}) => {
   const supported = supportsTurnByTurnNavigation();
   const totalSteps = supported ? 4 : 3;
   const [step, setStep] = useState<Step>('mode');
@@ -95,6 +112,11 @@ const RideSetupWizard: React.FC<Props> = ({ busy, errorMessage, isModalPresented
   const [locationRetryCount, setLocationRetryCount] = useState(0);
   const [destination, setDestination] = useState<NavigationDestination | null>(null);
   const [candidate, setCandidate] = useState<NavigationDestination | null>(null);
+  const [candidateAddressLabel, setCandidateAddressLabel] = useState<string | null>(null);
+  const [customSavedPlaceName, setCustomSavedPlaceName] = useState('');
+  const [savedPlaceMutationError, setSavedPlaceMutationError] = useState<string | null>(null);
+  const [savedPlaceMutationStatus, setSavedPlaceMutationStatus] = useState<string | null>(null);
+  const [isSavingPlace, setIsSavingPlace] = useState(false);
   const [routeOptions, setRouteOptions] = useState<NavigationRouteOption[]>([]);
   const [selectedRouteIndex, setSelectedRouteIndex] = useState(0);
   const [isRouting, setIsRouting] = useState(false);
@@ -280,6 +302,42 @@ const RideSetupWizard: React.FC<Props> = ({ busy, errorMessage, isModalPresented
     setRouteRetryCount((count) => count + 1);
   };
 
+  const selectSavedPlace = (place: SavedPlace) => {
+    onSelectSavedPlace(place);
+    setCandidate({ lat: place.lat, lng: place.lng, label: place.name });
+    setCandidateAddressLabel(place.addressLabel);
+    setQuery('');
+    setResults([]);
+    setSearchError(null);
+    setIsSearchPanelDismissed(false);
+    setSavedPlaceMutationError(null);
+    setSavedPlaceMutationStatus(null);
+  };
+
+  const saveCandidate = async (kind: SavedPlaceKind) => {
+    if (!candidate) return;
+    const name = customSavedPlaceName.trim();
+    if (kind === 'custom' && !name) return;
+    setSavedPlaceMutationError(null);
+    setSavedPlaceMutationStatus(null);
+    setIsSavingPlace(true);
+    try {
+      const savedPlace = await onSavePlace({
+        kind,
+        ...(kind === 'custom' ? { name } : {}),
+        addressLabel: candidateAddressLabel ?? candidate.label,
+        lat: candidate.lat,
+        lng: candidate.lng,
+      });
+      setSavedPlaceMutationStatus(`Saved ${savedPlace.name}.`);
+      if (kind === 'custom') setCustomSavedPlaceName('');
+    } catch (error) {
+      setSavedPlaceMutationError(error instanceof Error ? error.message : 'Could not save this place.');
+    } finally {
+      setIsSavingPlace(false);
+    }
+  };
+
   const title = step === 'mode'
     ? 'How are you riding?'
     : step === 'destination'
@@ -335,6 +393,9 @@ const RideSetupWizard: React.FC<Props> = ({ busy, errorMessage, isModalPresented
               <MapTap onPick={(lat, lng) => {
                 setIsSearchPanelDismissed(true);
                 setCandidate({ lat, lng, label: `Map pin · ${lat.toFixed(4)}, ${lng.toFixed(4)}` });
+                setCandidateAddressLabel(`Map pin · ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+                setSavedPlaceMutationError(null);
+                setSavedPlaceMutationStatus(null);
               }} />
               {location && <CircleMarker center={[location.lat, location.lng]} radius={7} pathOptions={{ color: '#256af4', fillColor: '#78a5ff', fillOpacity: 1 }} />}
               {candidate && <CircleMarker center={[candidate.lat, candidate.lng]} radius={9} pathOptions={{ color: '#c77726', fillColor: '#f1b35f', fillOpacity: 1 }} />}
@@ -354,8 +415,11 @@ const RideSetupWizard: React.FC<Props> = ({ busy, errorMessage, isModalPresented
                     setQuery(nextQuery);
                     setIsSearchPanelDismissed(false);
                     setCandidate(null);
+                    setCandidateAddressLabel(null);
                     setResults([]);
                     setSearchError(null);
+                    setSavedPlaceMutationError(null);
+                    setSavedPlaceMutationStatus(null);
                     setIsSearching(nextQuery.trim().length >= 2);
                   }}
                   onFocus={() => {
@@ -395,7 +459,10 @@ const RideSetupWizard: React.FC<Props> = ({ busy, errorMessage, isModalPresented
                           aria-pressed={isSelected}
                           onClick={() => {
                             setCandidate({ lat: place.lat, lng: place.lng, label: place.label });
+                            setCandidateAddressLabel(place.label);
                             setIsSearchPanelDismissed(true);
+                            setSavedPlaceMutationError(null);
+                            setSavedPlaceMutationStatus(null);
                             if (document.activeElement !== destinationSearchRef.current) {
                               preserveSearchDismissalOnFocusRef.current = true;
                               destinationSearchRef.current?.focus();
@@ -411,6 +478,53 @@ const RideSetupWizard: React.FC<Props> = ({ busy, errorMessage, isModalPresented
                   </div>
                 )}
               </div>
+              {!query.trim() && (savedPlaces.length > 0 || isSavedPlacesLoading || savedPlacesError) && (
+                <div className="ride-setup-favorites" role="group" aria-label="Saved places">
+                  <div className="ride-setup-favorites-heading">Saved places</div>
+                  {savedPlacesError && <p className="ride-setup-favorites-error" role="alert">{savedPlacesError}</p>}
+                  {isSavedPlacesLoading && <p className="ride-setup-favorites-status" role="status">Loading saved places…</p>}
+                  {savedPlaces.map((place) => (
+                    <button
+                      key={place.id}
+                      type="button"
+                      className="ride-setup-favorite"
+                      aria-pressed={candidate?.lat === place.lat && candidate.lng === place.lng && candidate.label === place.name}
+                      onClick={() => selectSavedPlace(place)}
+                    >
+                      <span><strong>{place.name}</strong><small>{place.addressLabel}</small></span>
+                      <span aria-hidden="true">›</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {candidate && (
+                <div className="ride-setup-quick-save" aria-label="Save selected destination">
+                  <span className="ride-setup-quick-save-label">Save selected place</span>
+                  <div className="ride-setup-quick-save-actions">
+                    <button type="button" onClick={() => void saveCandidate('home')} disabled={busy || isSavingPlace}>
+                      {savedPlaces.some((place) => place.kind === 'home') ? 'Replace Home' : 'Save as Home'}
+                    </button>
+                    <button type="button" onClick={() => void saveCandidate('work')} disabled={busy || isSavingPlace}>
+                      {savedPlaces.some((place) => place.kind === 'work') ? 'Replace Work' : 'Save as Work'}
+                    </button>
+                  </div>
+                  <label className="ride-setup-custom-place-name">
+                    <span className="sr-only">Custom place name</span>
+                    <input
+                      type="text"
+                      value={customSavedPlaceName}
+                      onChange={(event) => setCustomSavedPlaceName(event.target.value)}
+                      placeholder="Name a custom place"
+                      maxLength={60}
+                    />
+                  </label>
+                  <button type="button" onClick={() => void saveCandidate('custom')} disabled={busy || isSavingPlace || !customSavedPlaceName.trim()}>
+                    {isSavingPlace ? 'Saving…' : 'Save custom place'}
+                  </button>
+                  {savedPlaceMutationError && <p className="ride-setup-favorites-error" role="alert">{savedPlaceMutationError}</p>}
+                  {savedPlaceMutationStatus && <p className="ride-setup-favorites-status" role="status">{savedPlaceMutationStatus}</p>}
+                </div>
+              )}
             </div>
             <span className="ride-setup-map-hint" aria-live="polite">{candidate ? `Selected · ${candidate.label}` : 'Tap the map to drop a destination pin'}</span>
           </div>

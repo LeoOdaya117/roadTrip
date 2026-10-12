@@ -6,6 +6,7 @@ import type {
   PhotoRecord,
   RideSession,
 } from '../types/ride';
+import type { SavedPlace } from '../types/savedPlace';
 import { createSingleFlight } from './singleFlight';
 
 type LocationRecord = LocationPoint & {
@@ -43,12 +44,15 @@ type LegacyTrackPoint = LocationPoint & {
   source?: LocationSource;
 };
 
+type SavedPlaceRecord = SavedPlace & { nameKey: string };
+
 class RideDb extends Dexie {
   sessions!: Table<RideSession, string>;
   locations!: Table<LocationRecord, string>;
   tracks!: Table<TrackPoint, number>;
   photos!: Table<PhotoRecord, number>;
   outbox!: Table<LocationOutboxRecord, string>;
+  savedPlaces!: Table<SavedPlaceRecord, string>;
 
   constructor() {
     super('rideTrackerDb');
@@ -91,6 +95,14 @@ class RideDb extends Dexie {
           track.source ??= 'foreground';
         });
       });
+    this.version(6).stores({
+      sessions: 'rideId, createdAt, status',
+      locations: 'rideId',
+      tracks: '++id, rideId, timestamp, &pointId, segmentId',
+      photos: '++id, rideId, timestamp',
+      outbox: '&pointId, rideId, status, nextAttemptAt, timestamp',
+      savedPlaces: 'id, &nameKey, kind',
+    });
   }
 }
 
@@ -156,6 +168,27 @@ export const getAllSessions = async (): Promise<RideSession[]> =>
 
 export const getSession = async (rideId: string) =>
   pendingRideReads.run(`session:${rideId}`, () => rideDb.sessions.get(rideId));
+
+export const getSavedPlaceRecords = async (): Promise<SavedPlace[]> => {
+  const records = await rideDb.savedPlaces.toArray();
+  return records.map(({ id, kind, name, addressLabel, lat, lng }) => ({
+    id,
+    kind,
+    name,
+    addressLabel,
+    lat,
+    lng,
+  }));
+};
+
+export const putSavedPlaceRecord = async (place: SavedPlace) => {
+  const nameKey = place.name.trim().normalize('NFKC').toLowerCase();
+  await rideDb.savedPlaces.put({ ...place, nameKey });
+};
+
+export const deleteSavedPlaceRecord = async (id: string) => {
+  await rideDb.savedPlaces.delete(id);
+};
 
 export const getSessionsPage = async (page: number, pageSize: number) => {
   return pendingRideReads.run(`sessions:page:${page}:${pageSize}`, () => {

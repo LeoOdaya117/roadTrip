@@ -15,6 +15,13 @@ const mocks = vi.hoisted(() => ({
   clearRide: vi.fn(),
   setSoloMode: vi.fn(),
   enterPage: vi.fn(),
+  savedPlacesState: {
+    savedPlaces: [] as Array<{ id: string; kind: 'home' | 'work' | 'custom'; name: string; addressLabel: string; lat: number; lng: number }> ,
+    isLoading: false,
+    loadError: null as string | null,
+    refresh: vi.fn(),
+    save: vi.fn(),
+  },
 }));
 
 vi.mock('@ionic/react', () => ({
@@ -48,6 +55,7 @@ vi.mock('../store/rideStore', () => ({
     setSoloMode: mocks.setSoloMode,
   }),
 }));
+vi.mock('../hooks/useSavedPlaces', () => ({ useSavedPlaces: () => mocks.savedPlacesState }));
 vi.mock('../components/RideSetupWizard', () => ({
   default: ({ busy, errorMessage, onContinue, onCancel }: {
     busy: boolean;
@@ -72,6 +80,11 @@ describe('HomePage actions', () => {
     mocks.getAllSessions.mockResolvedValue([]);
     mocks.getRideSession.mockResolvedValue(undefined);
     mocks.saveRideSession.mockResolvedValue(undefined);
+    mocks.savedPlacesState.savedPlaces = [];
+    mocks.savedPlacesState.isLoading = false;
+    mocks.savedPlacesState.loadError = null;
+    mocks.savedPlacesState.refresh.mockReset().mockResolvedValue(undefined);
+    mocks.savedPlacesState.save.mockReset();
   });
 
   afterEach(() => cleanup());
@@ -107,6 +120,12 @@ describe('HomePage actions', () => {
 
     act(() => mocks.enterPage());
     await waitFor(() => expect(mocks.getAllSessions).toHaveBeenCalledTimes(3));
+  });
+
+  it('refreshes saved places when the Home page becomes active again', () => {
+    render(<HomePage />);
+    act(() => mocks.enterPage());
+    expect(mocks.savedPlacesState.refresh).toHaveBeenCalledOnce();
   });
 
   it('validates an empty ride code and lets the user focus the labeled code field', async () => {

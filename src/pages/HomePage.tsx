@@ -15,6 +15,7 @@ import { getRideSession, getAllSessions, saveRideSession } from '../services/off
 import { useRideStore } from '../store/rideStore';
 import { RideSession } from '../types/ride';
 import type { NavigationDestination } from '../types/ride';
+import { useSavedPlaces } from '../hooks/useSavedPlaces';
 import RideSetupWizard from '../components/RideSetupWizard';
 import AppHeader from '../components/AppHeader';
 
@@ -25,6 +26,13 @@ const HomePage: React.FC = () => {
   const updateRiders = useRideStore((state) => state.updateRiders);
   const clearRide = useRideStore((state) => state.clearRide);
   const setSoloMode = useRideStore((state) => state.setSoloMode);
+  const {
+    savedPlaces,
+    isLoading: isSavedPlacesLoading,
+    loadError: savedPlacesError,
+    refresh: refreshSavedPlaces,
+    save: savePlace,
+  } = useSavedPlaces();
 
   const [joinCode, setJoinCode] = useState('');
   const [loadingAction, setLoadingAction] = useState<'create' | 'join' | 'solo' | null>(
@@ -86,7 +94,12 @@ const HomePage: React.FC = () => {
 
   useIonViewWillEnter(() => {
     void refreshSavedSession();
+    void refreshSavedPlaces();
   });
+
+  const handleSelectSavedPlace = () => {
+    setCreateError(null);
+  };
 
   // Listen for explicit events when a ride ends in another page
   useEffect(() => {
@@ -395,6 +408,11 @@ const HomePage: React.FC = () => {
                 busy={loadingAction !== null}
                 errorMessage={createError}
                 isModalPresented={setupModalPresented}
+                savedPlaces={savedPlaces}
+                isSavedPlacesLoading={isSavedPlacesLoading}
+                savedPlacesError={savedPlacesError}
+                onSelectSavedPlace={handleSelectSavedPlace}
+                onSavePlace={savePlace}
                 onCancel={() => {
                   if (loadingAction === null) setIsPlanningRide(false);
                 }}

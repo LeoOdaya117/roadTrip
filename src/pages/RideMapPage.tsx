@@ -19,6 +19,7 @@ import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useRideChannel } from '../hooks/useRideChannel';
 import { useRideLocationSync } from '../hooks/useRideLocationSync';
 import { useRideTimer } from '../hooks/useRideTimer';
+import { useSavedPlaces } from '../hooks/useSavedPlaces';
 import {
   addPhoto,
   appendTrackEvent,
@@ -34,6 +35,8 @@ import {
   haversineDistanceMeters,
 } from '../services/locationFilter';
 import type { AcceptedLocationPoint, MapMarkerStyle, PhotoRecord } from '../types/ride';
+import type { SavedPlace } from '../types/savedPlace';
+import { toNavigationDestination } from '../services/savedPlaces';
 import { searchPlaces, type PlaceSearchResult } from '../services/placeSearch';
 import { loadMapMarkerStyle, saveMapMarkerStyle } from '../services/mapPreferences';
 import { useRideStore } from '../store/rideStore';
@@ -181,6 +184,12 @@ const RideMapPage: React.FC = () => {
     startNewSegment,
   } = useLocationTracker(false);
   const navigation = useRideNavigation(rideId, location, isTracking, hasFreshLocation);
+  const {
+    savedPlaces,
+    isLoading: isSavedPlacesLoading,
+    loadError: savedPlacesError,
+    save: saveSavedPlace,
+  } = useSavedPlaces();
   const isAndroid = Capacitor.getPlatform() === 'android';
   const [placeQuery, setPlaceQuery] = useState('');
   const [placeResults, setPlaceResults] = useState<PlaceSearchResult[]>([]);
@@ -189,6 +198,7 @@ const RideMapPage: React.FC = () => {
   const [placeSearchError, setPlaceSearchError] = useState<string | null>(null);
   const [isPickingDestination, setIsPickingDestination] = useState(false);
   const [showNavigationPanel, setShowNavigationPanel] = useState(false);
+  const [destinationAddressLabel, setDestinationAddressLabel] = useState<string | null>(null);
   const latestLocationRef = useRef(location);
   latestLocationRef.current = location;
 
@@ -240,6 +250,7 @@ const RideMapPage: React.FC = () => {
   }, [isAndroid, navigation.destination]);
 
   const handleSelectPlace = (place: PlaceSearchResult) => {
+    setDestinationAddressLabel(place.label);
     setPlaceQuery('');
     setPlaceResults([]);
     setPlaceSearchError(null);
@@ -248,13 +259,25 @@ const RideMapPage: React.FC = () => {
     void navigation.setDestination({ lat: place.lat, lng: place.lng, label: place.label });
   };
 
+  const handleSelectSavedPlace = (place: SavedPlace) => {
+    setDestinationAddressLabel(place.addressLabel);
+    setPlaceQuery('');
+    setPlaceResults([]);
+    setPlaceSearchError(null);
+    setIsPickingDestination(false);
+    setShowNavigationPanel(true);
+    void navigation.setDestination(toNavigationDestination(place));
+  };
+
   const handleMapDestinationPick = (point: { lat: number; lng: number }) => {
     if (!isPickingDestination) return;
     setIsPickingDestination(false);
     setShowNavigationPanel(true);
+    const label = `Map pin · ${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`;
+    setDestinationAddressLabel(label);
     void navigation.setDestination({
       ...point,
-      label: `Map pin · ${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`,
+      label,
     });
   };
 
@@ -926,6 +949,12 @@ const RideMapPage: React.FC = () => {
               isDebouncingPlaces={isDebouncingPlaces}
               placeSearchError={placeSearchError}
               onSelectPlace={handleSelectPlace}
+              savedPlaces={savedPlaces}
+              isSavedPlacesLoading={isSavedPlacesLoading}
+              savedPlacesError={savedPlacesError}
+              onSelectSavedPlace={handleSelectSavedPlace}
+              onSavePlace={saveSavedPlace}
+              destinationAddressLabel={destinationAddressLabel ?? navigation.destination?.label ?? null}
               isPickingDestination={isPickingDestination}
               onTogglePicking={() => setIsPickingDestination((picking) => !picking)}
               onClose={() => {
@@ -942,7 +971,10 @@ const RideMapPage: React.FC = () => {
               onToggleGuidance={() => navigation.isGuiding
                 ? navigation.stopGuidance()
                 : void navigation.startGuidance()}
-              onClearDestination={() => void navigation.clearDestination()}
+              onClearDestination={() => {
+                setDestinationAddressLabel(null);
+                void navigation.clearDestination();
+              }}
               offlineAvailable={navigation.offlineAvailable}
               isDownloadingTiles={navigation.isDownloadingTiles}
               tileDownloadProgress={navigation.tileDownloadProgress}
