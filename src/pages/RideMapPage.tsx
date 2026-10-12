@@ -7,7 +7,7 @@ import {
   IonButton
 } from '@ionic/react';
 import { locate, send, close, camera, layersOutline, navigate, add, remove } from 'ionicons/icons';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { useHistory, useParams } from 'react-router-dom';
 import type L from 'leaflet';
@@ -110,6 +110,11 @@ const RideMapPage: React.FC = () => {
   const isSoloMode = useRideStore((state) => state.isSoloMode);
 
   const [fallbackCenter, setFallbackCenter] = useState(FALLBACK_CENTER);
+  const [followMode, setFollowMode] = useState<{ rideId: string | undefined; enabled: boolean }>(() => ({
+    rideId,
+    enabled: false,
+  }));
+  const isFollowingLocation = Boolean(rideId && followMode.rideId === rideId && followMode.enabled);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [photoToast, setPhotoToast] = useState<string | null>(null);
   const [isTogglingTracking, setIsTogglingTracking] = useState(false);
@@ -170,6 +175,15 @@ const RideMapPage: React.FC = () => {
 
   const mapRef = useRef<L.Map | null>(null);
   const hasCenteredRef = useRef(false);
+  const handleFollowInterrupted = useCallback(() => {
+    setFollowMode({ rideId, enabled: false });
+  }, [rideId]);
+  const handleToggleFollow = useCallback(() => {
+    setFollowMode((mode) => ({
+      rideId,
+      enabled: mode.rideId === rideId ? !mode.enabled : true,
+    }));
+  }, [rideId]);
 
   const isOnline = useNetworkStatus();
   const {
@@ -290,6 +304,10 @@ const RideMapPage: React.FC = () => {
       }
     }
   }, [routeRideId, setRide, setSoloMode]);
+
+  useEffect(() => {
+    setFollowMode({ rideId, enabled: false });
+  }, [rideId]);
 
   useEffect(() => {
     if (!isTracking) {
@@ -913,6 +931,9 @@ const RideMapPage: React.FC = () => {
             currentUserId={currentUser?.id}
             currentUserAccuracy={location?.accuracy ?? null}
             currentUserMarkerStyle={currentUserMarkerStyle}
+            followEnabled={isFollowingLocation}
+            followLocation={isFollowingLocation && isTracking ? location : null}
+            onFollowInterrupted={handleFollowInterrupted}
             navigationRoute={navigation.route}
             navigationDestination={navigation.destination}
             onDestinationPick={isPickingDestination ? handleMapDestinationPick : undefined}
@@ -1005,7 +1026,17 @@ const RideMapPage: React.FC = () => {
 
           {/* ── Floating action buttons top-right ── */}
           <div className="map-fabs">
-            <button className="map-fab" onClick={handleCenterMap} title="Center map" aria-label="Center map on your location">
+            <button
+              type="button"
+              className={`map-fab${isFollowingLocation ? ' fab-active' : ''}`}
+              onClick={handleToggleFollow}
+              title={isFollowingLocation ? 'Stop following your location' : 'Follow your location'}
+              aria-label="Follow my location"
+              aria-pressed={isFollowingLocation}
+            >
+              <IonIcon icon={locate} aria-hidden="true" />
+            </button>
+            <button type="button" className="map-fab" onClick={handleCenterMap} title="Center map" aria-label="Center map on your location">
               <IonIcon icon={locate} aria-hidden="true" />
             </button>
             <div className="map-zoom-controls" role="group" aria-label="Map zoom controls">

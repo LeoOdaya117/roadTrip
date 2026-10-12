@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useEffect } from 'react';
 import type { PropsWithChildren, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useRideStore } from '../store/rideStore';
@@ -8,9 +9,32 @@ const mocks = vi.hoisted(() => ({
   platform: 'web',
   trackerHasFreshLocation: true,
   trackerIsTracking: true,
+  trackerLocation: {
+    lat: 14.6,
+    lng: 121.0,
+    speed: 0,
+    accuracy: 5,
+    timestamp: '2026-10-10T00:00:00.000Z',
+    pointId: 'point-1',
+    segmentId: 'segment-current',
+    source: 'foreground' as const,
+  } as {
+    lat: number;
+    lng: number;
+    speed: number | null;
+    accuracy: number;
+    timestamp: string;
+    pointId: string;
+    segmentId: string;
+    source: 'foreground' | 'background';
+  } | null,
   trackerError: null as string | null,
   navigationFreshness: null as boolean | null,
   navigationState: {} as Record<string, unknown>,
+  pageMap: {
+    getZoom: vi.fn(() => 17),
+    setView: vi.fn(),
+  },
   historyPush: vi.fn(),
   getSession: vi.fn(),
   getTrackPoints: vi.fn(),
@@ -82,16 +106,7 @@ vi.mock('react-router-dom', () => ({
 vi.mock('@capacitor/core', () => ({ Capacitor: { getPlatform: () => mocks.platform } }));
 vi.mock('../hooks/useLocationTracker', () => ({
   useLocationTracker: () => ({
-    location: {
-      lat: 14.6,
-      lng: 121.0,
-      speed: 0,
-      accuracy: 5,
-      timestamp: '2026-10-10T00:00:00.000Z',
-      pointId: 'point-1',
-      segmentId: 'segment-current',
-      source: 'foreground',
-    },
+    location: mocks.trackerLocation,
     hasFreshLocation: mocks.trackerHasFreshLocation,
     isTracking: mocks.trackerIsTracking,
     permission: 'granted',
@@ -152,7 +167,33 @@ vi.mock('../services/mapPreferences', () => ({
   saveMapMarkerStyle: vi.fn(),
 }));
 vi.mock('../services/placeSearch', () => ({ searchPlaces: vi.fn() }));
-vi.mock('../components/RideMapView', () => ({ default: () => <div data-testid="ride-map" /> }));
+vi.mock('../components/RideMapView', () => ({
+  default: function RideMapViewMock({
+    followLocation,
+    onFollowInterrupted,
+    onMapReady,
+  }: {
+    followLocation?: { lat: number; lng: number } | null;
+    onFollowInterrupted?: () => void;
+    onMapReady?: (map: { getZoom: () => number; setView: (center: [number, number], zoom: number) => unknown }) => void;
+  }) {
+    useEffect(() => {
+      onMapReady?.(mocks.pageMap as unknown as {
+        getZoom: () => number;
+        setView: (center: [number, number], zoom: number) => unknown;
+      });
+    }, [onMapReady]);
+
+    return (
+      <div
+        data-testid="ride-map"
+        data-follow-target={followLocation ? `${followLocation.lat},${followLocation.lng}` : ''}
+      >
+        <button type="button" aria-label="Simulate map drag" onClick={onFollowInterrupted} />
+      </div>
+    );
+  },
+}));
 vi.mock('../components/RideMapRideActions', () => ({
   default: ({ onToggleTracking, onEndRide, isTracking, busy }: {
     onToggleTracking: () => void;
@@ -237,6 +278,16 @@ describe('RideMapPage ride lifecycle actions', () => {
     mocks.platform = 'web';
     mocks.trackerHasFreshLocation = true;
     mocks.trackerIsTracking = true;
+    mocks.trackerLocation = {
+      lat: 14.6,
+      lng: 121.0,
+      speed: 0,
+      accuracy: 5,
+      timestamp: '2026-10-10T00:00:00.000Z',
+      pointId: 'point-1',
+      segmentId: 'segment-current',
+      source: 'foreground',
+    };
     mocks.trackerError = null;
     mocks.navigationFreshness = null;
     mocks.navigationState = {
@@ -291,6 +342,106 @@ describe('RideMapPage ride lifecycle actions', () => {
     cleanup();
     vi.unstubAllGlobals();
     useRideStore.setState({ rideId: undefined, isTracking: false, isSoloMode: false, riders: {}, messages: [] });
+  });
+
+  it('keeps follow off by default and exposes a separate follow toggle and one-shot center action', () => {
+    renderRideMap(true);
+
+    const followButton = screen.getByRole('button', { name: 'Follow my location' });
+    expect(followButton).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Center map on your location' })).toBeInTheDocument();
+    expect(screen.getByTestId('ride-map')).toHaveAttribute('data-follow-target', '');
+
+    fireEvent.click(followButton);
+    expect(followButton).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('ride-map')).toHaveAttribute('data-follow-target', '14.6,121');
+
+    fireEvent.click(followButton);
+    expect(followButton).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByTestId('ride-map')).toHaveAttribute('data-follow-target', '');
+  });
+
+  it('centers on the accepted location and preserves the current Leaflet zoom', () => {
+    mocks.trackerLocation = {
+      lat: 14.72,
+      lng: 121.11,
+      speed: 0,
+      accuracy: 5,
+      timestamp: '2026-10-10T00:00:01.000Z',
+      pointId: 'point-center-test',
+      segmentId: 'segment-current',
+      source: 'foreground',
+    };
+    renderRideMap(true);
+    mocks.pageMap.getZoom.mockClear();
+    mocks.pageMap.setView.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Center map on your location' }));
+
+    expect(mocks.pageMap.getZoom).toHaveBeenCalledOnce();
+    expect(mocks.pageMap.setView).toHaveBeenCalledOnce();
+    expect(mocks.pageMap.setView).toHaveBeenCalledWith([14.72, 121.11], 17);
+  });
+
+  it('applies an enabled follow mode when the accepted location becomes available', () => {
+    mocks.trackerLocation = null;
+    const view = renderRideMap(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Follow my location' }));
+    expect(screen.getByTestId('ride-map')).toHaveAttribute('data-follow-target', '');
+
+    act(() => {
+      mocks.trackerLocation = {
+        lat: 14.6,
+        lng: 121.0,
+        speed: 0,
+        accuracy: 5,
+        timestamp: '2026-10-10T00:00:00.000Z',
+        pointId: 'point-1',
+        segmentId: 'segment-current',
+        source: 'foreground',
+      };
+      view.rerender(<RideMapPage />);
+    });
+
+    expect(screen.getByTestId('ride-map')).toHaveAttribute('data-follow-target', '14.6,121');
+  });
+
+  it('retains follow intent while paused and supplies the accepted location again on resume', async () => {
+    mocks.getSession.mockResolvedValue({ ...activeSession, status: 'paused' as const });
+    renderRideMap(false);
+
+    const followButton = screen.getByRole('button', { name: 'Follow my location' });
+    fireEvent.click(followButton);
+    expect(followButton).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('ride-map')).toHaveAttribute('data-follow-target', '');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resume ride' }));
+
+    await waitFor(() => expect(useRideStore.getState().isTracking).toBe(true));
+    expect(followButton).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('ride-map')).toHaveAttribute('data-follow-target', '14.6,121');
+  });
+
+  it('disengages follow after a map drag and resets the control when the ride changes', async () => {
+    const view = renderRideMap(true);
+    const followButton = screen.getByRole('button', { name: 'Follow my location' });
+    fireEvent.click(followButton);
+    expect(screen.getByTestId('ride-map')).toHaveAttribute('data-follow-target', '14.6,121');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate map drag' }));
+    expect(followButton).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByTestId('ride-map')).toHaveAttribute('data-follow-target', '');
+
+    fireEvent.click(followButton);
+    act(() => {
+      mocks.routeRideId = 'solo-next-ride';
+      useRideStore.setState({ rideId: mocks.routeRideId });
+      view.rerender(<RideMapPage />);
+    });
+
+    await waitFor(() => expect(followButton).toHaveAttribute('aria-pressed', 'false'));
+    expect(screen.getByTestId('ride-map')).toHaveAttribute('data-follow-target', '');
   });
 
   it('keeps tracker permission errors actionable and retries only when requested', async () => {

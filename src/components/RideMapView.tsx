@@ -13,6 +13,9 @@ type RideMapViewProps = {
   currentUserId?: string;
   currentUserAccuracy?: number | null;
   currentUserMarkerStyle?: MapMarkerStyle;
+  followEnabled?: boolean;
+  followLocation?: { lat: number; lng: number } | null;
+  onFollowInterrupted?: () => void;
   onMapReady?: (map: L.Map) => void;
   tileUrl?: string;
   attribution?: string;
@@ -71,6 +74,48 @@ const MapReadyHandler = ({ onReady }: { onReady?: (map: L.Map) => void }) => {
   return null;
 };
 
+const FOLLOW_INSET_RATIO = 0.2;
+
+const FollowLocationHandler = ({
+  location,
+  followEnabled = false,
+  onInterrupted,
+}: {
+  followEnabled?: boolean;
+  location?: { lat: number; lng: number } | null;
+  onInterrupted?: () => void;
+}) => {
+  const map = useMap();
+  const latitude = location?.lat;
+  const longitude = location?.lng;
+  const eventHandlers = useMemo(
+    () => ({ dragstart: () => { if (followEnabled) onInterrupted?.(); } }),
+    [followEnabled, onInterrupted],
+  );
+
+  useEffect(() => {
+    if (latitude === undefined || longitude === undefined) return;
+
+    const size = map.getSize();
+    if (size.x <= 0 || size.y <= 0) return;
+
+    const target: [number, number] = [latitude, longitude];
+    if (map.getBounds().pad(-FOLLOW_INSET_RATIO).contains(target)) return;
+
+    const horizontalPadding = Math.round(size.x * FOLLOW_INSET_RATIO);
+    const verticalPadding = Math.round(size.y * FOLLOW_INSET_RATIO);
+    map.panInside(target, {
+      paddingTopLeft: [horizontalPadding, verticalPadding],
+      paddingBottomRight: [horizontalPadding, verticalPadding],
+      animate: false,
+    });
+  }, [map, latitude, longitude]);
+
+  useMapEvents(eventHandlers);
+
+  return null;
+};
+
 const RideMapView = ({
   center,
   riders,
@@ -78,6 +123,9 @@ const RideMapView = ({
   currentUserId,
   currentUserAccuracy,
   currentUserMarkerStyle = 'circle',
+  followEnabled = false,
+  followLocation,
+  onFollowInterrupted,
   onMapReady,
   tileUrl,
   attribution,
@@ -144,6 +192,11 @@ const RideMapView = ({
         />
       )}
       <MapReadyHandler onReady={onMapReady} />
+      <FollowLocationHandler
+        followEnabled={followEnabled}
+        location={followLocation}
+        onInterrupted={onFollowInterrupted}
+      />
       <DestinationPickHandler onPick={onDestinationPick} />
       {showRiders ? markers : null}
       {showTrack && !navigationRoute &&

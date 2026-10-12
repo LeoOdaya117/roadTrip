@@ -9,11 +9,38 @@ const stubMapTiles = () => {
   cy.intercept('GET', '**.arcgisonline.com/**', { statusCode: 204, body: '' });
 };
 
+const installLocationStub = (win: Window) => {
+  const position = {
+    coords: {
+      latitude: 14.6,
+      longitude: 121,
+      accuracy: 5,
+      altitude: null,
+      altitudeAccuracy: null,
+      heading: null,
+      speed: 5,
+    },
+    timestamp: Date.now(),
+  } as GeolocationPosition;
+  Object.defineProperty(win.navigator, 'geolocation', {
+    configurable: true,
+    value: {
+      getCurrentPosition(success: (value: GeolocationPosition) => void) { success(position); },
+      watchPosition(success: (value: GeolocationPosition) => void) { success(position); return 1; },
+      clearWatch() {},
+    },
+  });
+  Object.defineProperty(win.navigator, 'permissions', {
+    configurable: true,
+    value: { query: () => Promise.resolve({ state: 'granted' }) },
+  });
+};
+
 describe('live map actions', () => {
   beforeEach(() => {
     cy.viewport(390, 844);
     stubMapTiles();
-    cy.visit('/ride-map/solo-action-audit');
+    cy.visit('/ride-map/solo-action-audit', { onBeforeLoad: installLocationStub });
   });
 
   it('exercises map style, layer, overlay, marker, and web-only guidance controls', () => {
@@ -39,6 +66,29 @@ describe('live map actions', () => {
         expect(attribution.bottom).to.be.at.most(metrics.top);
       });
     });
+  });
+
+  it('keeps follow optional, disengages it on a map drag, and preserves manual centering', () => {
+    cy.get('[aria-label="Follow my location"]')
+      .should('be.visible')
+      .and('have.attr', 'aria-pressed', 'false');
+    cy.get('[aria-label="Center map on your location"]').should('be.visible');
+
+    cy.get('[aria-label="Follow my location"]')
+      .click()
+      .should('have.attr', 'aria-pressed', 'true');
+
+    cy.get('.leaflet-container')
+      .trigger('mousedown', { button: 0, which: 1, clientX: 150, clientY: 320, force: true })
+      .trigger('mousemove', { button: 0, which: 1, clientX: 210, clientY: 360, force: true })
+      .trigger('mouseup', { button: 0, which: 1, force: true });
+
+    cy.get('[aria-label="Follow my location"]')
+      .should('have.attr', 'aria-pressed', 'false')
+      .click()
+      .should('have.attr', 'aria-pressed', 'true');
+    cy.get('[aria-label="Center map on your location"]').click();
+    cy.get('[aria-label="Zoom in"]').should('be.visible');
   });
 
   it('opens and cancels the photo sheet without saving a record', () => {
