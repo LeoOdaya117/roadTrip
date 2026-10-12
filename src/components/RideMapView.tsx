@@ -146,7 +146,7 @@ const RideMapView = ({
       <MapReadyHandler onReady={onMapReady} />
       <DestinationPickHandler onPick={onDestinationPick} />
       {showRiders ? markers : null}
-      {showTrack &&
+      {showTrack && !navigationRoute &&
         trackSegments.map((segment, index) => (
           <Fragment key={`track-segment-${index}`}>
             <Polyline

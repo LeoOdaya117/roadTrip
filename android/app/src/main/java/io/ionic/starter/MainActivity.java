@@ -6,6 +6,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(android.os.Bundle savedInstanceState) {
         registerPlugin(OfflineNavigationPlugin.class);
+        registerPlugin(AndroidBackgroundLocationPermissionPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

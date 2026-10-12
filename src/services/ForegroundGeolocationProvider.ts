@@ -23,12 +23,14 @@ export class ForegroundGeolocationProvider implements ILocationProvider {
   async start(): Promise<void> {
     if (this.watchId) return;
     const permissionStatus = await Geolocation.checkPermissions();
-    const perm = permissionStatus.location ?? permissionStatus.coarseLocation ?? 'prompt';
+    const hasLocationPermission = permissionStatus.location === 'granted'
+      || permissionStatus.coarseLocation === 'granted';
 
-    if (perm !== 'granted') {
+    if (!hasLocationPermission) {
       const req = await Geolocation.requestPermissions({ permissions: ['location', 'coarseLocation'] });
-      const next = req.location ?? req.coarseLocation ?? 'prompt';
-      if (next !== 'granted') {
+      const permissionGranted = req.location === 'granted'
+        || req.coarseLocation === 'granted';
+      if (!permissionGranted) {
         throw new Error('Location permission not granted');
       }
     }
@@ -80,7 +82,10 @@ export class ForegroundGeolocationProvider implements ILocationProvider {
 
   async getPermissionState(): Promise<PermissionState> {
     const permissionStatus = await Geolocation.checkPermissions();
-    const next = permissionStatus.location ?? permissionStatus.coarseLocation ?? 'prompt';
+    const next = permissionStatus.location === 'granted'
+      || permissionStatus.coarseLocation === 'granted'
+      ? 'granted'
+      : permissionStatus.location ?? permissionStatus.coarseLocation ?? 'prompt';
     return next as PermissionState;
   }
 

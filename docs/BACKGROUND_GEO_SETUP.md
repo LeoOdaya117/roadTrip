@@ -41,9 +41,14 @@ Do not remove them without testing the merged manifest on every supported SDK.
 `capacitor.config.ts` sets `android.useLegacyBridge=true`, as required by the
 installed background plugin to prevent updates stopping after several minutes.
 
-Android 13+ notification permission is checked and requested through Capacitor
-Local Notifications before the background watcher starts. Denial is exposed as a
-recoverable tracking error; the app must not pretend background tracking is active.
+On Android, RoadTrip checks and requests notification permission and background
+location access while the ride screen is active, before the lifecycle can switch
+to the background watcher. Android 10 uses its runtime background-location
+permission. Android 11+ shows a short explanation and opens app settings, where
+the user can choose Location → Allow all the time. If the user skips either
+permission, foreground tracking remains available and the app reports that
+background tracking is unavailable. The background watcher must not open
+permission prompts or settings from an inactive app-state callback.
 
 Optional notification resources in `strings.xml` are:
 
@@ -56,8 +61,10 @@ Optional notification resources in `strings.xml` are:
 ## Runtime behavior
 
 - Foreground permission state comes from Capacitor Geolocation.
-- The background plugin requests its supported location permissions when its
-  watcher starts and reports authorization errors through the callback.
+- The Android background-location bridge checks `ACCESS_BACKGROUND_LOCATION`;
+  the background plugin itself requests only coarse/fine location. The ride
+  flow prepares background permissions while active, then the background
+  provider verifies permission state before registering a watcher.
 - Foreground and background fixes pass through the same mixed-adaptive accuracy,
   time, distance, and speed filter. Rejected coordinates are not persisted.
 - Native background callbacks use a 5 m distance filter and reject stale fixes.
@@ -69,15 +76,26 @@ Optional notification resources in `strings.xml` are:
 After sync, build and run on a real Android device or prepared emulator:
 
 1. Test precise-location grant, approximate grant, denial, and later recovery.
-2. On Android 13+, test notification grant and denial independently.
-3. Start a ride, turn the screen off for at least 15 minutes, and verify accepted
+2. Test Android 10 background-location permission, and Android 11+ app-settings
+   grant/skip/recovery. Skipping must keep foreground tracking usable.
+3. On Android 13+, test notification grant and denial independently; denial
+   must not create a background watcher or repeatedly prompt while the ride is
+   active.
+4. Start a ride, turn the screen off for at least 15 minutes, and verify accepted
    points continue to appear in IndexedDB and the foreground notification remains.
-4. Resume the app and confirm one foreground watch replaces the background watch.
-5. Lose network connectivity and confirm local track persistence continues; when
+5. Separately minimize RoadTrip for at least 15 minutes during an active ride.
+   Verify accepted points continue to appear in IndexedDB and the notification
+   remains visible.
+6. Resume the app and confirm one foreground watch replaces the background watch.
+7. Lose network connectivity and confirm local track persistence continues; when
    batch sync is enabled, verify its durable queue flushes after reconnect/resume.
-6. Pause at a stopover, move the device, resume, and verify the paused movement is
+8. Pause at a stopover, move the device, resume, and verify the paused movement is
    not included in route distance.
-7. Kill and relaunch during an active ride and verify session/track recovery.
+9. Kill and relaunch during an active ride and verify session/track recovery.
+
+For each Android run, record the device model, Android version, ride mode,
+location/notification permission choices, whether the tracking notification was
+visible, and whether the ride was screen-locked or minimized.
 
 WebView HTTP can be throttled after several minutes in the background. The local
 track and optional outbox provide durability/eventual delivery; native live HTTP is

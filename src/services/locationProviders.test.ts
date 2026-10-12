@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   platform: 'web',
+  app: {
+    getState: vi.fn(),
+  },
   geolocation: {
     checkPermissions: vi.fn(),
     requestPermissions: vi.fn(),
@@ -17,15 +20,23 @@ const mocks = vi.hoisted(() => ({
     checkPermissions: vi.fn(),
     requestPermissions: vi.fn(),
   },
+  androidBackgroundPermission: {
+    checkPermission: vi.fn(),
+    requestPermission: vi.fn(),
+  },
 }));
 
+vi.mock('@capacitor/app', () => ({ App: mocks.app }));
 vi.mock('@capacitor/geolocation', () => ({ Geolocation: mocks.geolocation }));
 vi.mock('@capacitor/local-notifications', () => ({
   LocalNotifications: mocks.notifications,
 }));
 vi.mock('@capacitor/core', () => ({
   Capacitor: { getPlatform: () => mocks.platform },
-  registerPlugin: () => mocks.background,
+  registerPlugin: (name: string) =>
+    name === 'AndroidBackgroundLocationPermission'
+      ? mocks.androidBackgroundPermission
+      : mocks.background,
 }));
 
 import { ForegroundGeolocationProvider } from './ForegroundGeolocationProvider';
@@ -35,6 +46,7 @@ describe('location providers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.platform = 'web';
+    mocks.app.getState.mockResolvedValue({ isActive: true });
     mocks.geolocation.checkPermissions.mockResolvedValue({ location: 'granted' });
     mocks.geolocation.getCurrentPosition.mockResolvedValue({
       coords: { latitude: 14.5, longitude: 121, speed: null, accuracy: 8 },
@@ -46,6 +58,8 @@ describe('location providers', () => {
     mocks.background.removeWatcher.mockResolvedValue(undefined);
     mocks.notifications.checkPermissions.mockResolvedValue({ display: 'granted' });
     mocks.notifications.requestPermissions.mockResolvedValue({ display: 'granted' });
+    mocks.androidBackgroundPermission.checkPermission.mockResolvedValue({ granted: true });
+    mocks.androidBackgroundPermission.requestPermission.mockResolvedValue({ granted: true });
   });
 
   it('normalizes foreground fixes, uses production watch options, and cleans up once', async () => {
@@ -90,14 +104,143 @@ describe('location providers', () => {
     });
   });
 
-  it('requires Android notifications before starting the background watcher', async () => {
+  it('recovers after foreground location permission is granted', async () => {
+    mocks.geolocation.checkPermissions
+      .mockResolvedValueOnce({ location: 'prompt' })
+      .mockResolvedValueOnce({ location: 'granted' });
+    mocks.geolocation.requestPermissions
+      .mockResolvedValueOnce({ location: 'denied' })
+      .mockResolvedValueOnce({ location: 'granted' });
+    const provider = new ForegroundGeolocationProvider();
+
+    await expect(provider.start()).rejects.toThrow('Location permission not granted');
+    await provider.start();
+
+    expect(mocks.geolocation.requestPermissions).toHaveBeenCalledOnce();
+    expect(mocks.geolocation.watchPosition).toHaveBeenCalledOnce();
+  });
+
+  it('accepts approximate location when precise location is denied', async () => {
+    mocks.geolocation.checkPermissions.mockResolvedValue({
+      location: 'denied',
+      coarseLocation: 'granted',
+    });
+    const provider = new ForegroundGeolocationProvider();
+
+    await provider.start();
+
+    expect(mocks.geolocation.requestPermissions).not.toHaveBeenCalled();
+    expect(await provider.getPermissionState()).toBe('granted');
+    expect(mocks.geolocation.watchPosition).toHaveBeenCalledOnce();
+  });
+
+  it('accepts an approximate-only result from the foreground permission request', async () => {
+    mocks.geolocation.checkPermissions.mockResolvedValue({
+      location: 'prompt',
+      coarseLocation: 'prompt',
+    });
+    mocks.geolocation.requestPermissions.mockResolvedValue({
+      location: 'denied',
+      coarseLocation: 'granted',
+    });
+
+    await new ForegroundGeolocationProvider().start();
+
+    expect(mocks.geolocation.watchPosition).toHaveBeenCalledOnce();
+  });
+
+  it('requests notification permission during active preparation and surfaces denial', async () => {
     mocks.platform = 'android';
     mocks.notifications.checkPermissions.mockResolvedValue({ display: 'prompt' });
     mocks.notifications.requestPermissions.mockResolvedValue({ display: 'denied' });
 
-    await expect(new BackgroundGeolocationProvider().start()).rejects.toThrow(
-      'Notification permission is required',
+    await expect(
+      new BackgroundGeolocationProvider().prepareForBackgroundTracking(),
+    ).rejects.toThrow('Notification permission is needed for background tracking');
+    expect(mocks.notifications.requestPermissions).toHaveBeenCalledOnce();
+    expect(mocks.androidBackgroundPermission.checkPermission).not.toHaveBeenCalled();
+    expect(mocks.background.addWatcher).not.toHaveBeenCalled();
+  });
+
+  it('recovers after Android notification permission is granted in Settings', async () => {
+    mocks.platform = 'android';
+    mocks.notifications.checkPermissions
+      .mockResolvedValueOnce({ display: 'prompt' })
+      .mockResolvedValueOnce({ display: 'granted' });
+    mocks.notifications.requestPermissions.mockResolvedValue({ display: 'denied' });
+    const provider = new BackgroundGeolocationProvider();
+
+    await expect(provider.prepareForBackgroundTracking()).rejects.toThrow(
+      'Notification permission is needed for background tracking',
     );
+    await provider.prepareForBackgroundTracking();
+
+    expect(mocks.notifications.requestPermissions).toHaveBeenCalledOnce();
+    expect(mocks.androidBackgroundPermission.checkPermission).toHaveBeenCalledOnce();
+  });
+
+  it('requests and accepts Android background permission during preparation', async () => {
+    mocks.platform = 'android';
+    mocks.androidBackgroundPermission.checkPermission.mockResolvedValue({ granted: false });
+
+    await new BackgroundGeolocationProvider().prepareForBackgroundTracking();
+
+    expect(mocks.notifications.requestPermissions).not.toHaveBeenCalled();
+    expect(mocks.androidBackgroundPermission.checkPermission).toHaveBeenCalledOnce();
+    expect(mocks.androidBackgroundPermission.requestPermission).toHaveBeenCalledOnce();
+    expect(mocks.background.addWatcher).not.toHaveBeenCalled();
+  });
+
+  it('allows retry after Android background permission is denied', async () => {
+    mocks.platform = 'android';
+    mocks.androidBackgroundPermission.checkPermission
+      .mockResolvedValueOnce({ granted: false })
+      .mockResolvedValueOnce({ granted: true });
+    mocks.androidBackgroundPermission.requestPermission.mockResolvedValue({ granted: false });
+    const provider = new BackgroundGeolocationProvider();
+
+    await expect(provider.prepareForBackgroundTracking()).rejects.toThrow(
+      'Background location is needed to track while the screen is locked',
+    );
+    mocks.androidBackgroundPermission.requestPermission.mockResolvedValue({ granted: true });
+    await provider.prepareForBackgroundTracking();
+
+    expect(mocks.androidBackgroundPermission.requestPermission).toHaveBeenCalledOnce();
+    expect(mocks.androidBackgroundPermission.checkPermission).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not prompt for permissions when preparation is called while inactive', async () => {
+    mocks.platform = 'android';
+    mocks.app.getState.mockResolvedValue({ isActive: false });
+
+    await expect(
+      new BackgroundGeolocationProvider().prepareForBackgroundTracking(),
+    ).rejects.toThrow('while the app is active');
+    expect(mocks.notifications.requestPermissions).not.toHaveBeenCalled();
+    expect(mocks.androidBackgroundPermission.requestPermission).not.toHaveBeenCalled();
+  });
+
+  it('does not prompt or start the watcher when Android notification permission is missing', async () => {
+    mocks.platform = 'android';
+    mocks.notifications.checkPermissions.mockResolvedValue({ display: 'denied' });
+
+    await expect(new BackgroundGeolocationProvider().start()).rejects.toThrow(
+      'Enable notifications for RoadTrip in Android Settings',
+    );
+    expect(mocks.notifications.requestPermissions).not.toHaveBeenCalled();
+    expect(mocks.androidBackgroundPermission.requestPermission).not.toHaveBeenCalled();
+    expect(mocks.background.addWatcher).not.toHaveBeenCalled();
+  });
+
+  it('does not prompt or start the watcher when Android background permission is missing', async () => {
+    mocks.platform = 'android';
+    mocks.androidBackgroundPermission.checkPermission.mockResolvedValue({ granted: false });
+
+    await expect(new BackgroundGeolocationProvider().start()).rejects.toThrow(
+      'Allow RoadTrip background location in Android Settings',
+    );
+    expect(mocks.notifications.requestPermissions).not.toHaveBeenCalled();
+    expect(mocks.androidBackgroundPermission.requestPermission).not.toHaveBeenCalled();
     expect(mocks.background.addWatcher).not.toHaveBeenCalled();
   });
 
@@ -107,7 +250,11 @@ describe('location providers', () => {
     await provider.start();
 
     expect(mocks.background.addWatcher).toHaveBeenCalledWith(
-      expect.objectContaining({ distanceFilter: 5, stale: false }),
+      expect.objectContaining({
+        distanceFilter: 5,
+        stale: false,
+        requestPermissions: false,
+      }),
       expect.any(Function),
     );
     expect(mocks.background.addWatcher).toHaveBeenCalledTimes(1);

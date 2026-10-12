@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   routeRideId: 'solo-test-ride',
   platform: 'web',
   trackerHasFreshLocation: true,
+  trackerIsTracking: true,
+  trackerError: null as string | null,
   navigationFreshness: null as boolean | null,
   navigationState: {} as Record<string, unknown>,
   historyPush: vi.fn(),
@@ -39,8 +41,18 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@ionic/react', () => ({
   IonPage: ({ children }: PropsWithChildren) => <div>{children}</div>,
   IonContent: ({ children }: PropsWithChildren) => <div>{children}</div>,
-  IonToast: ({ isOpen, message }: { isOpen: boolean; message: string }) =>
-    isOpen ? <div role="status">{message}</div> : null,
+  IonToast: ({ isOpen, message, buttons }: {
+    isOpen: boolean;
+    message: string;
+    buttons?: Array<{ text: string; handler?: () => void }>;
+  }) => isOpen ? (
+    <div role="status">
+      {message}
+      {buttons?.map((button) => (
+        <button type="button" key={button.text} onClick={button.handler}>{button.text}</button>
+      ))}
+    </div>
+  ) : null,
   IonIcon: () => null,
   IonInput: ({ value, placeholder, onIonInput, onIonChange }: {
     value: string;
@@ -81,9 +93,9 @@ vi.mock('../hooks/useLocationTracker', () => ({
       source: 'foreground',
     },
     hasFreshLocation: mocks.trackerHasFreshLocation,
-    isTracking: true,
+    isTracking: mocks.trackerIsTracking,
     permission: 'granted',
-    error: null,
+    error: mocks.trackerError,
     quality: { acceptedCount: 1, rejectedCount: 0, lastRejectedReason: null },
     startTracking: mocks.startTracking,
     stopTracking: mocks.stopTracking,
@@ -224,6 +236,8 @@ describe('RideMapPage ride lifecycle actions', () => {
     vi.clearAllMocks();
     mocks.platform = 'web';
     mocks.trackerHasFreshLocation = true;
+    mocks.trackerIsTracking = true;
+    mocks.trackerError = null;
     mocks.navigationFreshness = null;
     mocks.navigationState = {
       destination: null,
@@ -277,6 +291,24 @@ describe('RideMapPage ride lifecycle actions', () => {
     cleanup();
     vi.unstubAllGlobals();
     useRideStore.setState({ rideId: undefined, isTracking: false, isSoloMode: false, riders: {}, messages: [] });
+  });
+
+  it('keeps tracker permission errors actionable and retries only when requested', async () => {
+    mocks.platform = 'android';
+    mocks.trackerIsTracking = false;
+    mocks.trackerError = 'Background location is not enabled.';
+    const intervalSpy = vi.spyOn(window, 'setInterval');
+    renderRideMap(true);
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Background location is not enabled.');
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(intervalSpy.mock.calls.some(([, delay]) => delay === 3500)).toBe(false);
+    expect(mocks.startTracking).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    await waitFor(() => expect(mocks.startTracking).toHaveBeenCalledTimes(2));
+    expect(mocks.stopTracking).toHaveBeenCalledOnce();
   });
 
   it('persists the stopover before pausing tracking and the timer', async () => {

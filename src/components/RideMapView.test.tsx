@@ -49,6 +49,77 @@ describe('RideMapView navigation overlays', () => {
     );
   });
 
+  it('hides recorded track polylines while a route is visible and restores them when the route is removed', () => {
+    const trackPoints = [
+      { lat: 14.59, lng: 120.99 },
+      { lat: 14.6, lng: 121 },
+    ];
+    const { rerender } = render(
+      <RideMapView
+        center={{ lat: 14.6, lng: 121 }}
+        riders={[]}
+        trackPoints={trackPoints}
+        navigationRoute={navigationRoute}
+        navigationDestination={destination}
+      />,
+    );
+
+    expect(screen.getAllByTestId('navigation-route')).toHaveLength(2);
+    expect(screen.getAllByTestId('navigation-route').map((line) => line.getAttribute('data-color'))).toEqual([
+      '#FFFFFF',
+      '#168AAD',
+    ]);
+    expect(screen.getByTestId('destination-marker')).toBeInTheDocument();
+
+    rerender(
+      <RideMapView
+        center={{ lat: 14.6, lng: 121 }}
+        riders={[]}
+        trackPoints={trackPoints}
+        navigationDestination={destination}
+      />,
+    );
+
+    expect(screen.getAllByTestId('navigation-route')).toHaveLength(2);
+    expect(screen.getAllByTestId('navigation-route').map((line) => line.getAttribute('data-color'))).toEqual([
+      'rgba(0,0,0,0.14)',
+      '#285E7A',
+    ]);
+    expect(screen.getByTestId('destination-marker')).toBeInTheDocument();
+  });
+
+  it('keeps route and destination visible when the recorded-track overlay is disabled', () => {
+    const trackPoints = [
+      { lat: 14.59, lng: 120.99 },
+      { lat: 14.6, lng: 121 },
+    ];
+    const { rerender } = render(
+      <RideMapView
+        center={{ lat: 14.6, lng: 121 }}
+        riders={[]}
+        trackPoints={trackPoints}
+        showTrack={false}
+        navigationRoute={navigationRoute}
+        navigationDestination={destination}
+      />,
+    );
+
+    expect(screen.getAllByTestId('navigation-route')).toHaveLength(2);
+    expect(screen.getByTestId('destination-marker')).toBeInTheDocument();
+
+    rerender(
+      <RideMapView
+        center={{ lat: 14.6, lng: 121 }}
+        riders={[]}
+        trackPoints={trackPoints}
+        showTrack={false}
+        navigationDestination={destination}
+      />,
+    );
+    expect(screen.queryAllByTestId('navigation-route')).toHaveLength(0);
+    expect(screen.getByTestId('destination-marker')).toBeInTheDocument();
+  });
+
   it('forwards map taps as latitude/longitude when destination picking is enabled', () => {
     const onDestinationPick = vi.fn();
     render(

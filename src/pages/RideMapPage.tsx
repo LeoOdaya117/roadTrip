@@ -296,14 +296,14 @@ const RideMapPage: React.FC = () => {
       return;
     }
 
-    startTracking();
+    startTracking().catch(() => undefined);
     return () => stopTracking();
   }, [isTracking, startTracking, stopTracking]);
 
   // Keep trying while tracking is desired but GPS watch is not active yet
   // (for example when location services are turned on shortly after ride start).
   useEffect(() => {
-    if (!isTracking || trackerIsTracking) {
+    if (!isTracking || trackerIsTracking || error) {
       return;
     }
 
@@ -315,7 +315,7 @@ const RideMapPage: React.FC = () => {
     return () => {
       window.clearInterval(retryId);
     };
-  }, [isTracking, trackerIsTracking, startTracking]);
+  }, [isTracking, trackerIsTracking, error, startTracking]);
 
   useEffect(() => {
     if (error) {
@@ -1181,7 +1181,17 @@ const RideMapPage: React.FC = () => {
         isOpen={errorMessage !== null}
         message={errorMessage ?? ''}
         color="danger"
-        duration={2500}
+        duration={0}
+        buttons={[
+          {
+            text: 'Retry',
+            handler: () => {
+              stopTracking();
+              startTracking().catch(() => undefined);
+            },
+          },
+          { text: 'Dismiss', role: 'cancel' },
+        ]}
         onDidDismiss={() => setErrorMessage(null)}
       />
       <IonToast
