@@ -47,10 +47,14 @@ const mocks = vi.hoisted(() => ({
   startTracking: vi.fn(),
   stopTracking: vi.fn(),
   startNewSegment: vi.fn(),
+  persistLocation: vi.fn(),
+  flushPendingLocations: vi.fn(),
   pauseTimer: vi.fn(),
   resumeTimer: vi.fn(),
   startTimer: vi.fn(),
   resetTimer: vi.fn(),
+  setElapsed: vi.fn(),
+  setRunning: vi.fn(),
   savedPlaces: [] as Array<{
     id: string;
     kind: 'home' | 'work' | 'custom';
@@ -137,7 +141,7 @@ vi.mock('../hooks/useMockRiders', () => ({ useMockRiders: vi.fn() }));
 vi.mock('../hooks/useNetworkStatus', () => ({ useNetworkStatus: () => true }));
 vi.mock('../hooks/useRideChannel', () => ({ useRideChannel: vi.fn() }));
 vi.mock('../hooks/useRideLocationSync', () => ({
-  useRideLocationSync: () => ({ syncStatus: null, persistenceError: null, pendingOutboxCount: 0 }),
+  useRideLocationSync: () => ({ syncStatus: null, persistenceError: null, pendingOutboxCount: 0, persistLocation: mocks.persistLocation, flushPendingLocations: mocks.flushPendingLocations }),
 }));
 vi.mock('../hooks/useRideTimer', () => ({
   useRideTimer: () => ({
@@ -148,8 +152,8 @@ vi.mock('../hooks/useRideTimer', () => ({
     pause: mocks.pauseTimer,
     resume: mocks.resumeTimer,
     reset: mocks.resetTimer,
-    setElapsed: vi.fn(),
-    setRunning: vi.fn(),
+    setElapsed: mocks.setElapsed,
+    setRunning: mocks.setRunning,
   }),
 }));
 vi.mock('../services/offlineDb', () => ({
@@ -170,10 +174,12 @@ vi.mock('../services/placeSearch', () => ({ searchPlaces: vi.fn() }));
 vi.mock('../components/RideMapView', () => ({
   default: function RideMapViewMock({
     followLocation,
+    trackPoints,
     onFollowInterrupted,
     onMapReady,
   }: {
     followLocation?: { lat: number; lng: number } | null;
+    trackPoints?: Array<{ lat: number; lng: number }>;
     onFollowInterrupted?: () => void;
     onMapReady?: (map: { getZoom: () => number; setView: (center: [number, number], zoom: number) => unknown }) => void;
   }) {
@@ -188,6 +194,7 @@ vi.mock('../components/RideMapView', () => ({
       <div
         data-testid="ride-map"
         data-follow-target={followLocation ? `${followLocation.lat},${followLocation.lng}` : ''}
+        data-track={JSON.stringify(trackPoints)}
       >
         <button type="button" aria-label="Simulate map drag" onClick={onFollowInterrupted} />
       </div>
@@ -319,6 +326,7 @@ describe('RideMapPage ride lifecycle actions', () => {
     mocks.updateRideSession.mockResolvedValue(1);
     mocks.appendTrackEvent.mockResolvedValue(undefined);
     mocks.startTracking.mockResolvedValue(undefined);
+    mocks.flushPendingLocations.mockResolvedValue(undefined);
     mocks.startNewSegment.mockReturnValue('segment-next');
     mocks.addPhoto.mockResolvedValue(1);
     Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
@@ -440,8 +448,43 @@ describe('RideMapPage ride lifecycle actions', () => {
       view.rerender(<RideMapPage />);
     });
 
-    await waitFor(() => expect(followButton).toHaveAttribute('aria-pressed', 'false'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Follow my location' })).toHaveAttribute('aria-pressed', 'false'));
     expect(screen.getByTestId('ride-map')).toHaveAttribute('data-follow-target', '');
+  });
+
+  it('clears the previous ride track when Ionic reuses the route component', async () => {
+    mocks.trackerLocation = null;
+    mocks.getTrackPoints.mockImplementation(async (id: string) => id === 'solo-test-ride'
+      ? [{ lat: 14.6, lng: 121, timestamp: '2026-10-10T00:00:00.000Z', segmentId: 'old' }]
+      : [{ lat: 15.1, lng: 121.1, timestamp: '2026-10-11T00:00:00.000Z', segmentId: 'new' }]);
+    const view = renderRideMap(true);
+    await waitFor(() => expect(screen.getByTestId('ride-map').getAttribute('data-track')).toContain('14.6'));
+    const oldMap = screen.getByTestId('ride-map');
+    act(() => {
+      mocks.routeRideId = 'solo-next-ride';
+      view.rerender(<RideMapPage />);
+    });
+    await waitFor(() => expect(screen.getByTestId('ride-map').getAttribute('data-track')).toContain('15.1'));
+    expect(screen.getByTestId('ride-map')).not.toBe(oldMap);
+    expect(screen.getByTestId('ride-map').getAttribute('data-track')).not.toContain('14.6');
+    expect(mocks.stopTracking).toHaveBeenCalled();
+  });
+
+  it('ignores an old ride track load resolving after the route changes', async () => {
+    mocks.trackerLocation = null;
+    let finishOldLoad!: (points: unknown[]) => void;
+    const oldLoad = new Promise<unknown[]>((resolve) => { finishOldLoad = resolve; });
+    mocks.getTrackPoints.mockImplementation((id: string) => id === 'solo-test-ride'
+      ? oldLoad
+      : Promise.resolve([{ lat: 15.1, lng: 121.1, timestamp: '2026-10-11T00:00:00.000Z', segmentId: 'new' }]));
+    const view = renderRideMap(true);
+    act(() => {
+      mocks.routeRideId = 'solo-next-ride';
+      view.rerender(<RideMapPage />);
+    });
+    await waitFor(() => expect(screen.getByTestId('ride-map').getAttribute('data-track')).toContain('15.1'));
+    await act(async () => finishOldLoad([{ lat: 14.6, lng: 121, timestamp: '2026-10-10T00:00:00.000Z', segmentId: 'old' }]));
+    expect(screen.getByTestId('ride-map').getAttribute('data-track')).not.toContain('14.6');
   });
 
   it('keeps tracker permission errors actionable and retries only when requested', async () => {
@@ -462,12 +505,12 @@ describe('RideMapPage ride lifecycle actions', () => {
     expect(mocks.stopTracking).toHaveBeenCalledOnce();
   });
 
-  it('persists the stopover before pausing tracking and the timer', async () => {
+  it('stops GPS and drains accepted coordinates before saving the stopover and pausing the timer', async () => {
     renderRideMap(true);
 
     fireEvent.click(screen.getByRole('button', { name: 'Pause ride' }));
 
-    await waitFor(() => expect(useRideStore.getState().isTracking).toBe(false));
+    await waitFor(() => expect(mocks.pauseTimer).toHaveBeenCalled());
     expect(mocks.appendTrackEvent).toHaveBeenCalledWith(
       'solo-test-ride',
       expect.objectContaining({ pointId: 'point-1' }),
@@ -475,6 +518,8 @@ describe('RideMapPage ride lifecycle actions', () => {
     );
     expect(mocks.updateRideSession).toHaveBeenCalledWith('solo-test-ride', { status: 'paused' });
     expect(mocks.stopTracking).toHaveBeenCalled();
+    expect(mocks.flushPendingLocations).toHaveBeenCalledOnce();
+    expect(mocks.flushPendingLocations.mock.invocationCallOrder[0]).toBeLessThan(mocks.appendTrackEvent.mock.invocationCallOrder[0]);
     expect(mocks.pauseTimer).toHaveBeenCalled();
   });
 
@@ -486,8 +531,8 @@ describe('RideMapPage ride lifecycle actions', () => {
 
     expect(await screen.findByRole('status')).toHaveTextContent('Could not pause ride');
     expect(useRideStore.getState().isTracking).toBe(true);
-    expect(mocks.stopTracking).not.toHaveBeenCalled();
-    expect(mocks.pauseTimer).not.toHaveBeenCalled();
+    expect(mocks.stopTracking).toHaveBeenCalled();
+    await waitFor(() => expect(mocks.startTracking).toHaveBeenCalledTimes(2));
   });
 
   it('starts a new segment and persists it before resuming the ride', async () => {
@@ -546,8 +591,37 @@ describe('RideMapPage ride lifecycle actions', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Could not end ride');
     expect(useRideStore.getState().rideId).toBe('solo-test-ride');
     expect(useRideStore.getState().isTracking).toBe(true);
-    expect(mocks.stopTracking).not.toHaveBeenCalled();
+    expect(mocks.stopTracking).toHaveBeenCalled();
     expect(mocks.resetTimer).not.toHaveBeenCalled();
+    expect(mocks.historyPush).not.toHaveBeenCalled();
+  });
+
+  it('waits for pending background writes and derives final distance from the saved track', async () => {
+    let finishWrites!: () => void;
+    mocks.flushPendingLocations.mockReturnValue(new Promise<void>((resolve) => { finishWrites = resolve; }));
+    renderRideMap(true);
+    fireEvent.click(screen.getByRole('button', { name: 'End ride' }));
+    await waitFor(() => expect(mocks.flushPendingLocations).toHaveBeenCalledOnce());
+    expect(mocks.saveRideSession).not.toHaveBeenCalled();
+    expect(mocks.historyPush).not.toHaveBeenCalled();
+    mocks.getTrackPoints.mockResolvedValue([
+      { lat: 14.6, lng: 121, segmentId: 'segment-current', timestamp: '2026-10-10T00:00:00.000Z' },
+      { lat: 14.601, lng: 121, segmentId: 'segment-current', timestamp: '2026-10-10T00:00:10.000Z' },
+    ]);
+    await act(async () => finishWrites());
+    await waitFor(() => expect(mocks.historyPush).toHaveBeenCalledWith('/home'));
+    const saved = mocks.saveRideSession.mock.calls[0][0];
+    expect(saved.distanceMeters).toBeGreaterThan(100);
+  });
+
+  it('keeps the ride resumable when draining background coordinates fails', async () => {
+    mocks.flushPendingLocations.mockRejectedValue(new Error('Track storage unavailable'));
+    renderRideMap(true);
+    fireEvent.click(screen.getByRole('button', { name: 'End ride' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Could not end ride: Track storage unavailable');
+    expect(mocks.saveRideSession).not.toHaveBeenCalled();
+    expect(useRideStore.getState().rideId).toBe('solo-test-ride');
+    expect(useRideStore.getState().isTracking).toBe(true);
     expect(mocks.historyPush).not.toHaveBeenCalled();
   });
 

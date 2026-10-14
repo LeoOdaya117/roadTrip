@@ -41,9 +41,12 @@ Do not remove them without testing the merged manifest on every supported SDK.
 `capacitor.config.ts` sets `android.useLegacyBridge=true`, as required by the
 installed background plugin to prevent updates stopping after several minutes.
 
-On Android, RoadTrip checks and requests notification permission and background
-location access while the ride screen is active, before the lifecycle can switch
-to the background watcher. Android 10 uses its runtime background-location
+On first Android launch, RoadTrip automatically requests foreground
+location, notifications, and background location before mounting ride screens.
+Completed or skipped setup is remembered in `roadtrip:permission-setup-v1`;
+Account offers an explicit retry. Setup does not start a GPS watcher. If device location is off, RoadTrip opens Android location settings and rechecks it after return. A compact recovery action appears only when setup cannot finish.
+Ride startup rechecks permissions and starts the background-capable watcher
+while RoadTrip is active. Android 10 uses its runtime background-location
 permission. Android 11+ shows a short explanation and opens app settings, where
 the user can choose Location → Allow all the time. If the user skips either
 permission, foreground tracking remains available and the app reports that
@@ -64,12 +67,22 @@ Optional notification resources in `strings.xml` are:
 - The Android background-location bridge checks `ACCESS_BACKGROUND_LOCATION`;
   the background plugin itself requests only coarse/fine location. The ride
   flow prepares background permissions while active, then the background
-  provider verifies permission state before registering a watcher.
+  provider verifies permission state before registering a watcher. On Android,
+  that single background-capable watcher stays active across screen lock and
+  foreground resume instead of starting a foreground service after locking.
 - Foreground and background fixes pass through the same mixed-adaptive accuracy,
   time, distance, and speed filter. Rejected coordinates are not persisted.
 - Native background callbacks use a 5 m distance filter and reject stale fixes.
 - Provider switching retains the current filter baseline; a stopover resume starts
   a new segment instead.
+- Accepted points are queued directly from the tracker callback for transactional
+  IndexedDB persistence. React rendering and network upload do not control this
+  queue. Pause/end stop acquisition and drain accepted points before saving
+  lifecycle changes; failed writes remain queued for retry.
+- A tracking notification indicates the service exists; verify saved coordinates
+  independently. Stationary/noisy fixes can be rejected by the quality filter.
+  The installed plugin does not support continued tracking after force-stop or
+  removal of the app process; resume the saved ride after relaunch.
 
 ## Device validation
 
@@ -86,7 +99,8 @@ After sync, build and run on a real Android device or prepared emulator:
 5. Separately minimize RoadTrip for at least 15 minutes during an active ride.
    Verify accepted points continue to appear in IndexedDB and the notification
    remains visible.
-6. Resume the app and confirm one foreground watch replaces the background watch.
+6. Resume the app and confirm the same Android background-capable watch remains
+   active without registering a second watch.
 7. Lose network connectivity and confirm local track persistence continues; when
    batch sync is enabled, verify its durable queue flushes after reconnect/resume.
 8. Pause at a stopover, move the device, resume, and verify the paused movement is

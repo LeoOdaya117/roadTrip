@@ -32,7 +32,6 @@ import {
 } from '../services/offlineDb';
 import {
   calculateTrackDistanceMeters,
-  haversineDistanceMeters,
 } from '../services/locationFilter';
 import type { AcceptedLocationPoint, MapMarkerStyle, PhotoRecord } from '../types/ride';
 import type { SavedPlace } from '../types/savedPlace';
@@ -62,10 +61,11 @@ type MapLayerOption = {
   previewSrc?: string;
 };
 
-const RideMapPage: React.FC = () => {
+const RideMapContent: React.FC = () => {
   const history = useHistory();
   const { rideId: routeRideId } = useParams<{ rideId: string }>();
-  const rideId = useRideStore((state) => state.rideId) ?? routeRideId;
+  const storedRideId = useRideStore((state) => state.rideId);
+  const rideId = routeRideId ?? storedRideId;
   const setRide = useRideStore((state) => state.setRide);
   const currentUser = useRideStore((state) => state.currentUser);
   const setUser = useRideStore((state) => state.setUser);
@@ -174,7 +174,6 @@ const RideMapPage: React.FC = () => {
   }, [rideId, showPhotoModal]);
 
   const mapRef = useRef<L.Map | null>(null);
-  const hasCenteredRef = useRef(false);
   const handleFollowInterrupted = useCallback(() => {
     setFollowMode({ rideId, enabled: false });
   }, [rideId]);
@@ -186,6 +185,19 @@ const RideMapPage: React.FC = () => {
   }, [rideId]);
 
   const isOnline = useNetworkStatus();
+  const { syncStatus, persistenceError, pendingOutboxCount, persistLocation, flushPendingLocations } = useRideLocationSync({
+    rideId,
+    riderId: currentUser?.id ?? 'local-user',
+    isTracking,
+    isOnline,
+    isSoloMode,
+  });
+  const handleAcceptedLocation = useCallback((point: AcceptedLocationPoint) => {
+    persistLocation(point);
+    setTrackPoints((previous) => previous.some((stored) => stored.timestamp === point.timestamp)
+      ? previous
+      : [...previous, point]);
+  }, [persistLocation]);
   const {
     location,
     hasFreshLocation,
@@ -196,7 +208,7 @@ const RideMapPage: React.FC = () => {
     startTracking,
     stopTracking,
     startNewSegment,
-  } = useLocationTracker(false);
+  } = useLocationTracker(false, handleAcceptedLocation);
   const navigation = useRideNavigation(rideId, location, isTracking, hasFreshLocation);
   const {
     savedPlaces,
@@ -345,12 +357,11 @@ const RideMapPage: React.FC = () => {
     if (!rideId) {
       return;
     }
-
-    
+    let cancelled = false;
 
     getLastLocation(rideId)
       .then((stored) => {
-        if (stored) {
+        if (stored && !cancelled) {
           setFallbackCenter({ lat: stored.lat, lng: stored.lng });
         }
       })
@@ -360,8 +371,13 @@ const RideMapPage: React.FC = () => {
     (async () => {
       try {
         const points = await getTrackPoints(rideId);
+        if (cancelled) return;
         if (points.length > 0) {
-          setTrackPoints(points);
+          setTrackPoints((previous) => {
+            const timestamps = new Set(points.map((point) => point.timestamp));
+            return [...points, ...previous.filter((point) => !timestamps.has(point.timestamp))]
+              .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+          });
           setDistanceMetersTotal(
             Math.round(calculateTrackDistanceMeters(points)),
           );
@@ -375,7 +391,11 @@ const RideMapPage: React.FC = () => {
     (async () => {
       try {
         const session = await getSession(rideId);
+        if (cancelled) return;
         if (session) {
+          if (!useRideStore.getState().currentUser) {
+            setUser({ id: session.userId, name: session.userName, isHost: session.isHost });
+          }
           // compute elapsed: prefer stored durationSeconds, otherwise derive from createdAt
           let elapsed = 0;
           if (typeof session.durationSeconds === 'number' && session.durationSeconds > 0) {
@@ -395,6 +415,7 @@ const RideMapPage: React.FC = () => {
             const segmentId = startNewSegment(session.activeSegmentId);
             if (!session.activeSegmentId) {
               await updateRideSession(rideId, { activeSegmentId: segmentId });
+              if (cancelled) return;
             }
             if (session.status !== 'paused') {
               setTracking(true);
@@ -409,7 +430,8 @@ const RideMapPage: React.FC = () => {
         // A missing legacy session is handled as a fresh ride.
       }
     })();
-  }, [rideId, setElapsed, setRunning, setTracking, startNewSegment]);
+    return () => { cancelled = true; };
+  }, [rideId, setElapsed, setRunning, setTracking, setUser, startNewSegment]);
 
   // Persist running session progress (duration + distance) periodically so resume restores correctly
   useEffect(() => {
@@ -484,26 +506,7 @@ const RideMapPage: React.FC = () => {
     });
   }, [currentUser, location, updateSingleRider, setUser]);
 
-  useEffect(() => {
-    if (location && mapRef.current && !hasCenteredRef.current) {
-      mapRef.current.setView(
-        [location.lat, location.lng],
-        mapRef.current.getZoom() ?? 15
-      );
-      hasCenteredRef.current = true;
-    }
-  }, [location]);
-
   useRideChannel(rideId);
-
-  const { syncStatus, persistenceError, pendingOutboxCount } = useRideLocationSync({
-    rideId,
-    riderId: currentUser?.id,
-    isTracking,
-    isOnline,
-    isSoloMode,
-    location
-  });
 
   useEffect(() => {
     if (persistenceError) setErrorMessage(persistenceError);
@@ -528,20 +531,13 @@ const RideMapPage: React.FC = () => {
     : fallbackCenter;
 
   // Track total distance traveled in meters for the current session (local only)
-  const lastLocationRef = useRef<AcceptedLocationPoint | null>(null);
   const [distanceMetersTotal, setDistanceMetersTotal] = useState<number>(0);
 
   
 
   useEffect(() => {
-    if (!location) return;
-    const last = lastLocationRef.current;
-    if (last && last.segmentId === location.segmentId) {
-      const distance = haversineDistanceMeters(last, location);
-      if (distance > 0) setDistanceMetersTotal((total) => total + distance);
-    }
-    lastLocationRef.current = location;
-  }, [location]);
+    setDistanceMetersTotal(calculateTrackDistanceMeters(trackPoints));
+  }, [trackPoints]);
 
   const MAP_LAYERS: MapLayerOption[] = [
     {
@@ -697,8 +693,8 @@ const RideMapPage: React.FC = () => {
   });
 
   const handleCenterMap = () => {
-    if (mapRef.current) {
-      mapRef.current.setView([center.lat, center.lng], mapRef.current.getZoom() ?? 15);
+    if (mapRef.current && location && hasFreshLocation) {
+      mapRef.current.setView([location.lat, location.lng], mapRef.current.getZoom() ?? 15);
     }
   };
 
@@ -819,15 +815,17 @@ const RideMapPage: React.FC = () => {
         if (!rideId) throw new Error('Ride ID is missing. Your ride is still active.');
         const session = await getSession(rideId);
         if (!session) throw new Error('Saved ride data could not be found. Your ride is still active.');
+        stopTracking();
+        setTracking(false);
+        await flushPendingLocations();
         if (location) {
           await appendTrackEvent(rideId, location, 'stopover');
         }
         const updatedCount = await updateRideSession(rideId, { status: 'paused' });
         if (updatedCount === 0) throw new Error('Saved ride data could not be found. Your ride is still active.');
-        stopTracking();
-        setTracking(false);
         pauseTimer();
       } catch (pauseError) {
+        setTracking(true);
         console.error('[RideMapPage] failed to pause ride', pauseError);
         setErrorMessage(pauseError instanceof Error
           ? `Could not pause ride: ${pauseError.message}`
@@ -841,7 +839,6 @@ const RideMapPage: React.FC = () => {
 
     try {
       const segmentId = startNewSegment();
-      lastLocationRef.current = null;
       if (!rideId) throw new Error('Ride ID is missing. Your ride is still paused.');
       // Start the provider before persisting the active state. If location startup
       // fails, the saved session remains paused and the rider can retry safely.
@@ -880,12 +877,16 @@ const RideMapPage: React.FC = () => {
       if (!rideId) throw new Error('Ride ID is missing. Your ride is still active.');
       const existing = await getSession(rideId);
       if (!existing) throw new Error('Saved ride data could not be found. Your ride is still active.');
+      stopTracking();
+      setTracking(false);
+      await flushPendingLocations();
+      const savedTrack = await getTrackPoints(rideId);
 
       const updated = {
         ...existing,
         endedAt: new Date().toISOString(),
         status: 'ended' as const,
-        distanceMeters: Math.round(distanceMetersTotal),
+        distanceMeters: Math.round(calculateTrackDistanceMeters(savedTrack)),
         durationSeconds: Math.max(
           Math.round(elapsedSeconds),
           Math.round(elapsedRef.current),
@@ -894,8 +895,6 @@ const RideMapPage: React.FC = () => {
       };
       await saveRideSession(updated);
 
-      stopTracking();
-      setTracking(false);
       try {
         localStorage.setItem(`ride:hidden:${rideId}`, '1');
       } catch {
@@ -911,6 +910,7 @@ const RideMapPage: React.FC = () => {
       history.push('/home');
     } catch (endError) {
       endingRideRef.current = false;
+      setTracking(isTracking);
       console.error('[RideMapPage] failed to end ride', endError);
       setErrorMessage(endError instanceof Error
         ? `Could not end ride: ${endError.message}`
@@ -926,6 +926,8 @@ const RideMapPage: React.FC = () => {
         <div className={`map-wrapper${isSheetExpanded ? ' map-wrapper-sheet-expanded' : ''}`}>
           <RideMapView
             center={center}
+            initialLocation={hasFreshLocation ? location : null}
+            resetKey={rideId}
             riders={riders}
             trackPoints={trackPoints}
             currentUserId={currentUser?.id}
@@ -1036,7 +1038,7 @@ const RideMapPage: React.FC = () => {
             >
               <IonIcon icon={locate} aria-hidden="true" />
             </button>
-            <button type="button" className="map-fab" onClick={handleCenterMap} title="Center map" aria-label="Center map on your location">
+            <button type="button" className="map-fab" onClick={handleCenterMap} disabled={!location || !hasFreshLocation} title="Center map" aria-label="Center map on your location">
               <IonIcon icon={locate} aria-hidden="true" />
             </button>
             <div className="map-zoom-controls" role="group" aria-label="Map zoom controls">
@@ -1289,6 +1291,13 @@ const RideMapPage: React.FC = () => {
       </BottomSheet>
     </IonPage>
   );
+};
+
+const RideMapPage: React.FC = () => {
+  const { rideId } = useParams<{ rideId: string }>();
+  // Ionic can reuse the routed component. Each session owns its GPS/filter,
+  // pending writes, route geometry, and initial-centering state.
+  return <RideMapContent key={rideId} />;
 };
 
 export default RideMapPage;

@@ -8,10 +8,12 @@ import {
   setupIonicReact,
 } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
-import { StatusBar, Style } from '@capacitor/status-bar';
+import { StatusBar } from '@capacitor/status-bar';
 import { Capacitor } from '@capacitor/core';
 import ThemeProvider from './context/ThemeProvider';
 import AppNavigation from './components/AppNavigation';
+import LocationPermissionSetup from './components/LocationPermissionSetup';
+import NativeStatusBar from './components/NativeStatusBar';
 import { createIonicBrowserHistory } from './navigation/createIonicBrowserHistory';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
@@ -78,12 +80,13 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     void StatusBar.setOverlaysWebView({ overlay: true });
-    void StatusBar.setStyle({ style: Style.Dark });
   }, []);
 
   return (
     <ThemeProvider>
+      <NativeStatusBar history={appHistory} />
       <IonApp>
+        <LocationPermissionSetup>
         <IonReactRouter history={appHistory}>
           <BrowserForwardRestorer />
           <IonRouterOutlet>
@@ -129,6 +132,7 @@ const App: React.FC = () => {
           </IonRouterOutlet>
           <AppNavigation />
         </IonReactRouter>
+        </LocationPermissionSetup>
       </IonApp>
     </ThemeProvider>
   );

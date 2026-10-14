@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo } from 'react';
+import { Fragment, useEffect, useMemo, useRef } from 'react';
 import { CircleMarker, MapContainer, TileLayer, useMap, useMapEvents, Polyline } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import '../services/leafletConfig';
@@ -8,6 +8,8 @@ import type L from 'leaflet';
 
 type RideMapViewProps = {
   center: { lat: number; lng: number };
+  initialLocation?: { lat: number; lng: number } | null;
+  resetKey?: string;
   riders: Rider[];
   trackPoints?: { lat: number; lng: number; segmentId?: string }[];
   currentUserId?: string;
@@ -74,7 +76,29 @@ const MapReadyHandler = ({ onReady }: { onReady?: (map: L.Map) => void }) => {
   return null;
 };
 
-const FOLLOW_INSET_RATIO = 0.2;
+const InitialLocationHandler = ({
+  location,
+  resetKey,
+}: {
+  location?: { lat: number; lng: number } | null;
+  resetKey?: string;
+}) => {
+  const map = useMap();
+  const centering = useRef({ resetKey, centered: false });
+  const latitude = location?.lat;
+  const longitude = location?.lng;
+
+  useEffect(() => {
+    if (centering.current.resetKey !== resetKey) {
+      centering.current = { resetKey, centered: false };
+    }
+    if (centering.current.centered || latitude === undefined || longitude === undefined) return;
+    map.setView([latitude, longitude], map.getZoom(), { animate: false });
+    centering.current.centered = true;
+  }, [map, latitude, longitude, resetKey]);
+
+  return null;
+};
 
 const FollowLocationHandler = ({
   location,
@@ -94,22 +118,11 @@ const FollowLocationHandler = ({
   );
 
   useEffect(() => {
-    if (latitude === undefined || longitude === undefined) return;
-
-    const size = map.getSize();
-    if (size.x <= 0 || size.y <= 0) return;
-
-    const target: [number, number] = [latitude, longitude];
-    if (map.getBounds().pad(-FOLLOW_INSET_RATIO).contains(target)) return;
-
-    const horizontalPadding = Math.round(size.x * FOLLOW_INSET_RATIO);
-    const verticalPadding = Math.round(size.y * FOLLOW_INSET_RATIO);
-    map.panInside(target, {
-      paddingTopLeft: [horizontalPadding, verticalPadding],
-      paddingBottomRight: [horizontalPadding, verticalPadding],
-      animate: false,
-    });
-  }, [map, latitude, longitude]);
+    if (!followEnabled || latitude === undefined || longitude === undefined) return;
+    // Follow means the same exact center as the one-shot location button.
+    // Enabling it must recenter even when the rider's coordinate is unchanged.
+    map.setView([latitude, longitude], map.getZoom(), { animate: false });
+  }, [map, latitude, longitude, followEnabled]);
 
   useMapEvents(eventHandlers);
 
@@ -118,6 +131,8 @@ const FollowLocationHandler = ({
 
 const RideMapView = ({
   center,
+  initialLocation,
+  resetKey,
   riders,
   trackPoints,
   currentUserId,
@@ -192,6 +207,7 @@ const RideMapView = ({
         />
       )}
       <MapReadyHandler onReady={onMapReady} />
+      <InitialLocationHandler location={initialLocation} resetKey={resetKey} />
       <FollowLocationHandler
         followEnabled={followEnabled}
         location={followLocation}

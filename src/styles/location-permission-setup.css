@@ -1,0 +1,7 @@
+.location-permission-setup { color: var(--rt-text); }
+.location-permission-setup p { margin: 0; line-height: 1.5; }
+.permission-setup-error { background: var(--rt-danger-surface); color: var(--rt-danger-text); padding: var(--rt-space-md); border-radius: var(--rt-radius-sm); }
+.permission-setup-actions { display: flex; flex-wrap: wrap; gap: var(--rt-space-sm); margin-top: var(--rt-space-md); }
+.permission-setup-actions button { min-height: 44px; padding: 10px 18px; border: 1px solid var(--rt-line); border-radius: var(--rt-radius-sm); background: var(--rt-surface-raised); color: var(--rt-text); font: inherit; cursor: pointer; }
+.permission-setup-actions .permission-setup-retry { background: var(--rt-action); color: var(--rt-on-action); }
+.permission-setup-actions button:focus-visible { outline: 2px solid var(--rt-primary); outline-offset: 3px; }

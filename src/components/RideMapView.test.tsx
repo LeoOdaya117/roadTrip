@@ -7,19 +7,21 @@ import RideMapView from './RideMapView';
 const mapMock = vi.hoisted(() => ({
   handlers: {} as { click?: (event: unknown) => void; dragstart?: (event: unknown) => void },
   isWithinInset: true,
+  isReady: true,
   map: {
     invalidateSize: vi.fn(),
     getSize: vi.fn(),
     getBounds: vi.fn(),
     panInside: vi.fn(),
     setView: vi.fn(),
+    getZoom: vi.fn(),
     setZoom: vi.fn(),
     panTo: vi.fn(),
   },
 }));
 
 vi.mock('react-leaflet', () => ({
-    MapContainer: ({ children }: { children: React.ReactNode }) => <div data-testid="map">{children}</div>,
+    MapContainer: ({ children }: { children: React.ReactNode }) => <div data-testid="map">{mapMock.isReady ? children : null}</div>,
     TileLayer: () => null,
     useMap: () => mapMock.map,
     useMapEvents: (handlers: typeof mapMock.handlers) => { mapMock.handlers = { ...mapMock.handlers, ...handlers }; },
@@ -35,6 +37,7 @@ describe('RideMapView navigation overlays', () => {
   beforeEach(() => {
     mapMock.handlers = {};
     mapMock.isWithinInset = true;
+    mapMock.isReady = true;
     mapMock.map.invalidateSize.mockReset();
     mapMock.map.getSize.mockReset();
     mapMock.map.getSize.mockReturnValue({ x: 1000, y: 800 });
@@ -47,6 +50,8 @@ describe('RideMapView navigation overlays', () => {
       mapMock.isWithinInset = true;
     });
     mapMock.map.setView.mockReset();
+    mapMock.map.getZoom.mockReset();
+    mapMock.map.getZoom.mockReturnValue(18);
     mapMock.map.setZoom.mockReset();
     mapMock.map.panTo.mockReset();
   });
@@ -58,6 +63,71 @@ describe('RideMapView navigation overlays', () => {
     durationSeconds: 120,
   };
   const destination: NavigationDestination = { lat: 14.61, lng: 121.01, label: 'Destination' };
+
+  it('centers only once when StrictMode replays mount effects', () => {
+    render(
+      <React.StrictMode>
+        <RideMapView center={{ lat: 0, lng: 0 }} riders={[]} initialLocation={{ lat: 14.6, lng: 121 }} resetKey="solo-strict" />
+      </React.StrictMode>,
+    );
+    expect(mapMock.map.setView).toHaveBeenCalledOnce();
+  });
+
+  it('centers a delayed first fix once and preserves zoom and later manual pans', () => {
+    const { rerender } = render(
+      <RideMapView center={{ lat: 0, lng: 0 }} riders={[]} initialLocation={null} resetKey="solo-first" />,
+    );
+    expect(mapMock.map.setView).not.toHaveBeenCalled();
+
+    rerender(
+      <RideMapView center={{ lat: 0, lng: 0 }} riders={[]} initialLocation={{ lat: 14.6, lng: 121 }} resetKey="solo-first" />,
+    );
+    expect(mapMock.map.setView).toHaveBeenCalledWith([14.6, 121], 18, { animate: false });
+    mapMock.handlers.dragstart?.({});
+    rerender(
+      <RideMapView center={{ lat: 0, lng: 0 }} riders={[]} initialLocation={{ lat: 14.61, lng: 121.01 }} resetKey="solo-first" />,
+    );
+    expect(mapMock.map.setView).toHaveBeenCalledOnce();
+    expect(mapMock.map.setZoom).not.toHaveBeenCalled();
+    expect(mapMock.map.panInside).not.toHaveBeenCalled();
+  });
+
+  it('centers when the map becomes ready after the first fix is available', () => {
+    mapMock.isReady = false;
+    const props = {
+      center: { lat: 0, lng: 0 },
+      riders: [],
+      initialLocation: { lat: 14.6, lng: 121 },
+      resetKey: 'solo-ready',
+    };
+    const { rerender } = render(<RideMapView {...props} />);
+    expect(mapMock.map.setView).not.toHaveBeenCalled();
+    mapMock.isReady = true;
+    rerender(<RideMapView {...props} />);
+    expect(mapMock.map.setView).toHaveBeenCalledOnce();
+    expect(mapMock.map.setView).toHaveBeenCalledWith([14.6, 121], 18, { animate: false });
+  });
+
+  it('waits for the next ride first fix and resets its centering once per ride', () => {
+    const { rerender } = render(
+      <RideMapView center={{ lat: 0, lng: 0 }} riders={[]} initialLocation={{ lat: 14.6, lng: 121 }} resetKey="solo-first" />,
+    );
+    expect(mapMock.map.setView).toHaveBeenCalledOnce();
+    rerender(
+      <RideMapView center={{ lat: 0, lng: 0 }} riders={[]} initialLocation={null} resetKey="solo-second" />,
+    );
+    expect(mapMock.map.setView).toHaveBeenCalledOnce();
+    mapMock.map.getZoom.mockReturnValue(12);
+    rerender(
+      <RideMapView center={{ lat: 0, lng: 0 }} riders={[]} initialLocation={{ lat: 14.7, lng: 121.1 }} resetKey="solo-second" />,
+    );
+    expect(mapMock.map.setView).toHaveBeenCalledTimes(2);
+    expect(mapMock.map.setView).toHaveBeenLastCalledWith([14.7, 121.1], 12, { animate: false });
+    rerender(
+      <RideMapView center={{ lat: 0, lng: 0 }} riders={[]} initialLocation={{ lat: 14.71, lng: 121.11 }} resetKey="solo-second" />,
+    );
+    expect(mapMock.map.setView).toHaveBeenCalledTimes(2);
+  });
 
   it('renders navigation geometry and destination at the Leaflet coordinate boundary', () => {
     render(
@@ -159,23 +229,19 @@ describe('RideMapView navigation overlays', () => {
     expect(onDestinationPick).toHaveBeenCalledWith({ lat: 14.7, lng: 121.2 });
   });
 
-  it('pans to the owner point outside the inset bounds without animation or zoom changes', () => {
+  it('centers exactly on the owner point while preserving zoom', () => {
     mapMock.isWithinInset = false;
 
     render(
       <RideMapView
         center={{ lat: 14.6, lng: 121 }}
         riders={[]}
+        followEnabled
         followLocation={{ lat: 14.62, lng: 121.03 }}
       />,
     );
 
-    expect(mapMock.map.panInside).toHaveBeenCalledWith([14.62, 121.03], {
-      paddingTopLeft: [200, 160],
-      paddingBottomRight: [200, 160],
-      animate: false,
-    });
-    expect(mapMock.map.setView).not.toHaveBeenCalled();
+    expect(mapMock.map.setView).toHaveBeenCalledWith([14.62, 121.03], 18, { animate: false });
     expect(mapMock.map.setZoom).not.toHaveBeenCalled();
     expect(mapMock.map.panTo).not.toHaveBeenCalled();
   });
@@ -193,11 +259,12 @@ describe('RideMapView navigation overlays', () => {
     expect(mapMock.map.getBounds).not.toHaveBeenCalled();
   });
 
-  it('avoids camera calls for unchanged and in-bounds updates, then pans once when the point leaves the inset', () => {
+  it('centers on enabling follow with an unchanged in-bounds coordinate and on every changed fix', () => {
     const { rerender } = render(
       <RideMapView
         center={{ lat: 14.6, lng: 121 }}
         riders={[]}
+        followEnabled={false}
         followLocation={{ lat: 14.6, lng: 121 }}
       />,
     );
@@ -205,29 +272,36 @@ describe('RideMapView navigation overlays', () => {
       <RideMapView
         center={{ lat: 14.6, lng: 121 }}
         riders={[]}
+        followEnabled
         followLocation={{ lat: 14.6, lng: 121 }}
       />,
     );
-    expect(mapMock.map.panInside).not.toHaveBeenCalled();
+    expect(mapMock.map.setView).toHaveBeenCalledWith([14.6, 121], 18, { animate: false });
 
     mapMock.isWithinInset = false;
     rerender(
       <RideMapView
         center={{ lat: 14.6, lng: 121 }}
         riders={[]}
+        followEnabled
         followLocation={{ lat: 14.61, lng: 121.01 }}
       />,
     );
-    expect(mapMock.map.panInside).toHaveBeenCalledOnce();
+    expect(mapMock.map.setView).toHaveBeenCalledWith([14.61, 121.01], 18, { animate: false });
 
     rerender(
       <RideMapView
         center={{ lat: 14.6, lng: 121 }}
         riders={[]}
+        followEnabled
         followLocation={{ lat: 14.611, lng: 121.011 }}
       />,
     );
-    expect(mapMock.map.panInside).toHaveBeenCalledOnce();
+    expect(mapMock.map.setView).toHaveBeenCalledTimes(3);
+    expect(mapMock.map.setView).toHaveBeenLastCalledWith([14.611, 121.011], 18, { animate: false });
+    rerender(<RideMapView center={{ lat: 14.6, lng: 121 }} riders={[]} followEnabled={false} followLocation={{ lat: 14.611, lng: 121.011 }} />);
+    rerender(<RideMapView center={{ lat: 14.6, lng: 121 }} riders={[]} followEnabled followLocation={{ lat: 14.611, lng: 121.011 }} />);
+    expect(mapMock.map.setView).toHaveBeenCalledTimes(4);
   });
 
   it('only disengages enabled follow on drag and continues forwarding map taps', () => {
