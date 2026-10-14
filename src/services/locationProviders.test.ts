@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { waitFor } from '@testing-library/react';
 
 const mocks = vi.hoisted(() => ({
   platform: 'web',
@@ -263,5 +264,94 @@ describe('location providers', () => {
     provider.stop();
     expect(mocks.background.removeWatcher).toHaveBeenCalledOnce();
     expect(mocks.background.removeWatcher).toHaveBeenCalledWith({ id: 'background-watch' });
+  });
+
+  const providers = [
+    { name: 'foreground', create: () => new ForegroundGeolocationProvider(), register: mocks.geolocation.watchPosition, remove: mocks.geolocation.clearWatch },
+    { name: 'background', create: () => new BackgroundGeolocationProvider(), register: mocks.background.addWatcher, remove: mocks.background.removeWatcher },
+  ];
+
+  it.each(providers)('$name concurrent starts register only one native watcher', async ({ create, register }) => {
+    mocks.platform = 'android';
+    const provider = create();
+    await Promise.all([provider.start(), provider.start(), provider.start()]);
+    expect(register).toHaveBeenCalledOnce();
+    provider.stop();
+  });
+
+  it.each(providers)('$name removes a late watcher after stop and suppresses cancelled callbacks', async ({ name, create, register, remove }) => {
+    mocks.platform = 'android';
+    let finishRegistration: ((id: string) => void) | undefined;
+    register.mockImplementationOnce(() => new Promise<string>((resolve) => { finishRegistration = resolve; }));
+    const provider = create();
+    const listener = vi.fn();
+    provider.onLocation(listener);
+    const startup = provider.start();
+    await waitFor(() => expect(register).toHaveBeenCalledOnce());
+    listener.mockClear();
+    provider.stop();
+    const callback = register.mock.calls[0][1];
+    callback(name === 'foreground'
+      ? { coords: { latitude: 14.6, longitude: 121.1, speed: null, accuracy: 8 }, timestamp: 1_700_000_001_000 }
+      : { latitude: 14.6, longitude: 121.1, speed: null, accuracy: 8, time: 1_700_000_001_000 });
+    expect(listener).not.toHaveBeenCalled();
+    finishRegistration?.('late-watch');
+    await startup;
+    expect(remove).toHaveBeenCalledWith({ id: 'late-watch' });
+    provider.stop();
+    expect(remove).toHaveBeenCalledOnce();
+  });
+
+  it.each(providers)('$name waits for cancelled startup cleanup before owning a new watcher', async ({ create, register, remove }) => {
+    mocks.platform = 'android';
+    let finishRegistration: ((id: string) => void) | undefined;
+    register.mockImplementationOnce(() => new Promise<string>((resolve) => { finishRegistration = resolve; }));
+    register.mockResolvedValueOnce('new-watch');
+    const provider = create();
+    const first = provider.start();
+    await waitFor(() => expect(register).toHaveBeenCalledOnce());
+    provider.stop();
+    const restart = provider.start();
+    const duplicateRestart = provider.start();
+    expect(register).toHaveBeenCalledOnce();
+    finishRegistration?.('cancelled-watch');
+    await Promise.all([first, restart, duplicateRestart]);
+    expect(register).toHaveBeenCalledTimes(2);
+    expect(remove).toHaveBeenCalledWith({ id: 'cancelled-watch' });
+    provider.stop();
+    expect(remove).toHaveBeenLastCalledWith({ id: 'new-watch' });
+    expect(remove).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not deliver a foreground immediate fix or register a watch after cancellation', async () => {
+    let finishFix: ((point: unknown) => void) | undefined;
+    mocks.geolocation.getCurrentPosition.mockImplementationOnce(() => new Promise((resolve) => { finishFix = resolve; }));
+    const provider = new ForegroundGeolocationProvider();
+    const listener = vi.fn();
+    provider.onLocation(listener);
+    const startup = provider.start();
+    await waitFor(() => expect(mocks.geolocation.getCurrentPosition).toHaveBeenCalledOnce());
+    provider.stop();
+    finishFix?.({ coords: { latitude: 14.6, longitude: 121.1 }, timestamp: 1_700_000_001_000 });
+    await startup;
+    expect(listener).not.toHaveBeenCalled();
+    expect(mocks.geolocation.watchPosition).not.toHaveBeenCalled();
+  });
+
+  it.each(providers)('$name reports cleanup failure without leaking location payloads', async ({ create, remove }) => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      remove.mockRejectedValueOnce(new Error('private coordinate payload'));
+      const provider = create();
+      await provider.start();
+      provider.stop();
+      await waitFor(() => expect(warning).toHaveBeenCalledOnce());
+      expect(warning.mock.calls[0]).toHaveLength(1);
+      expect(warning.mock.calls[0][0]).not.toContain('private coordinate');
+      await provider.start();
+      provider.stop();
+    } finally {
+      warning.mockRestore();
+    }
   });
 });

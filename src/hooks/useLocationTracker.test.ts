@@ -5,6 +5,7 @@ import { useLocationTracker } from './useLocationTracker';
 
 const mocks = vi.hoisted(() => ({
   platform: 'web',
+  prepareLocationPermissions: vi.fn(),
   foreground: {
     start: vi.fn(),
     stop: vi.fn(),
@@ -41,7 +42,10 @@ vi.mock('@capacitor/app', () => ({
   },
 }));
 vi.mock('@capacitor/core', () => ({
-  Capacitor: { getPlatform: () => mocks.platform },
+  Capacitor: { getPlatform: () => mocks.platform, isNativePlatform: () => mocks.platform !== 'web' },
+}));
+vi.mock('../services/locationPermissions', () => ({
+  prepareLocationPermissions: mocks.prepareLocationPermissions,
 }));
 
 const makePoint = (
@@ -73,6 +77,7 @@ describe('useLocationTracker raw-fix freshness', () => {
     vi.setSystemTime(new Date('2026-10-11T00:00:00.000Z'));
     vi.clearAllMocks();
     mocks.platform = 'web';
+    mocks.prepareLocationPermissions.mockReset().mockResolvedValue(undefined);
     mocks.foregroundCallback = null;
     mocks.backgroundCallback = null;
     mocks.appStateCallback = null;
@@ -223,29 +228,26 @@ describe('useLocationTracker raw-fix freshness', () => {
 
   it('prepares Android background permissions while active and keeps foreground tracking available after denial', async () => {
     mocks.platform = 'android';
-    mocks.background.prepareForBackgroundTracking.mockRejectedValueOnce(
+    mocks.prepareLocationPermissions.mockRejectedValueOnce(
       new Error('Background location is not enabled.'),
     );
 
     const { result } = renderHook(() => useLocationTracker());
     await act(async () => result.current.startTracking());
 
-    expect(mocks.background.prepareForBackgroundTracking).toHaveBeenCalledOnce();
+    expect(mocks.prepareLocationPermissions).toHaveBeenCalledOnce();
     expect(mocks.background.start).not.toHaveBeenCalled();
     expect(mocks.foreground.start).toHaveBeenCalledOnce();
     expect(result.current.isTracking).toBe(true);
     expect(result.current.error).toBe('Background location is not enabled.');
-    expect(mocks.foreground.start.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.background.prepareForBackgroundTracking.mock.invocationCallOrder[0],
+    expect(mocks.prepareLocationPermissions.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.foreground.start.mock.invocationCallOrder[0],
     );
   });
 
   it('keeps the background permission failure visible after restoring foreground tracking', async () => {
     mocks.platform = 'android';
-    mocks.background.prepareForBackgroundTracking.mockRejectedValueOnce(
-      new Error('Notification access is required.'),
-    );
-    mocks.background.start.mockRejectedValueOnce(
+    mocks.prepareLocationPermissions.mockRejectedValueOnce(
       new Error('Notification access is required.'),
     );
 
@@ -258,9 +260,11 @@ describe('useLocationTracker raw-fix freshness', () => {
 
     expect(hook.result.current.isTracking).toBe(true);
     expect(hook.result.current.error).toBe('Notification access is required.');
+    expect(mocks.prepareLocationPermissions).toHaveBeenCalledOnce();
+    expect(mocks.background.start).not.toHaveBeenCalled();
 
     await act(async () => hook.result.current.startTracking());
-    expect(mocks.background.prepareForBackgroundTracking).toHaveBeenCalledTimes(2);
+    expect(mocks.prepareLocationPermissions).toHaveBeenCalledTimes(2);
     expect(hook.result.current.error).toBeNull();
   });
 
@@ -273,7 +277,7 @@ describe('useLocationTracker raw-fix freshness', () => {
       const preparationStarted = new Promise<void>((resolve) => {
         markPreparationStarted = resolve;
       });
-      mocks.background.prepareForBackgroundTracking.mockImplementationOnce(() => {
+      mocks.prepareLocationPermissions.mockImplementationOnce(() => {
         markPreparationStarted();
         return new Promise<void>((resolve) => { resolvePreparation = resolve; });
       });
@@ -295,11 +299,31 @@ describe('useLocationTracker raw-fix freshness', () => {
         await startPromise;
       });
 
-      expect(mocks.foreground.start).toHaveBeenCalledOnce();
-      expect(mocks.foreground.stop).toHaveBeenCalledOnce();
+      expect(mocks.foreground.start).not.toHaveBeenCalled();
+      expect(mocks.background.start).not.toHaveBeenCalled();
       if (cancel === 'stop') expect(hook.result.current.isTracking).toBe(false);
     },
   );
+
+  it('does not stop the next session watcher when an old session start resolves late', async () => {
+    let finishOldStart!: () => void;
+    mocks.foreground.start.mockImplementationOnce(() => new Promise<void>((resolve) => { finishOldStart = resolve; }));
+    const oldSession = renderHook(() => useLocationTracker());
+    let oldStart!: Promise<void>;
+    await act(async () => {
+      oldStart = oldSession.result.current.startTracking();
+      await Promise.resolve();
+    });
+    oldSession.unmount();
+    expect(mocks.foreground.stop).toHaveBeenCalledOnce();
+    const nextSession = await startTracker();
+    expect(nextSession.result.current.isTracking).toBe(true);
+    await act(async () => { finishOldStart(); await oldStart; });
+    expect(mocks.foreground.stop).toHaveBeenCalledOnce();
+    expect(nextSession.result.current.isTracking).toBe(true);
+    nextSession.unmount();
+    expect(mocks.foreground.stop).toHaveBeenCalledTimes(2);
+  });
 
   it('does not restart a stopped watcher after later app-state changes', async () => {
     const hook = await startTracker();
@@ -314,5 +338,76 @@ describe('useLocationTracker raw-fix freshness', () => {
     expect(mocks.background.start).toHaveBeenCalledOnce();
     expect(mocks.foreground.start).toHaveBeenCalledTimes(2);
     expect(hook.result.current.isTracking).toBe(false);
+  });
+
+  it('arms one Android service while active and retains its filter baseline across lock and resume', async () => {
+    mocks.platform = 'android';
+    const accepted = vi.fn();
+    const hook = renderHook(() => useLocationTracker(false, accepted));
+    await act(async () => hook.result.current.startTracking());
+    expect(mocks.background.start).toHaveBeenCalledOnce();
+    expect(mocks.foreground.start).not.toHaveBeenCalled();
+    expect(mocks.prepareLocationPermissions.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.background.start.mock.invocationCallOrder[0],
+    );
+    act(() => mocks.backgroundCallback?.(makePoint(Date.now(), { speed: 4 })));
+    expect(accepted.mock.calls[0][0].source).toBe('foreground');
+    await act(async () => { await mocks.appStateCallback?.({ isActive: false }); });
+    act(() => mocks.backgroundCallback?.(makePoint()));
+    expect(accepted).toHaveBeenCalledOnce();
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+      mocks.backgroundCallback?.(makePoint(Date.now(), { lat: 14.6002, speed: 4 }));
+    });
+    expect(accepted.mock.calls[1][0].source).toBe('background');
+    await act(async () => { await mocks.appStateCallback?.({ isActive: true }); });
+    expect(mocks.background.start).toHaveBeenCalledOnce();
+    expect(mocks.background.stop).not.toHaveBeenCalled();
+    expect(mocks.foreground.start).not.toHaveBeenCalled();
+    expect(mocks.prepareLocationPermissions).toHaveBeenCalledOnce();
+    hook.unmount();
+    expect(mocks.background.stop).toHaveBeenCalledOnce();
+    expect(mocks.backgroundCallback).toBeNull();
+    expect(mocks.removeAppListener).toHaveBeenCalledOnce();
+  });
+
+  it('cleans a late Android watcher start after tracking was stopped', async () => {
+    mocks.platform = 'android';
+    let resolveStart!: () => void;
+    mocks.background.start.mockImplementationOnce(() => new Promise<void>((resolve) => { resolveStart = resolve; }));
+    const accepted = vi.fn();
+    const hook = renderHook(() => useLocationTracker(false, accepted));
+    let starting!: Promise<void>;
+    await act(async () => {
+      starting = hook.result.current.startTracking();
+      for (let step = 0; step < 8; step += 1) await Promise.resolve();
+    });
+    expect(mocks.background.start).toHaveBeenCalledOnce();
+    const staleCallback = mocks.backgroundCallback;
+    act(() => hook.result.current.stopTracking());
+    act(() => staleCallback?.(makePoint()));
+    expect(accepted).not.toHaveBeenCalled();
+    await act(async () => { resolveStart(); await starting; });
+    expect(mocks.background.stop).toHaveBeenCalledOnce();
+    expect(mocks.backgroundCallback).toBeNull();
+    expect(hook.result.current.isTracking).toBe(false);
+  });
+
+  it('does not restore tracking when a permission-state read finishes after stop', async () => {
+    mocks.platform = 'android';
+    let resolvePermission!: (state: string) => void;
+    mocks.background.getPermissionState.mockImplementationOnce(() => new Promise<string>((resolve) => { resolvePermission = resolve; }));
+    const hook = renderHook(() => useLocationTracker());
+    let starting!: Promise<void>;
+    await act(async () => {
+      starting = hook.result.current.startTracking();
+      for (let step = 0; step < 10; step += 1) await Promise.resolve();
+    });
+    expect(mocks.background.getPermissionState).toHaveBeenCalledOnce();
+    act(() => hook.result.current.stopTracking());
+    await act(async () => { resolvePermission('granted'); await starting; });
+    expect(hook.result.current.isTracking).toBe(false);
+    expect(mocks.backgroundCallback).toBeNull();
+    expect(mocks.background.stop).toHaveBeenCalledOnce();
   });
 });

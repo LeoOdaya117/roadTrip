@@ -38,6 +38,8 @@ const LAST_BG_TS_KEY = 'bg_last_location_ts';
 
 export class BackgroundGeolocationProvider implements ILocationProvider {
   private watcherId: string | null = null;
+  private generation = 0;
+  private pendingStart: { generation: number; promise: Promise<void> } | null = null;
   private listeners = new Set<(p: LocationPoint) => void>();
 
   async prepareForBackgroundTracking(): Promise<void> {
@@ -49,18 +51,41 @@ export class BackgroundGeolocationProvider implements ILocationProvider {
     await this.ensureAndroidBackgroundLocationPermission(true);
   }
 
-  async start(): Promise<void> {
+  start(): Promise<void> {
+    if (this.watcherId) return Promise.resolve();
+    const generation = this.generation;
+    if (this.pendingStart?.generation === generation) return this.pendingStart.promise;
+    const previous = this.pendingStart?.promise;
+    const promise = (async () => {
+      // Wait for a cancelled native registration to release its returned ID.
+      if (previous) await previous.catch(() => {});
+      if (generation !== this.generation) return;
+      try {
+        await this.startWatch(generation);
+      } catch (error) {
+        if (generation === this.generation) throw error;
+      }
+    })().finally(() => {
+      if (this.pendingStart?.promise === promise) this.pendingStart = null;
+    });
+    this.pendingStart = { generation, promise };
+    return promise;
+  }
+
+  private async startWatch(generation: number): Promise<void> {
     if (Capacitor.getPlatform() === 'android') {
       await this.ensureNotificationPermission(false);
+      if (generation !== this.generation) return;
       await this.ensureLocationPermission();
+      if (generation !== this.generation) return;
       await this.ensureAndroidBackgroundLocationPermission(false);
     }
 
-    if (this.watcherId) return;
-    try {
-      this.watcherId = await BackgroundGeolocation.addWatcher(
+    if (generation !== this.generation) return;
+    const id = await BackgroundGeolocation.addWatcher(
         DEFAULT_OPTIONS,
         (location?: BackgroundLocation, error?: CallbackError) => {
+          if (generation !== this.generation) return;
           if (error) {
             console.warn('[BackgroundGeolocationProvider] watcher error', {
               code: error.code,
@@ -77,20 +102,28 @@ export class BackgroundGeolocationProvider implements ILocationProvider {
             timestamp: new Date(location.time ?? Date.now()).toISOString(),
           });
         },
-      );
-    } catch (error) {
-      this.watcherId = null;
-      throw error;
+    );
+    if (generation !== this.generation) {
+      await this.removeWatch(id);
+      return;
     }
+    this.watcherId = id;
   }
 
   stop(): void {
+    this.generation += 1;
     if (this.watcherId) {
       const watcherId = this.watcherId;
       this.watcherId = null;
-      void BackgroundGeolocation.removeWatcher({ id: watcherId }).catch((error: unknown) => {
-        console.warn('[BackgroundGeolocationProvider] failed to remove watcher', error);
-      });
+      void this.removeWatch(watcherId);
+    }
+  }
+
+  private async removeWatch(id: string): Promise<void> {
+    try {
+      await BackgroundGeolocation.removeWatcher({ id });
+    } catch {
+      console.warn('[BackgroundGeolocationProvider] Failed to remove location watch.');
     }
   }
 

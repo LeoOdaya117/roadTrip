@@ -14,6 +14,7 @@ import type { ThemePreference } from '../context/themePreference';
 import AppHeader from '../components/AppHeader';
 import { PLACE_SEARCH_ATTRIBUTION, searchPlaces, type PlaceSearchResult } from '../services/placeSearch';
 import { useSavedPlaces } from '../hooks/useSavedPlaces';
+import { isAndroidPermissionSetupSupported, requestLocationPermissionSetup } from '../services/locationPermissions';
 import type { SavedPlace, SavedPlaceKind } from '../types/savedPlace';
 
 type SavedPlaceLocation = Pick<PlaceSearchResult, 'label' | 'lat' | 'lng'>;
@@ -305,6 +306,14 @@ const AccountPage: React.FC = () => {
             ))}
           </div>
         </section>
+
+        {isAndroidPermissionSetupSupported() && (
+          <section className="theme-choice" aria-labelledby="ride-permissions-title">
+            <h2 id="ride-permissions-title">Ride permissions</h2>
+            <p>Set up location and notifications for recording with the screen locked.</p>
+            <button type="button" onClick={requestLocationPermissionSetup}>Set up ride permissions</button>
+          </section>
+        )}
 
         <section className="account-saved-places" aria-labelledby="saved-places-title">
           <div className="account-saved-places-heading">

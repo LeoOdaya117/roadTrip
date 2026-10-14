@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   saveUserProfile: vi.fn(),
   searchPlaces: vi.fn(),
   enterAccount: vi.fn(),
+  nativePermissions: false,
+  requestPermissionSetup: vi.fn(),
   savedPlacesState: {
     savedPlaces: [] as Array<{ id: string; kind: 'home' | 'work' | 'custom'; name: string; addressLabel: string; lat: number; lng: number }> ,
     isLoading: false,
@@ -57,9 +59,15 @@ vi.mock('../hooks/useSavedPlaces', () => ({
 
 const renderAccount = () => render(<ThemeProvider><AccountPage /></ThemeProvider>);
 
+vi.mock('../services/locationPermissions', () => ({
+  isAndroidPermissionSetupSupported: () => mocks.nativePermissions,
+  requestLocationPermissionSetup: mocks.requestPermissionSetup,
+}));
+
 describe('AccountPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.nativePermissions = false;
     localStorage.clear();
     mocks.currentUser.name = 'Rider One';
     mocks.currentUser.avatarUrl = undefined;
@@ -84,6 +92,18 @@ describe('AccountPage', () => {
       lng: input.lng,
     }));
     mocks.savedPlacesState.remove.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('offers Android permission recovery from Account', () => {
+    mocks.nativePermissions = true;
+    renderAccount();
+    fireEvent.click(screen.getByRole('button', { name: 'Set up ride permissions' }));
+    expect(mocks.requestPermissionSetup).toHaveBeenCalledOnce();
+  });
+
+  it('omits native permission setup in the browser', () => {
+    renderAccount();
+    expect(screen.queryByRole('button', { name: 'Set up ride permissions' })).not.toBeInTheDocument();
   });
 
   it('uploads and removes an avatar, clearing a stale saved notice after either edit', async () => {

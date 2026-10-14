@@ -1122,6 +1122,46 @@ button,input,textarea,select { font-family:inherit; }
   min-height: 48px;
 }
 
+/* Reserve the footer's full border box; its safe-area padding must not cover the map. */
+.ride-setup-modal-content .ride-setup-destination-map {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  height: calc(100dvh - 80px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+}
+.ride-setup-modal-content .ride-setup-destination-map .ride-setup-full-map {
+  min-height: 0;
+  margin-bottom: 0;
+}
+.ride-setup-modal-content .ride-setup-destination-map .ride-setup-actions {
+  position: relative;
+  inset: auto;
+  box-sizing: border-box;
+  align-self: stretch;
+  margin: 0;
+  border-radius: 14px;
+}
+.ride-setup-modal-content .ride-setup-destination-map .ride-setup-map-hint {
+  bottom: 28px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  padding: 8px 12px;
+  border-radius: 12px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+  line-height: 1.4;
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  .ride-setup-modal-content .ride-setup-destination-map {
+    height: calc(100dvh - 52px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  }
+  .ride-setup-modal-content .ride-setup-map-heading { display: flex; align-items: flex-start; gap: 8px; padding-bottom: 0; }
+  .ride-setup-modal-content .ride-setup-map-heading h2 { margin: 2px 0 0; font-size: 18px; }
+  .ride-setup-modal-content .ride-setup-map-heading .ride-setup-progress { margin-top: 6px; }
+  .ride-setup-modal-content .ride-setup-map-heading p { display: none; }
+  .ride-setup-modal-content .ride-setup-destination-map .ride-setup-actions { padding: 6px 8px max(6px, env(safe-area-inset-bottom, 0px)); }
+}
+
 .ride-setup-map-back {
   display: grid;
   width: 48px;

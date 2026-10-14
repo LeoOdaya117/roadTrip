@@ -3,6 +3,7 @@ import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import type { PluginListenerHandle } from '@capacitor/core';
 import { createLocationProviders } from '../services/LocationProviderFactory';
+import { prepareLocationPermissions } from '../services/locationPermissions';
 import type ILocationProvider from '../services/ILocationProvider';
 import {
   LOCATION_FILTER_LIMITS,
@@ -45,7 +46,10 @@ const initialQuality: LocationQualityState = {
   lastRejectedReason: null,
 };
 
-export const useLocationTracker = (autoStart = false): TrackerState => {
+export const useLocationTracker = (
+  autoStart = false,
+  onAcceptedLocation?: (point: AcceptedLocationPoint) => void,
+): TrackerState => {
   const [location, setLocation] = useState<AcceptedLocationPoint | null>(null);
   const [hasFreshLocation, setHasFreshLocation] = useState(false);
   const [isTracking, setIsTracking] = useState(false);
@@ -57,6 +61,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
   const filterRef = useRef(new LocationQualityFilter());
   const segmentIdRef = useRef(createSegmentId());
   const activeProviderRef = useRef<ILocationProvider | null>(null);
+  const startingProviderRef = useRef<ILocationProvider | null>(null);
   const providerUnsubscribeRef = useRef<(() => void) | null>(null);
   const isStartingRef = useRef(false);
   const isTrackingRef = useRef(false);
@@ -65,6 +70,9 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
   const backgroundIssueRef = useRef<string | null>(null);
   const operationRef = useRef(0);
   const freshnessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const acceptedLocationRef = useRef(onAcceptedLocation);
+  acceptedLocationRef.current = onAcceptedLocation;
+  const appIsActiveRef = useRef(true);
 
   const clearLocationFreshness = useCallback(() => {
     if (freshnessTimerRef.current !== null) {
@@ -117,6 +125,9 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
         return;
       }
 
+      // The durable sink must see every accepted callback, including batched
+      // background updates that never become separate React renders.
+      acceptedLocationRef.current?.(decision.point);
       setLocation(decision.point);
       const rawTimestampMs = Date.parse(rawPoint.timestamp);
       if (
@@ -145,6 +156,8 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
       }
 
       const operation = ++operationRef.current;
+      startingProviderRef.current?.stop();
+      startingProviderRef.current = null;
       providerUnsubscribeRef.current?.();
       providerUnsubscribeRef.current = null;
       if (activeProviderRef.current && activeProviderRef.current !== provider) {
@@ -156,18 +169,25 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
           operation !== operationRef.current
           || (!isTrackingRef.current && !isStartingRef.current)
         ) return;
-        acceptRawPoint(point, source);
+        const currentSource = Capacitor.getPlatform() === 'android'
+          && provider === providersRef.current.background
+          ? (appIsActiveRef.current ? 'foreground' : 'background')
+          : source;
+        acceptRawPoint(point, currentSource);
       });
       try {
+        startingProviderRef.current = provider;
         await provider.start();
         if (operation !== operationRef.current) {
           unsubscribe();
-          provider.stop();
           return;
         }
+        startingProviderRef.current = null;
         providerUnsubscribeRef.current = unsubscribe;
         activeProviderRef.current = provider;
-        setPermission(await provider.getPermissionState());
+        const currentPermission = await provider.getPermissionState();
+        if (operation !== operationRef.current) return;
+        setPermission(currentPermission);
         if (source === 'background') {
           backgroundIssueRef.current = null;
           setError(null);
@@ -179,6 +199,8 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
       } catch (startError) {
         unsubscribe();
         if (operation === operationRef.current) {
+          provider.stop();
+          startingProviderRef.current = null;
           operationRef.current += 1;
           activeProviderRef.current = null;
           isTrackingRef.current = false;
@@ -202,6 +224,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
     const startAttempt = ++startAttemptRef.current;
     try {
       const state = await App.getState();
+      appIsActiveRef.current = state.isActive;
       if (startAttempt !== startAttemptRef.current) return;
       const { foreground, background } = providersRef.current;
 
@@ -210,13 +233,11 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
         && Capacitor.getPlatform() === 'android'
         && background.prepareForBackgroundTracking
       ) {
-        // Request the foreground location permission before Android's separate
-        // background-location grant; Android may ignore the latter otherwise.
-        await switchProvider(foreground, 'foreground');
-        if (startAttempt !== startAttemptRef.current) return;
         let backgroundIssue: string | null = null;
         try {
-          await background.prepareForBackgroundTracking();
+          // Permissions/Settings are handled with no watcher running. Arm the
+          // foreground service while active, before the phone can be locked.
+          await prepareLocationPermissions();
         } catch (prepareError) {
           backgroundIssue = prepareError instanceof Error
             ? prepareError.message
@@ -226,7 +247,29 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
         // stopTracking invalidates this attempt while a native permission flow
         // is open. Do not let its eventual result restart GPS after stop/unmount.
         if (startAttempt !== startAttemptRef.current) return;
+        const activeState = await App.getState();
+        if (startAttempt !== startAttemptRef.current) return;
+        appIsActiveRef.current = activeState.isActive;
+        if (!activeState.isActive) {
+          throw new Error('Open RoadTrip to finish location setup and start tracking.');
+        }
         backgroundIssueRef.current = backgroundIssue;
+        if (backgroundIssue) {
+          const foregroundPermission = await foreground.getPermissionState();
+          if (startAttempt !== startAttemptRef.current) return;
+          if (foregroundPermission !== 'granted') throw new Error(backgroundIssue);
+          await switchProvider(foreground, 'foreground');
+        } else {
+          try {
+            await switchProvider(background, 'foreground');
+          } catch (backgroundError) {
+            if (startAttempt !== startAttemptRef.current) return;
+            backgroundIssue = backgroundError instanceof Error ? backgroundError.message : 'Background tracking is unavailable.';
+            backgroundIssueRef.current = backgroundIssue;
+            await switchProvider(foreground, 'foreground');
+          }
+        }
+        if (startAttempt !== startAttemptRef.current) return;
         setError(backgroundIssue);
         return;
       }
@@ -243,6 +286,11 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
         state.isActive ? foreground : background,
         state.isActive ? 'foreground' : 'background',
       );
+    } catch (startError) {
+      if (startAttempt === startAttemptRef.current) {
+        setError(startError instanceof Error ? startError.message : 'Failed to start location tracking.');
+      }
+      throw startError;
     } finally {
       if (startAttempt === startAttemptRef.current) {
         isStartingRef.current = false;
@@ -257,6 +305,10 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
     shouldResumeRef.current = false;
     providerUnsubscribeRef.current?.();
     providerUnsubscribeRef.current = null;
+    if (startingProviderRef.current && startingProviderRef.current !== activeProviderRef.current) {
+      startingProviderRef.current.stop();
+    }
+    startingProviderRef.current = null;
     activeProviderRef.current?.stop();
     activeProviderRef.current = null;
     isTrackingRef.current = false;
@@ -293,8 +345,23 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
     const { foreground, background } = providersRef.current;
 
     void App.addListener('appStateChange', async (state) => {
+      appIsActiveRef.current = state.isActive;
+      if (Capacitor.getPlatform() === 'android' && activeProviderRef.current === background) {
+        // This watcher is already a foreground service and supports both states.
+        return;
+      }
       if (!state.isActive && isTrackingRef.current) {
         shouldResumeRef.current = true;
+        if (Capacitor.getPlatform() === 'android') {
+          providerUnsubscribeRef.current?.();
+          providerUnsubscribeRef.current = null;
+          foreground.stop();
+          activeProviderRef.current = null;
+          isTrackingRef.current = false;
+          setIsTracking(false);
+          clearLocationFreshness();
+          return;
+        }
         try {
           await switchProvider(background, 'background');
         } catch {
@@ -317,7 +384,7 @@ export const useLocationTracker = (autoStart = false): TrackerState => {
       cancelled = true;
       void listener?.remove();
     };
-  }, [switchProvider]);
+  }, [clearLocationFreshness, switchProvider]);
 
   return {
     location,

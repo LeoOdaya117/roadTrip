@@ -29,7 +29,6 @@ type SyncParams = {
   isTracking: boolean;
   isOnline: boolean;
   isSoloMode?: boolean;
-  location: AcceptedLocationPoint | null;
 };
 
 const LIVE_SYNC_INTERVAL_MS = 4000;
@@ -45,27 +44,23 @@ export const useRideLocationSync = ({
   isTracking,
   isOnline,
   isSoloMode = false,
-  location,
 }: SyncParams) => {
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
   const [pendingOutboxCount, setPendingOutboxCount] = useState(0);
-  const latestLocationRef = useRef<AcceptedLocationPoint | null>(location);
+  const latestLocationRef = useRef<AcceptedLocationPoint | null>(null);
   const liveSendInFlightRef = useRef(false);
   const outboxFlushInFlightRef = useRef(false);
-  const persistenceQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const persistenceQueueRef = useRef<Array<Parameters<typeof persistAcceptedLocation>[0]>>([]);
+  const persistenceInFlightRef = useRef<Promise<void> | null>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
-    latestLocationRef.current = location;
-  }, [location]);
-
-  useEffect(
-    () => () => {
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   const refreshPendingCount = useCallback(async () => {
     if (!batchSyncEnabled) return;
@@ -145,41 +140,46 @@ export const useRideLocationSync = ({
     }
   }, [isOnline, refreshPendingCount]);
 
-  useEffect(() => {
-    if (!rideId || !riderId || !location) return;
-    const inferredSolo = rideId.startsWith('solo-');
-    persistenceQueueRef.current = persistenceQueueRef.current
-      .then(() =>
-        persistAcceptedLocation({
-          rideId,
-          riderId,
-          point: location,
-          enqueueForSync:
-            batchSyncEnabled && !isSoloMode && !inferredSolo,
-        }),
-      )
-      .then(async () => {
-        if (mountedRef.current) setPersistenceError(null);
-        await refreshPendingCount();
-        await flushOutbox();
-      })
-      .catch((error: unknown) => {
-        if (mountedRef.current) {
-          setPersistenceError(
-            error instanceof Error
-              ? error.message
-              : 'Failed to persist the current track point.',
-          );
-        }
+  const flushPendingLocations = useCallback((): Promise<void> => {
+    if (persistenceInFlightRef.current) return persistenceInFlightRef.current;
+    const drain = async () => {
+      while (persistenceQueueRef.current.length > 0) {
+        // Keep a failed write for an explicit retry or the next accepted fix.
+        await persistAcceptedLocation(persistenceQueueRef.current[0]);
+        persistenceQueueRef.current.shift();
+      }
+      if (mountedRef.current) setPersistenceError(null);
+    };
+    const operation = drain().catch((error: unknown) => {
+      if (mountedRef.current) {
+        setPersistenceError(error instanceof Error ? error.message : 'Failed to persist the current track point.');
+      }
+      throw error;
+    }).finally(() => { persistenceInFlightRef.current = null; });
+    persistenceInFlightRef.current = operation;
+    return operation;
+  }, []);
+
+  const persistLocation = useCallback((point: AcceptedLocationPoint) => {
+    if (!rideId || !riderId) return;
+    latestLocationRef.current = point;
+    persistenceQueueRef.current.push({
+      rideId,
+      riderId,
+      point,
+      enqueueForSync: batchSyncEnabled && !isSoloMode && !rideId.startsWith('solo-'),
+    });
+    // Persist every callback without waiting for a React commit. Upload is separate.
+    void flushPendingLocations().then(() => {
+      void refreshPendingCount().then(flushOutbox).catch((error: unknown) => {
+        if (mountedRef.current) setSyncStatus(error instanceof Error ? error.message : 'Track upload is unavailable.');
       });
-  }, [
-    flushOutbox,
-    isSoloMode,
-    location,
-    refreshPendingCount,
-    rideId,
-    riderId,
-  ]);
+    }).catch(() => { /* Error state is exposed by the local queue. */ });
+  }, [flushOutbox, flushPendingLocations, isSoloMode, refreshPendingCount, rideId, riderId]);
+
+  useEffect(() => {
+    latestLocationRef.current = null;
+  }, [rideId, riderId]);
 
   useEffect(() => {
     const inferredSolo = (rideId ?? '').startsWith('solo-');
@@ -258,5 +258,7 @@ export const useRideLocationSync = ({
     persistenceError,
     pendingOutboxCount,
     flushOutbox,
+    persistLocation,
+    flushPendingLocations,
   };
 };

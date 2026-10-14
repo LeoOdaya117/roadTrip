@@ -142,8 +142,11 @@ selects the newest non-ended session not hidden by `ride:hidden:<rideId>`.
   switches retain the filter baseline; stopover resume resets it for a new segment.
 - Background callbacks update `bg_last_location_ts` for diagnostics without
   storing rejected coordinates.
-- A Capacitor `appStateChange` listener switches an active ride to the background
-  provider when inactive and back to the foreground provider on resume.
+- First Android launch automatically prepares permissions without a watcher; disabled device location opens Android settings before the permission checks. Ride startup then starts the
+  background-capable provider while the app is active. That one watcher remains
+  active through screen lock/resume; source metadata follows the app state.
+  If preparation fails, foreground tracking remains available with a visible
+  background-access error. Other platforms retain lifecycle provider switching.
 - Stopping or switching must unsubscribe listeners and stop the previous watch.
 
 `RideMapPage` treats Zustand's `isTracking` as the desired ride state and the
@@ -164,7 +167,8 @@ Navigation is unavailable on web and does not change the remote basemap behavior
 
 `useRideLocationSync` has two independent responsibilities:
 
-1. For every accepted point with a ride and rider, atomically save the last known
+1. For every accepted point with a ride and rider, a callback queues a local write
+   before publishing React state. Atomically save the last known
    location and append the full point to the owner's local track. When feature-
    gated batch sync is enabled for a group ride, enqueue the same point atomically.
 2. For an active non-solo ride, publish the newest point every 4 seconds while
@@ -272,6 +276,7 @@ requires a new Dexie version and an explicit compatibility/migration decision.
 | `rt_profile_name` | `services/user.ts` | Optional saved display name |
 | `rt_profile_avatar` | `services/user.ts` | Optional resized avatar data URL |
 | `roadtrip:theme-preference` | `ThemeProvider` | `system`, `light`, or `dark` appearance preference |
+| `roadtrip:permission-setup-v1` | `LocationPermissionSetup` | Android first-launch setup `completed` or `skipped`; Account can reopen setup |
 | `ride_timer_state_v1` | `useRideTimer` | Elapsed seconds, running state, save timestamp |
 | `bg_last_location_ts` | Background provider | Timestamp of latest background point |
 | `ride:hidden:<rideId>` | Home/map lifecycle | Suppress an ended ride from resume |
